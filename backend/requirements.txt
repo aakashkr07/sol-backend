@@ -1,0 +1,47 @@
+# =============================================================================
+# requirements.txt — Python Backend Dependencies
+# =============================================================================
+#
+# INSTALL WITH:
+#   pip install -r requirements.txt
+#
+# OR create a virtual environment first (recommended):
+#   python -m venv venv
+#   source venv/bin/activate        (Mac/Linux)
+#   venv\Scripts\activate           (Windows)
+#   pip install -r requirements.txt
+#
+# DEPENDENCY RATIONALE:
+#   fastapi          — Web framework. Async, fast, great DX. Industry standard.
+#   uvicorn          — ASGI server for running FastAPI.
+#   httpx            — Async HTTP client for Groq API calls.
+#   python-dotenv    — Loads .env file for config.
+#   chromadb         — Vector database for episodic memory. Runs fully locally.
+#   pydantic         — Data validation. FastAPI's default (already a dependency).
+#
+# NOTE ON CHROMADB:
+#   ChromaDB will download embedding model (~80MB) on first run.
+#   Model: all-MiniLM-L6-v2 (fast, good quality, runs on CPU).
+#   This is a ONE-TIME download — cached locally after that.
+# =============================================================================
+
+# ── Web Framework ──────────────────────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+
+# ── HTTP Client (for Groq API calls) ──────────────────────────────────────
+httpx==0.27.0
+
+# ── Environment Config ─────────────────────────────────────────────────────
+python-dotenv==1.0.1
+
+# ── Vector Database (episodic memory) ─────────────────────────────────────
+# chromadb includes: sentence-transformers, hnswlib, pydantic
+chromadb==0.5.0
+
+# ── Data Validation ───────────────────────────────────────────────────────
+pydantic==2.7.1
+
+# ── Async Support ──────────────────────────────────────────────────────────
+anyio==4.3.0
+numpy==1.26.4

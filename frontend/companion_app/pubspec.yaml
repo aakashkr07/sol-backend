@@ -1,0 +1,38 @@
+name: companion_app
+description: Companion AI — Nova
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # HTTP client for API calls
+  http: ^1.2.0
+
+  # Persistent local storage
+  shared_preferences: ^2.2.2
+
+  # UUID generation
+  uuid: ^4.3.3
+  
+  firebase_core: ^4.7.0
+  firebase_auth: ^6.0.0
+  google_sign_in: ^6.2.1
+  firebase_storage: ^13.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

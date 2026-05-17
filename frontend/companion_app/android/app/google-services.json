@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1014154059769",
+    "project_id": "sol-mvp-4f7c1",
+    "storage_bucket": "sol-mvp-4f7c1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1014154059769:android:248d2958402eafee206728",
+        "android_client_info": {
+          "package_name": "com.solmvp.companion_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1014154059769-rs3krvs2d8o3qqt1t3q32vl9r9v7h4ts.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.solmvp.companion_app",
+            "certificate_hash": "ff8fa150b941fd16984e00435e74c94fa27dc66c"
+          }
+        },
+        {
+          "client_id": "1014154059769-15om9ne61mbkklej55fth0r6ukcn9lu9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAiJzf9MFqqudgDV8uN6G0X9KbU96ukjdc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1014154059769-15om9ne61mbkklej55fth0r6ukcn9lu9.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
