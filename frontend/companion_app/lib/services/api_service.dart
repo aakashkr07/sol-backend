@@ -30,7 +30,7 @@ class ApiConfig {
   // !! CHANGE THIS to your computer's local IP when on a real device !!
   // Find it with: ipconfig (Windows) or ifconfig (Mac)
   static const String _baseUrl = String.fromEnvironment('API_BASE_URL',
-      defaultValue: 'http://192.168.1.100:8000');
+      defaultValue: 'sol-backend-production.up.railway.app');
 
   static String get baseUrl => _baseUrl;
   static String get chatUrl => '$_baseUrl/api/chat';
