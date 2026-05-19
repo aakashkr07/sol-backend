@@ -12,6 +12,8 @@ dependencies:
   flutter:
     sdk: flutter
 
+  google_fonts: ^6.2.1  
+
   cupertino_icons: ^1.0.8
 
   # HTTP client for API calls
@@ -22,7 +24,7 @@ dependencies:
 
   # UUID generation
   uuid: ^4.3.3
-  
+
   firebase_core: ^4.7.0
   firebase_auth: ^6.0.0
   google_sign_in: ^6.2.1
@@ -32,7 +34,25 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+  flutter_launcher_icons: ^0.14.3
   flutter_lints: ^5.0.0
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/images/sol_logo.png
+    - assets/images/google_logo.png
+
+  fonts:
+    - family: CormorantGaramond
+      fonts:
+        - asset: assets/fonts/CormorantGaramond-Light.ttf
+          weight: 300
+        - asset: assets/fonts/CormorantGaramond-Regular.ttf
+          weight: 400  
