@@ -673,22 +673,26 @@ class _LoginScreenState extends State<LoginScreen>
                                   ),
                                 ),
                               )
-                            : Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _googleLogo(),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    'Continue with Google',
-                                    style: GoogleFonts.jost(
-                                      fontWeight: FontWeight.w300,
-                                      fontSize: 13.5,
-                                      color: _cream.withOpacity(0.68),
-                                      letterSpacing: 0.5,
+                            : Center(
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    _googleLogo(),
+                                    const SizedBox(width: 14),
+                                    Text(
+                                      'Continue with Google',
+                                      style: GoogleFonts.jost(
+                                        fontWeight: FontWeight.w300,
+                                        fontSize: 13.5,
+                                        color: _cream.withOpacity(0.68),
+                                        letterSpacing: 0.5,
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
+                                  ],
+                                ),
+                              )
                       ],
                     ),
                   ),
