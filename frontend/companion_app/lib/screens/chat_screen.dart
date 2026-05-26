@@ -203,9 +203,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       setState(() {
         _isTyping = false;
         _isSending = false;
-        _errorMessage = e.statusCode == 503
-            ? "nova's quiet right now. try again."
-            : "something went wrong. try again.";
+        if (e.statusCode == 503) {
+          _errorMessage = "nova's quiet right now. try again.";
+        } else if (e.statusCode == 422) {
+          _errorMessage = "request validation failed (${e.statusCode}): ${e.message}";
+        } else if (e.statusCode > 0) {
+          _errorMessage = "server error (${e.statusCode}): ${e.message}";
+        } else {
+          _errorMessage = "something went wrong. try again.";
+        }
       });
     } catch (e) {
       if (!mounted) return;

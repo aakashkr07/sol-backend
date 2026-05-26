@@ -204,7 +204,14 @@ class ApiService {
   static String _parseError(http.Response response) {
     try {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
-      return json['detail'] as String? ?? 'Server error ${response.statusCode}';
+      final detail = json['detail'];
+      if (detail is String && detail.trim().isNotEmpty) {
+        return detail;
+      }
+      if (detail != null) {
+        return detail.toString();
+      }
+      return 'Server error ${response.statusCode}';
     } catch (_) {
       return 'Server error ${response.statusCode}';
     }
