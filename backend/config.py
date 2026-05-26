@@ -64,7 +64,10 @@ class Settings:
     # ── Memory / ChromaDB ─────────────────────────────────────────────────
     # ChromaDB stores vector embeddings of every memory.
     # This path is where it persists on disk. Added to .gitignore.
-    CHROMA_DB_PATH: str = str(BACKEND_DIR / "chroma_db")
+    CHROMA_DB_PATH: str = os.getenv(
+        "CHROMA_DB_PATH",
+        str(BACKEND_DIR / "chroma_db"),
+    )
 
     # How many memories to retrieve per message (semantic similarity search).
     # 5–8 is sweet spot: enough context, not too much noise.
@@ -81,7 +84,10 @@ class Settings:
     # ── SQLite (structured user facts) ────────────────────────────────────
     # SQLite stores hard facts: name, age, preferences — things that should
     # ALWAYS be remembered, not retrieved by similarity.
-    SQLITE_DB_PATH: str = str(BACKEND_DIR / "db" / "companion.db")
+    SQLITE_DB_PATH: str = os.getenv(
+        "SQLITE_DB_PATH",
+        str(BACKEND_DIR / "db" / "companion.db"),
+    )
 
     # ── Personality ────────────────────────────────────────────────────────
     # Path to the folder containing character JSON files (nova.json, etc.)

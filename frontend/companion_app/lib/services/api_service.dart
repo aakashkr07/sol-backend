@@ -32,10 +32,17 @@ class ApiConfig {
   static const String _baseUrl = String.fromEnvironment('API_BASE_URL',
       defaultValue: 'sol-backend-production.up.railway.app');
 
-  static String get baseUrl => _baseUrl;
-  static String get chatUrl => '$_baseUrl/api/chat';
-  static String get sessionStartUrl => '$_baseUrl/api/session/start';
-  static String get healthUrl => '$_baseUrl/health';
+  static String get baseUrl {
+    final raw = _baseUrl.trim();
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      return raw;
+    }
+    // Default to HTTPS when only a host is provided.
+    return 'https://$raw';
+  }
+  static String get chatUrl => '$baseUrl/api/chat';
+  static String get sessionStartUrl => '$baseUrl/api/session/start';
+  static String get healthUrl => '$baseUrl/health';
 
   static const Duration requestTimeout = Duration(seconds: 30);
 }

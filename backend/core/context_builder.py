@@ -139,7 +139,8 @@ async def build_context(
     messages = _format_history_as_messages(history_messages)
 
     # ── Step 8: Add current user message ──────────────────────────────────
-    messages.append({"role": "user", "content": current_message})
+    # chat.py saves the current user message before calling build_context(),
+    # so appending here would duplicate it in the model input.
 
     # ── Debug logging (remove in production) ──────────────────────────────
     if settings.DEBUG:

@@ -31,9 +31,7 @@
 #   The frontend should display a "Nova is quiet right now" message on error.
 # =============================================================================
 
-import asyncio
 import logging
-import uuid
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks
@@ -181,7 +179,9 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     # ── 7. Schedule async memory extraction (non-blocking) ────────────────
     # This runs AFTER response is sent. User never waits for this.
     # extraction runs every N turns (configured in settings)
-    total_messages = user.get("total_messages", 0)
+    # Re-read the user row after saving messages so counters are current.
+    updated_user = db.get_user(request.user_id) or {}
+    total_messages = updated_user.get("total_messages", 0)
     should_extract = (total_messages % settings.MEMORY_EXTRACTION_EVERY_N_TURNS == 0)
 
     if should_extract:

@@ -22,7 +22,6 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../painters/fragment_painter.dart'; // FragmentPainter, FragmentParticle, kAllFragments, kMotes
 import '../services/auth_service.dart';
-import 'chat_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Palette
@@ -289,14 +288,7 @@ class _LoginScreenState extends State<LoginScreen>
       if (!mounted) return;
       if (user != null) {
         HapticFeedback.heavyImpact();
-        Navigator.of(context).pushReplacement(PageRouteBuilder(
-          pageBuilder: (_, a, __) => const ChatScreen(),
-          transitionsBuilder: (_, a, __, child) => FadeTransition(
-            opacity: CurvedAnimation(parent: a, curve: Curves.easeInOut),
-            child: child,
-          ),
-          transitionDuration: const Duration(milliseconds: 700),
-        ));
+        // The auth gate in main.dart will switch to ChatScreen automatically.
       } else {
         if (!mounted) return;
         setState(() => _isLoading = false);
