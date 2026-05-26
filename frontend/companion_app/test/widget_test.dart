@@ -1,30 +1,46 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
+import 'package:companion_app/models/message_model.dart';
+import 'package:companion_app/widgets/message_bubble.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:companion_app/main.dart';
-
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const SolApp());
+  test('Message.fromUser creates a sending user message', () {
+    final message = Message.fromUser('hello there');
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(message.isUser, isTrue);
+    expect(message.text, 'hello there');
+    expect(message.status, MessageStatus.sending);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  testWidgets('MessageBubble renders user content and send state',
+      (WidgetTester tester) async {
+    final message = Message.fromUser('hello there').copyWith(
+      status: MessageStatus.read,
+      isNew: false,
+    );
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          backgroundColor: Color(0xFF0A0E1A),
+          body: SizedBox.shrink(),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0A0E1A),
+          body: MessageBubble(
+            message: message,
+            isNew: false,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('hello there'), findsOneWidget);
+    expect(find.byIcon(Icons.check), findsNWidgets(2));
   });
 }

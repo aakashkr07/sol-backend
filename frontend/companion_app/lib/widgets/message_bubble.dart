@@ -1,42 +1,22 @@
-// =============================================================================
-// widgets/message_bubble.dart — Chat Message Bubble Widget
-// =============================================================================
-//
-// PURPOSE:
-//   Renders individual chat messages — both user messages and Nova's replies.
-//   Includes: slide-up animation, fade-in, message styling, timestamp.
-//
-// DESIGN PRINCIPLES:
-//   - User messages: right-aligned, dark background (iMessage-style)
-//   - Nova's messages: left-aligned, lighter background
-//   - Animations: slide up + fade in (makes messages feel alive, not snapped in)
-//   - No avatars for Nova in MVP (keep it clean, intimate)
-//   - Timestamps: subtle, only shown when tapped (reduces visual noise)
-//
-// ANIMATION:
-//   Each bubble has its own AnimationController. When isNew=true, it plays
-//   the entrance animation. Old messages (loaded from history) render instantly.
-//
-// USAGE:
-//   MessageBubble(
-//     message: message,
-//     isNew: true,  // triggers animation
-//   )
-// =============================================================================
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../models/message_model.dart';
 
 class MessageBubble extends StatefulWidget {
   final Message message;
-
-  /// If true, plays the entrance animation (slide up + fade in).
-  /// Set to false for messages loaded from history — they should appear instantly.
   final bool isNew;
+  final bool isFirst;
+  final bool isLast;
+  final bool showAvatar;
 
-  const MessageBubble({super.key, required this.message, this.isNew = false});
+  const MessageBubble({
+    super.key,
+    required this.message,
+    this.isNew = false,
+    this.isFirst = true,
+    this.isLast = true,
+    this.showAvatar = true,
+  });
 
   @override
   State<MessageBubble> createState() => _MessageBubbleState();
@@ -44,142 +24,241 @@ class MessageBubble extends StatefulWidget {
 
 class _MessageBubbleState extends State<MessageBubble>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _fadeAnimation;
-  late final Animation<Offset> _slideAnimation;
+  static const Color _amber = Color(0xFFF5A623);
+  static const Color _navySurface = Color(0xFF1A2035);
+  static const Color _textPrimary = Color(0xFFEEE8DF);
+  static const Color _textMuted = Color(0xFF6B7280);
+  static const Color _tickGrey = Color(0xFF8B95A7);
+  static const Color _tickRead = Color(0xFFF5A623);
 
-  bool _showTimestamp = false;
+  late final AnimationController _entranceCtrl;
+  late final Animation<double> _fade;
+  late final Animation<Offset> _slide;
 
   @override
   void initState() {
     super.initState();
-
-    _controller = AnimationController(
+    _entranceCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 350),
+      duration: Duration(milliseconds: widget.isNew ? 240 : 0),
     );
-
-    _fadeAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOut,
-    );
-
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.15), // Slides up from slightly below
+    _fade = CurvedAnimation(parent: _entranceCtrl, curve: Curves.easeOut);
+    _slide = Tween<Offset>(
+      begin: const Offset(0, 0.18),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    ).animate(
+      CurvedAnimation(parent: _entranceCtrl, curve: Curves.easeOutCubic),
+    );
 
-    // New messages animate in. Old messages appear instantly.
     if (widget.isNew) {
-      _controller.forward();
+      Future.delayed(const Duration(milliseconds: 40), () {
+        if (mounted) {
+          _entranceCtrl.forward();
+        }
+      });
     } else {
-      _controller.value = 1.0; // Instantly at end state
+      _entranceCtrl.value = 1;
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _entranceCtrl.dispose();
     super.dispose();
+  }
+
+  BorderRadius _bubbleRadius() {
+    const double full = 18;
+    const double grouped = 6;
+    const double tail = 4;
+
+    if (widget.message.isUser) {
+      return BorderRadius.only(
+        topLeft: const Radius.circular(full),
+        topRight: Radius.circular(widget.isFirst ? full : grouped),
+        bottomLeft: const Radius.circular(full),
+        bottomRight: Radius.circular(widget.isLast ? tail : grouped),
+      );
+    }
+
+    return BorderRadius.only(
+      topLeft: Radius.circular(widget.isFirst ? full : grouped),
+      topRight: const Radius.circular(full),
+      bottomLeft: Radius.circular(widget.isLast ? tail : grouped),
+      bottomRight: const Radius.circular(full),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isUser = widget.message.role == MessageRole.user;
+    final isUser = widget.message.isUser;
+    final screenWidth = MediaQuery.of(context).size.width;
 
     return FadeTransition(
-      opacity: _fadeAnimation,
+      opacity: _fade,
       child: SlideTransition(
-        position: _slideAnimation,
-        child: GestureDetector(
-          onTap: () {
-            // Tap to toggle timestamp — subtle, non-intrusive
-            setState(() => _showTimestamp = !_showTimestamp);
-            HapticFeedback.selectionClick();
-          },
-          child: Padding(
-            padding: EdgeInsets.only(
-              left: isUser
-                  ? 60.0
-                  : 16.0, // User bubbles: right-aligned with left padding
-              right: isUser
-                  ? 16.0
-                  : 60.0, // Nova bubbles: left-aligned with right padding
-              top: 2.0,
-              bottom: 2.0,
-            ),
-            child: Column(
-              crossAxisAlignment: isUser
-                  ? CrossAxisAlignment.end
-                  : CrossAxisAlignment.start,
-              children: [
-                _buildBubble(context, isUser),
-                if (_showTimestamp) _buildTimestamp(),
-              ],
-            ),
+        position: _slide,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: isUser ? 70 : 12,
+            right: isUser ? 12 : 70,
+            top: widget.isFirst ? 8 : 2,
+            bottom: widget.isLast ? 3 : 0,
+          ),
+          child: Column(
+            crossAxisAlignment:
+                isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment:
+                    isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (!isUser) _buildNovaAvatar(),
+                  if (!isUser) const SizedBox(width: 6),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: screenWidth * 0.76,
+                      minWidth: 54,
+                    ),
+                    child: _buildBubble(isUser),
+                  ),
+                ],
+              ),
+              if (widget.isLast) _buildTimestamp(isUser),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildBubble(BuildContext context, bool isUser) {
+  Widget _buildNovaAvatar() {
+    if (!widget.showAvatar) {
+      return const SizedBox(width: 28);
+    }
+
     return Container(
-      constraints: BoxConstraints(
-        maxWidth: MediaQuery.of(context).size.width * 0.78,
-      ),
+      width: 28,
+      height: 28,
       decoration: BoxDecoration(
-        color: isUser
-            ? const Color(0xFF1A1A1A) // User: near-black (dark, intimate)
-            : const Color(0xFF2A2A2A), // Nova: slightly lighter dark
-        borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(20),
-          topRight: const Radius.circular(20),
-          bottomLeft: Radius.circular(isUser ? 20 : 4), // Tail on Nova's side
-          bottomRight: Radius.circular(isUser ? 4 : 20), // Tail on user's side
+        shape: BoxShape.circle,
+        gradient: const RadialGradient(
+          colors: [Color(0xFFF5A623), Color(0xFF3D2A00)],
         ),
-        // Subtle border for Nova's messages — distinguishes without heavy contrast
+        boxShadow: [
+          BoxShadow(
+            color: _amber.withValues(alpha: 0.22),
+            blurRadius: 8,
+          ),
+        ],
+      ),
+      child: const Center(
+        child: Text(
+          'N',
+          style: TextStyle(
+            color: Color(0xFFEEE8DF),
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBubble(bool isUser) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isUser ? _amber : _navySurface,
+        borderRadius: _bubbleRadius(),
         border: isUser
             ? null
-            : Border.all(color: Colors.white.withOpacity(0.08), width: 1),
+            : Border.all(color: Colors.white.withValues(alpha: 0.06), width: 0.6),
+        boxShadow: [
+          BoxShadow(
+            color: isUser
+                ? _amber.withValues(alpha: 0.22)
+                : Colors.black.withValues(alpha: 0.22),
+            blurRadius: isUser ? 12 : 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Text(
-        widget.message.content,
+        widget.message.text,
         style: TextStyle(
+          color: isUser ? const Color(0xFF0A0E1A) : _textPrimary,
           fontSize: 15.5,
-          height: 1.45,
-          color: isUser
-              ? Colors.white.withOpacity(0.92)
-              : Colors.white.withOpacity(0.88),
-          fontFamily: 'SF Pro Text', // Falls back to system font on non-Apple
+          height: 1.4,
+          fontWeight: isUser ? FontWeight.w500 : FontWeight.w400,
           letterSpacing: -0.1,
         ),
       ),
     );
   }
 
-  Widget _buildTimestamp() {
+  Widget _buildTimestamp(bool isUser) {
     return Padding(
-      padding: const EdgeInsets.only(top: 4, left: 4, right: 4),
-      child: Text(
-        _formatTimestamp(widget.message.timestamp),
-        style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.35)),
+      padding: EdgeInsets.only(
+        top: 4,
+        left: isUser ? 0 : 34,
+        right: isUser ? 4 : 0,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment:
+            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        children: [
+          Text(
+            widget.message.timeLabel,
+            style: TextStyle(
+              fontSize: 11,
+              color: _textMuted.withValues(alpha: 0.82),
+            ),
+          ),
+          if (isUser) ...[
+            const SizedBox(width: 4),
+            _buildTicks(widget.message.status),
+          ],
+        ],
       ),
     );
   }
 
-  String _formatTimestamp(DateTime dt) {
-    final now = DateTime.now();
-    final diff = now.difference(dt);
+  Widget _buildTicks(MessageStatus status) {
+    const double iconSize = 13;
 
-    if (diff.inMinutes < 1) return 'just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) {
-      final h = dt.hour.toString().padLeft(2, '0');
-      final m = dt.minute.toString().padLeft(2, '0');
-      return '$h:$m';
+    switch (status) {
+      case MessageStatus.sending:
+        return const Icon(Icons.schedule_rounded, size: iconSize, color: _tickGrey);
+      case MessageStatus.sent:
+      case MessageStatus.delivered:
+        return _doubleTick(color: _tickGrey, size: iconSize);
+      case MessageStatus.read:
+        return _doubleTick(color: _tickRead, size: iconSize);
+      case MessageStatus.failed:
+        return const Icon(Icons.error_outline_rounded,
+            size: iconSize, color: Colors.redAccent);
     }
-    return '${dt.day}/${dt.month}';
+  }
+
+  Widget _doubleTick({required Color color, required double size}) {
+    return SizedBox(
+      width: size + 8,
+      height: size,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            child: Icon(Icons.check, size: size, color: color),
+          ),
+          Positioned(
+            left: 5,
+            child: Icon(Icons.check, size: size, color: color),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -1,19 +1,3 @@
-// =============================================================================
-// screens/chat_screen.dart — Sol Chat Interface (Firebase Auth version)
-// =============================================================================
-//
-// CHANGES FROM PREVIOUS VERSION:
-//   1. No more SharedPreferences userId — uses AuthService.currentUserId (Firebase UID)
-//   2. No more Uuid() generation — Firebase handles identity
-//   3. Top bar shows user's Google display name
-//   4. Sign out option in top bar
-//   5. Sol color palette (navy + amber) replaces purple
-//   6. ApiService calls no longer need userId param (it reads from AuthService)
-//
-// EVERYTHING ELSE IS IDENTICAL — memory, typing indicator, message bubbles,
-// scroll behavior, error handling. All unchanged.
-// =============================================================================
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -22,7 +6,6 @@ import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/typing_indicator.dart';
-import 'login_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -32,14 +15,12 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
-  // ── Sol palette ────────────────────────────────────────────────────────
   static const Color _navy = Color(0xFF0A0E1A);
   static const Color _navySurface = Color(0xFF111827);
   static const Color _amber = Color(0xFFF5A623);
   static const Color _stone = Color(0xFFE8DCC8);
-  static const Color _textMuted = Color(0xFF6B7280);
+  static const String _characterId = 'nova';
 
-  // ── State ──────────────────────────────────────────────────────────────
   final List<Message> _messages = [];
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -49,13 +30,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _isSending = false;
   bool _isInitializing = true;
   String? _errorMessage;
-
   String? _conversationId;
   int _memoryCount = 0;
-
-  static const String _characterId = 'nova';
-
-  // ── Lifecycle ──────────────────────────────────────────────────────────
 
   @override
   void initState() {
@@ -78,11 +54,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
-  // ── Initialization ─────────────────────────────────────────────────────
-
   Future<void> _initialize() async {
-    // Firebase UID is ready immediately — no async needed
-    // Just start the session with the backend
     try {
       final session = await ApiService.startSession(characterId: _characterId);
       if (session != null && mounted) {
@@ -91,36 +63,43 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _memoryCount = session.memoryCount;
         });
 
-        // Greet based on session history
         final firstName = _getFirstName();
         if (session.isFirstSession) {
           _addNovaMessage("hey. glad you're here.");
         } else if (session.memoryCount > 0 && firstName != null) {
-          _addNovaMessage(
-              "hey ${firstName.toLowerCase()}. was thinking about you.");
+          _addNovaMessage("hey ${firstName.toLowerCase()}. was thinking about you.");
         } else {
           _addNovaMessage("hey. you're back.");
         }
       }
     } catch (_) {
-      // Session start failure is non-fatal
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'couldn\'t start a fresh session. you can still try messaging.';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isInitializing = false);
+      }
     }
-
-    if (mounted) setState(() => _isInitializing = false);
   }
 
   String? _getFirstName() {
     final name = AuthService.currentUserName;
-    if (name == null) return null;
-    return name.split(' ').first;
+    if (name == null || name.trim().isEmpty) {
+      return null;
+    }
+    return name.trim().split(' ').first;
   }
 
   void _addNovaMessage(String text) {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() => _messages.add(Message.fromNova(text)));
+    _scrollToBottom();
   }
-
-  // ── Sign out ───────────────────────────────────────────────────────────
 
   Future<void> _signOut() async {
     final confirmed = await showDialog<bool>(
@@ -131,11 +110,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         title: const Text(
           'Sign out?',
           style: TextStyle(
-              color: Colors.white, fontSize: 17, fontWeight: FontWeight.w400),
+            color: Colors.white,
+            fontSize: 17,
+            fontWeight: FontWeight.w400,
+          ),
         ),
         content: Text(
           'Your memories with Nova stay saved.',
-          style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 14),
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.55),
+            fontSize: 14,
+          ),
         ),
         actions: [
           TextButton(
@@ -144,8 +129,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Sign out',
-                style: TextStyle(color: Colors.white.withOpacity(0.5))),
+            child: Text(
+              'Sign out',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.65)),
+            ),
           ),
         ],
       ),
@@ -153,30 +140,28 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (confirmed == true && mounted) {
       await AuthService.signOut();
-      // Auth gate in main.dart automatically redirects to LoginScreen
-      // when Firebase emits null from authStateChanges()
     }
   }
 
-  // ── Message sending ────────────────────────────────────────────────────
-
   Future<void> _sendMessage() async {
     final text = _inputController.text.trim();
-    if (text.isEmpty || _isSending) return;
+    if (text.isEmpty || _isSending) {
+      return;
+    }
 
+    final userMessage = Message.fromUser(text);
     _inputController.clear();
+    _inputFocusNode.requestFocus();
     HapticFeedback.lightImpact();
 
     setState(() {
-      _messages.add(Message.fromUser(text));
+      _messages.add(userMessage);
       _isTyping = true;
       _isSending = true;
       _errorMessage = null;
     });
 
     _scrollToBottom();
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (mounted) _scrollToBottom();
 
     try {
       final response = await ApiService.sendMessage(
@@ -185,100 +170,147 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         characterId: _characterId,
       );
 
-      if (!mounted) return;
-
-      if (response != null) {
-        setState(() {
-          _conversationId = response.conversationId;
-          _memoryCount = response.memoryCount;
-          _isTyping = false;
-          _isSending = false;
-          _messages.add(Message.fromNova(response.reply));
-        });
-        HapticFeedback.selectionClick();
-        _scrollToBottom();
+      if (!mounted) {
+        return;
       }
+
+      setState(() {
+        _conversationId = response?.conversationId ?? _conversationId;
+        _memoryCount = response?.memoryCount ?? _memoryCount;
+        _isTyping = false;
+        _isSending = false;
+        _replaceMessageStatus(userMessage.id, MessageStatus.read);
+        if (response != null) {
+          _messages.add(Message.fromNova(response.reply));
+        }
+      });
+      HapticFeedback.selectionClick();
+      _scrollToBottom();
     } on ChatException catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
+
       setState(() {
         _isTyping = false;
         _isSending = false;
+        _replaceMessageStatus(userMessage.id, MessageStatus.failed);
         if (e.statusCode == 503) {
           _errorMessage = "nova's quiet right now. try again.";
         } else if (e.statusCode == 422) {
-          _errorMessage = "request validation failed (${e.statusCode}): ${e.message}";
+          _errorMessage = 'request validation failed (${e.statusCode}): ${e.message}';
         } else if (e.statusCode > 0) {
-          _errorMessage = "server error (${e.statusCode}): ${e.message}";
+          _errorMessage = 'server error (${e.statusCode}): ${e.message}';
         } else {
-          _errorMessage = "something went wrong. try again.";
+          _errorMessage = 'something went wrong. try again.';
         }
       });
-    } catch (e) {
-      if (!mounted) return;
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
       setState(() {
         _isTyping = false;
         _isSending = false;
-        _errorMessage = "connection lost. check your network.";
+        _replaceMessageStatus(userMessage.id, MessageStatus.failed);
+        _errorMessage = 'connection lost. check your network.';
       });
     }
   }
 
+  void _replaceMessageStatus(String id, MessageStatus status) {
+    final index = _messages.indexWhere((message) => message.id == id);
+    if (index == -1) {
+      return;
+    }
+    _messages[index] = _messages[index].copyWith(status: status, isNew: false);
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+      if (!_scrollController.hasClients) {
+        return;
       }
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
     });
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────
+  bool _isFirstInGroup(int index) {
+    if (index == 0) {
+      return true;
+    }
+    return _messages[index].role != _messages[index - 1].role;
+  }
+
+  bool _isLastInGroup(int index) {
+    if (index == _messages.length - 1) {
+      return true;
+    }
+    return _messages[index].role != _messages[index + 1].role;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final viewInsets = MediaQuery.viewInsetsOf(context);
+
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
     ));
 
-    return Scaffold(
-      backgroundColor: _navy,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildTopBar(),
-            Expanded(child: _buildMessageList()),
-            if (_errorMessage != null) _buildErrorBanner(),
-            _buildInputBar(),
-          ],
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        backgroundColor: _navy,
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF101827), Color(0xFF0A0E1A)],
+            ),
+          ),
+          child: SafeArea(
+            child: Column(
+              children: [
+                _buildTopBar(),
+                Expanded(child: _buildMessageArea()),
+                if (_errorMessage != null) _buildErrorBanner(),
+                AnimatedPadding(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  padding: EdgeInsets.only(bottom: viewInsets.bottom == 0 ? 0 : 8),
+                  child: _buildInputBar(),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
-  // ── Top bar ────────────────────────────────────────────────────────────
-
   Widget _buildTopBar() {
     final firstName = _getFirstName();
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
       decoration: BoxDecoration(
-        color: _navy,
+        color: _navy.withValues(alpha: 0.94),
         border: Border(
-          bottom: BorderSide(color: Colors.white.withOpacity(0.05), width: 1),
+          bottom:
+              BorderSide(color: Colors.white.withValues(alpha: 0.05), width: 1),
         ),
       ),
       child: Row(
         children: [
-          // Nova avatar — amber glow version
           _buildNovaAvatar(),
           const SizedBox(width: 12),
-
-          // Name + status
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -287,45 +319,44 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   'Nova',
                   style: TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                     color: Color(0xFFEEE8DF),
-                    letterSpacing: -0.3,
+                    letterSpacing: -0.2,
                   ),
                 ),
                 Text(
                   _isTyping
                       ? 'typing...'
                       : firstName != null
-                          ? 'here with you, $firstName'
-                          : 'here with you',
+                          ? 'online with $firstName'
+                          : 'online now',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.white.withOpacity(0.35),
+                    color: Colors.white.withValues(alpha: 0.4),
                   ),
                 ),
               ],
             ),
           ),
-
-          // Memory indicator
           if (_memoryCount > 0) _buildMemoryIndicator(),
-
           const SizedBox(width: 8),
-
-          // Sign out button
-          GestureDetector(
-            onTap: _signOut,
-            child: Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.05),
-              ),
-              child: Icon(
-                Icons.logout_rounded,
-                size: 15,
-                color: Colors.white.withOpacity(0.3),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _signOut,
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.05),
+                ),
+                child: Icon(
+                  Icons.logout_rounded,
+                  size: 16,
+                  color: Colors.white.withValues(alpha: 0.35),
+                ),
               ),
             ),
           ),
@@ -336,20 +367,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Widget _buildNovaAvatar() {
     return Container(
-      width: 38,
-      height: 38,
+      width: 40,
+      height: 40,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: RadialGradient(
           colors: [
-            _amber.withOpacity(0.7),
-            const Color(0xFF3D2A00).withOpacity(0.4),
+            _amber.withValues(alpha: 0.72),
+            const Color(0xFF3D2A00).withValues(alpha: 0.45),
           ],
         ),
         boxShadow: [
           BoxShadow(
-            color: _amber.withOpacity(0.25),
-            blurRadius: 12,
+            color: _amber.withValues(alpha: 0.22),
+            blurRadius: 14,
           ),
         ],
       ),
@@ -364,7 +395,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             style: TextStyle(
               color: _stone,
               fontSize: 16,
-              fontWeight: FontWeight.w400,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ),
@@ -376,9 +407,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: _amber.withOpacity(0.1),
-        border: Border.all(color: _amber.withOpacity(0.25), width: 1),
+        borderRadius: BorderRadius.circular(999),
+        color: _amber.withValues(alpha: 0.1),
+        border: Border.all(color: _amber.withValues(alpha: 0.2), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -386,15 +417,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           Container(
             width: 5,
             height: 5,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: _amber),
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: _amber,
+            ),
           ),
           const SizedBox(width: 4),
           Text(
             '$_memoryCount',
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 11,
               color: _amber,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -402,48 +436,64 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  // ── Message list ───────────────────────────────────────────────────────
-
-  Widget _buildMessageList() {
+  Widget _buildMessageArea() {
     if (_isInitializing) {
       return Center(
         child: CircularProgressIndicator(
-          strokeWidth: 1.5,
-          valueColor: AlwaysStoppedAnimation<Color>(_amber.withOpacity(0.5)),
+          strokeWidth: 1.6,
+          valueColor:
+              AlwaysStoppedAnimation<Color>(_amber.withValues(alpha: 0.55)),
         ),
       );
     }
 
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      itemCount: _messages.length + (_isTyping ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (_isTyping && index == _messages.length) {
-          return const Padding(
-            padding: EdgeInsets.only(top: 4),
-            child: TypingIndicator(),
-          );
-        }
-        final message = _messages[index];
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: MessageBubble(
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.white.withValues(alpha: 0.015),
+            Colors.transparent,
+          ],
+        ),
+      ),
+      child: ListView.builder(
+        controller: _scrollController,
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(0, 10, 0, 12),
+        itemCount: _messages.length + (_isTyping ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (_isTyping && index == _messages.length) {
+            return const TypingIndicator();
+          }
+
+          final message = _messages[index];
+          return MessageBubble(
             key: ValueKey(message.id),
             message: message,
             isNew: message.isNew,
-          ),
-        );
-      },
+            isFirst: _isFirstInGroup(index),
+            isLast: _isLastInGroup(index),
+            showAvatar: !message.isUser && _isLastInGroup(index),
+          );
+        },
+      ),
     );
   }
 
-  // ── Error banner ───────────────────────────────────────────────────────
-
   Widget _buildErrorBanner() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: Colors.red.withOpacity(0.1),
+      margin: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF521A1A).withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Colors.redAccent.withValues(alpha: 0.25),
+          width: 1,
+        ),
+      ),
       child: Row(
         children: [
           const Icon(Icons.error_outline, color: Colors.redAccent, size: 16),
@@ -454,24 +504,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               style: const TextStyle(color: Colors.redAccent, fontSize: 13),
             ),
           ),
-          GestureDetector(
-            onTap: () => setState(() => _errorMessage = null),
-            child: const Icon(Icons.close, color: Colors.redAccent, size: 16),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => setState(() => _errorMessage = null),
+              borderRadius: BorderRadius.circular(12),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.close, color: Colors.redAccent, size: 16),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  // ── Input bar ─────────────────────────────────────────────────────────
-
   Widget _buildInputBar() {
+    final hasText = _inputController.text.trim().isNotEmpty;
+    final canSend = hasText && !_isSending;
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       decoration: BoxDecoration(
-        color: _navy,
+        color: _navy.withValues(alpha: 0.96),
         border: Border(
-          top: BorderSide(color: Colors.white.withOpacity(0.05), width: 1),
+          top: BorderSide(color: Colors.white.withValues(alpha: 0.05), width: 1),
         ),
       ),
       child: Row(
@@ -482,9 +540,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               constraints: const BoxConstraints(maxHeight: 120),
               decoration: BoxDecoration(
                 color: _navySurface,
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.08),
+                  color: hasText
+                      ? _amber.withValues(alpha: 0.22)
+                      : Colors.white.withValues(alpha: 0.06),
                   width: 1,
                 ),
               ),
@@ -493,15 +553,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 focusNode: _inputFocusNode,
                 maxLines: null,
                 keyboardType: TextInputType.multiline,
+                textCapitalization: TextCapitalization.sentences,
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.88),
+                  color: Colors.white.withValues(alpha: 0.9),
                   fontSize: 15.5,
-                  height: 1.4,
+                  height: 1.35,
                 ),
                 decoration: InputDecoration(
-                  hintText: 'say something...',
+                  hintText: 'Message',
                   hintStyle: TextStyle(
-                    color: Colors.white.withOpacity(0.18),
+                    color: Colors.white.withValues(alpha: 0.22),
                     fontSize: 15.5,
                   ),
                   border: InputBorder.none,
@@ -511,36 +572,39 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   ),
                 ),
                 onChanged: (_) => setState(() {}),
+                onTap: _scrollToBottom,
               ),
             ),
           ),
           const SizedBox(width: 8),
           AnimatedOpacity(
-            duration: const Duration(milliseconds: 150),
-            opacity: _inputController.text.trim().isEmpty ? 0.25 : 1.0,
-            child: GestureDetector(
-              onTap: _sendMessage,
-              child: Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _inputController.text.trim().isEmpty
-                      ? _navySurface
-                      : _amber,
-                  boxShadow: _inputController.text.trim().isEmpty
-                      ? []
-                      : [
-                          BoxShadow(
-                            color: _amber.withOpacity(0.4),
-                            blurRadius: 12,
-                          ),
-                        ],
-                ),
-                child: const Icon(
-                  Icons.arrow_upward_rounded,
-                  color: Colors.white,
-                  size: 20,
+            duration: const Duration(milliseconds: 140),
+            opacity: canSend ? 1 : 0.35,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: canSend ? _sendMessage : null,
+                customBorder: const CircleBorder(),
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: canSend ? _amber : _navySurface,
+                    boxShadow: canSend
+                        ? [
+                            BoxShadow(
+                              color: _amber.withValues(alpha: 0.35),
+                              blurRadius: 14,
+                            ),
+                          ]
+                        : const [],
+                  ),
+                  child: Icon(
+                    _isSending ? Icons.schedule_send_rounded : Icons.send_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
                 ),
               ),
             ),

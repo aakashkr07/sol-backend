@@ -1,34 +1,14 @@
-// =============================================================================
-// models/message_model.dart — Message Data Model
-// =============================================================================
-//
-// PURPOSE:
-//   The data class that represents a single chat message in Flutter.
-//   Used by: chat_screen.dart (state), message_bubble.dart (display).
-//
-// WHY A SEPARATE MODEL:
-//   Clean separation between data and UI. If you add fields later
-//   (e.g., reactions, read receipts, emotion tags), you add them here
-//   without touching the widgets.
-// =============================================================================
-
 enum MessageRole { user, assistant }
 
+enum MessageStatus { sending, sent, delivered, read, failed }
+
 class Message {
-  /// Unique ID for this message (used as widget key for efficient list updates)
   final String id;
-
-  /// Who sent it — user or Nova (assistant)
   final MessageRole role;
-
-  /// The actual text content
   final String content;
-
-  /// When this message was created (shown on tap)
   final DateTime timestamp;
-
-  /// Whether this message should animate in (true for new, false for history)
   final bool isNew;
+  final MessageStatus status;
 
   const Message({
     required this.id,
@@ -36,9 +16,19 @@ class Message {
     required this.content,
     required this.timestamp,
     this.isNew = false,
+    this.status = MessageStatus.read,
   });
 
-  /// Create from API response (Nova's reply)
+  bool get isUser => role == MessageRole.user;
+  String get text => content;
+
+  String get timeLabel {
+    final hour = timestamp.hour % 12 == 0 ? 12 : timestamp.hour % 12;
+    final minute = timestamp.minute.toString().padLeft(2, '0');
+    final suffix = timestamp.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $suffix';
+  }
+
   factory Message.fromNova(String content) {
     return Message(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -46,10 +36,10 @@ class Message {
       content: content,
       timestamp: DateTime.now(),
       isNew: true,
+      status: MessageStatus.read,
     );
   }
 
-  /// Create from user input
   factory Message.fromUser(String content) {
     return Message(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -57,16 +47,23 @@ class Message {
       content: content,
       timestamp: DateTime.now(),
       isNew: true,
+      status: MessageStatus.sending,
     );
   }
 
-  Message copyWith({bool? isNew}) {
+  Message copyWith({
+    String? content,
+    DateTime? timestamp,
+    bool? isNew,
+    MessageStatus? status,
+  }) {
     return Message(
       id: id,
       role: role,
-      content: content,
-      timestamp: timestamp,
+      content: content ?? this.content,
+      timestamp: timestamp ?? this.timestamp,
       isNew: isNew ?? this.isNew,
+      status: status ?? this.status,
     );
   }
 }
