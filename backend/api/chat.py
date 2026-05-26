@@ -68,7 +68,8 @@ class ChatRequest(BaseModel):
 
     character_id: Which companion to talk to. Defaults to "nova" for MVP.
     """
-    user_id: str = Field(..., min_length=1, max_length=100, description="User's persistent ID")
+    # Firebase UIDs can be long; keep this generous to avoid 422 validation failures.
+    user_id: str = Field(..., min_length=1, max_length=256, description="User's persistent ID")
     message: str = Field(..., min_length=1, max_length=2000, description="User's message text")
     conversation_id: Optional[str] = Field(None, description="Current conversation session ID")
     character_id: Optional[str] = Field("nova", description="Character to chat with")

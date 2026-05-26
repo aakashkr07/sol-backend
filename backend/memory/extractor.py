@@ -1,223 +1,291 @@
-# =============================================================================
-# memory/extractor.py — Conversation Memory Extraction Engine
-# =============================================================================
-#
-# PURPOSE:
-#   After every exchange, this runs asynchronously to extract two things:
-#   1. USER FACTS — structured data (name, job, relationships, preferences)
-#      → stored in SQLite via db.save_user_fact()
-#   2. EPISODIC MEMORIES — emotional moments, events, stories
-#      → stored in ChromaDB via retriever.py for semantic retrieval later
-#
-# HOW IT WORKS:
-#   1. Gets unprocessed messages from SQLite
-#   2. Sends them to the LLM with an extraction prompt
-#   3. LLM returns JSON with structured facts and episodic memories
-#   4. We save facts to SQLite, memories to ChromaDB
-#   5. Mark messages as processed
-#
-# WHY ASYNC:
-#   This runs AFTER the response is sent to the user. The user never waits
-#   for extraction — they get Nova's reply instantly, and memory saves happen
-#   in the background. This is critical for perceived speed.
-#
-# RATE LIMIT PROTECTION:
-#   We use a separate lightweight LLM call for extraction. If Groq rate-limits
-#   us, extraction fails silently (with logging) — the conversation still works.
-#
-# USAGE:
-#   from memory.extractor import extract_and_save
-#   asyncio.create_task(extract_and_save(user_id, conversation_id))
-# =============================================================================
-
 import json
-import uuid
 import logging
-import asyncio
+import uuid
 from typing import Optional
 
 import httpx
 
 from config import settings
+from memory.analysis import detect_behavioral_patterns, emotion_to_valence
+from memory.consolidator import maybe_consolidate_narrative
 from memory.store import db
 
 logger = logging.getLogger(__name__)
 
+EXTRACTION_SYSTEM_PROMPT = """You are the memory extraction engine for a deeply relational AI companion.
+Analyze the conversation and return ONLY valid JSON.
 
-# ---------------------------------------------------------------------------
-# Extraction prompt
-# ---------------------------------------------------------------------------
-
-EXTRACTION_SYSTEM_PROMPT = """You are a memory extraction engine for an AI companion app.
-Your job is to analyze a conversation and extract two types of information.
-
-Return ONLY valid JSON, no explanation, no markdown. Format:
+Return this shape exactly:
 {
   "facts": [
-    {"category": "personal|work|relationships|preferences|goals|struggles",
-     "key": "snake_case_key",
-     "value": "the value",
-     "confidence": 0.0-1.0}
+    {
+      "category": "identity|relationships|work|health|preferences|goals|struggles",
+      "key": "snake_case_key",
+      "value": "fact value",
+      "confidence": 0.0
+    }
   ],
-  "memories": [
-    {"content": "A single clear sentence describing what happened or was shared",
-     "emotion_tag": "joy|sadness|anxiety|excitement|anger|grief|pride|loneliness|null",
-     "importance": 0.0-1.0}
-  ]
+  "entities": [
+    {
+      "name": "Rahul",
+      "type": "person|place|organization|concept|event",
+      "description": "best friend from school",
+      "relationship_to_user": "best friend",
+      "emotional_valence": -1.0
+    }
+  ],
+  "relationships": [
+    {
+      "entity_a": "Rahul",
+      "entity_b": "Mom",
+      "relationship_type": "unknown_to_each_other|friends|siblings|colleagues|romantic_history|family|tension",
+      "description": "Mom does not know about the tension with Rahul"
+    }
+  ],
+  "emotions": [
+    {
+      "emotion": "anxious|sad|hopeful|excited|flat|playful|angry|numb|content|grief|overwhelmed|lonely|calm|proud",
+      "intensity": 0.0,
+      "trigger_topic": "work uncertainty",
+      "trigger_entity": "Rahul"
+    }
+  ],
+  "behavioral_patterns": [
+    {
+      "pattern_type": "temporal|emotional|communicative|topical|relational",
+      "description": "Uses humor to soften difficult feelings",
+      "confidence": 0.0
+    }
+  ],
+  "episodic_memories": [
+    {
+      "title": "Rahul felt distant",
+      "content": "The user said Rahul has felt distant lately and it has been quietly bothering them.",
+      "emotion_tag": "sad|anxious|hopeful|grief|joy|anger|content|numb",
+      "importance": 0.0
+    }
+  ],
+  "conversation": {
+    "topics_discussed": ["rahul", "distance", "friendship"],
+    "emotional_arc": "started guarded and ended more vulnerable",
+    "session_summary": "They opened up about feeling distance from Rahul and uncertainty about what it means."
+  }
 }
 
-FACTS guidelines:
-- Only extract FACTS that are explicitly stated or very strongly implied
-- key must be snake_case (e.g. "job", "sister_name", "favorite_food", "current_struggle")
-- confidence: 1.0 = explicitly stated, 0.7 = strongly implied, 0.5 = uncertain
-- categories: personal (age/location/name), work (job/company), relationships (family/friends),
-  preferences (likes/dislikes), goals (aspirations), struggles (problems/pain points)
-- Do NOT extract facts that are already common knowledge
-- SKIP if nothing factual was shared
-
-MEMORIES guidelines:
-- Each memory = one meaningful moment, emotion, or story from this exchange
-- Write in third person: "User said their dog Mango died last year and they still miss her"
-- importance: 1.0 = deeply personal/emotional, 0.5 = meaningful, 0.2 = casual mention
-- emotion_tag: the PRIMARY emotion present (null if purely factual)
-- Only extract memories worth remembering — skip small talk, filler
-- Max 3 memories per extraction call
-
-If there's nothing worth extracting for either category, return empty arrays []."""
+Rules:
+- Extract only information grounded in the conversation.
+- Facts should be durable things worth remembering, not momentary mood.
+- Entities should only include important people, places, organizations, concepts, or events.
+- Emotions should reflect the user, not the assistant.
+- Behavioral patterns should only be included when there is a meaningful signal, not a guess.
+- Episodic memories should capture emotionally or narratively meaningful moments.
+- Max 6 facts, 5 entities, 4 relationships, 4 emotions, 3 behavioral patterns, 4 episodic memories.
+- If a section has nothing useful, return an empty array or empty object."""
 
 
-# ---------------------------------------------------------------------------
-# Main extraction function
-# ---------------------------------------------------------------------------
-
-async def extract_and_save(
-    user_id: str,
-    conversation_id: str,
-) -> None:
-    """
-    Main entry point. Called as a background task after every message exchange.
-
-    Pipeline:
-    1. Fetch unextracted messages from SQLite
-    2. Build extraction prompt
-    3. Call LLM (lightweight, fast model)
-    4. Parse JSON response
-    5. Save facts to SQLite, memories to ChromaDB
-    6. Mark messages as extracted
-    """
+async def extract_and_save(user_id: str, conversation_id: str) -> None:
     try:
-        # 1. Get messages that haven't been processed yet
-        unextracted = db.get_unextracted_messages(user_id)
-        if not unextracted:
+        pending_messages = db.get_unextracted_messages(user_id, conversation_id=conversation_id)
+        if not pending_messages:
             return
 
-        message_ids = [m["id"] for m in unextracted]
-
-        # 2. Build the conversation text for the extraction prompt
-        convo_text = _format_messages_for_extraction(unextracted)
-
-        # 3. Call LLM for extraction
-        extracted = await _run_extraction_llm(convo_text)
+        message_ids = [int(message["id"]) for message in pending_messages]
+        conversation_text = _format_messages_for_extraction(pending_messages)
+        extracted = await _run_extraction_llm(conversation_text)
         if not extracted:
-            logger.warning(f"Extraction returned nothing for user {user_id}")
+            logger.warning("Extraction returned nothing for user %s", user_id)
             return
 
-        # 4. Save facts to SQLite
-        facts = extracted.get("facts", [])
-        for fact in facts:
-            if _is_valid_fact(fact):
-                db.save_user_fact(
-                    user_id=user_id,
-                    category=fact.get("category", "personal"),
-                    key=fact["key"],
-                    value=str(fact["value"]),
-                    confidence=float(fact.get("confidence", 0.8)),
-                    source="extracted",
-                )
-                logger.debug(f"Fact saved: {fact['key']} = {fact['value']}")
+        latest_user_message_id = _latest_user_message_id(pending_messages)
+        conversation_meta = extracted.get("conversation") or {}
+        topics = _normalize_topics(conversation_meta.get("topics_discussed") or [])
+        primary_emotion = (extracted.get("emotions") or [{}])[0]
 
-                # Special case: if we extracted the user's name, update the user record
-                if fact["key"] in ("name", "preferred_name", "first_name"):
-                    db.update_user_name(user_id, str(fact["value"]))
+        if latest_user_message_id:
+            db.annotate_message(
+                latest_user_message_id,
+                emotional_tone=primary_emotion.get("emotion"),
+                emotional_intensity=_safe_float(primary_emotion.get("intensity")),
+                topics=topics,
+            )
 
-        # 5. Save episodic memories to ChromaDB
-        memories = extracted.get("memories", [])
+        _save_facts(user_id, extracted.get("facts") or [], latest_user_message_id)
+        entity_name_to_id = _save_entities(user_id, extracted.get("entities") or [])
+        _save_relationships(user_id, entity_name_to_id, extracted.get("relationships") or [])
+        _save_emotions(user_id, latest_user_message_id, extracted.get("emotions") or [])
+        _save_behavioral_patterns(user_id, extracted.get("behavioral_patterns") or [])
+        db.save_conversation_insights(
+            conversation_id=conversation_id,
+            emotional_arc=conversation_meta.get("emotional_arc"),
+            topics_discussed=topics,
+            session_summary=conversation_meta.get("session_summary"),
+        )
+
+        memories = extracted.get("episodic_memories") or extracted.get("memories") or []
         if memories:
-            await _save_memories_to_chroma(user_id, conversation_id, memories, message_ids)
+            await _save_memories_to_chroma(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                memories=memories,
+                source_message_ids=message_ids,
+            )
 
-        # 6. Mark messages as processed
+        detect_behavioral_patterns(user_id)
+        await maybe_consolidate_narrative(user_id)
         db.mark_messages_extracted(message_ids)
 
         logger.info(
-            f"Extraction complete for user {user_id}: "
-            f"{len(facts)} facts, {len(memories)} memories"
+            "Extraction complete for %s: %s facts, %s entities, %s emotions, %s memories",
+            user_id,
+            len(extracted.get("facts") or []),
+            len(extracted.get("entities") or []),
+            len(extracted.get("emotions") or []),
+            len(memories),
         )
 
-    except Exception as e:
-        # CRITICAL: Never let extraction failure break the main chat loop
-        logger.error(f"Memory extraction failed for user {user_id}: {e}", exc_info=True)
+    except Exception as exc:
+        logger.error("Memory extraction failed for user %s: %s", user_id, exc, exc_info=True)
 
-
-# ---------------------------------------------------------------------------
-# LLM call for extraction
-# ---------------------------------------------------------------------------
 
 async def _run_extraction_llm(conversation_text: str) -> Optional[dict]:
-    """
-    Calls Groq with the extraction prompt.
-    Uses the FASTER/cheaper model (llama3-8b) because:
-    - extraction doesn't need 70B quality
-    - we're already using 70B for the main chat
-    - free tier rate limits are per model, so we spread the load
-    """
     if not settings.GROQ_API_KEY:
-        logger.error("No GROQ_API_KEY — cannot run extraction")
+        logger.error("No GROQ_API_KEY; cannot run extraction")
         return None
 
     payload = {
-        "model": settings.LLM_FALLBACK_MODEL,   # 8B for extraction (fast + cheap)
-        "temperature": 0.1,                       # Low temp = consistent JSON output
-        "max_tokens": 500,
+        "model": settings.LLM_FALLBACK_MODEL,
+        "temperature": 0.1,
+        "max_tokens": 1400,
         "messages": [
             {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
-            {"role": "user", "content": f"Extract from this conversation:\n\n{conversation_text}"}
-        ]
+            {"role": "user", "content": f"Extract memory signals from this conversation:\n\n{conversation_text}"},
+        ],
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.post(
                 f"{settings.GROQ_BASE_URL}/chat/completions",
                 headers={
                     "Authorization": f"Bearer {settings.GROQ_API_KEY}",
                     "Content-Type": "application/json",
                 },
-                json=payload
+                json=payload,
             )
             response.raise_for_status()
             data = response.json()
-
             raw_text = data["choices"][0]["message"]["content"].strip()
 
-            # Strip markdown code blocks if present (LLM sometimes adds them)
             if raw_text.startswith("```"):
-                raw_text = raw_text.split("```")[1]
+                raw_text = raw_text.strip("`")
                 if raw_text.startswith("json"):
                     raw_text = raw_text[4:]
 
-            return json.loads(raw_text)
+            return json.loads(raw_text.strip())
 
-    except json.JSONDecodeError as e:
-        logger.error(f"Extraction LLM returned invalid JSON: {e}")
+    except json.JSONDecodeError as exc:
+        logger.error("Extraction LLM returned invalid JSON: %s", exc)
         return None
-    except Exception as e:
-        logger.error(f"Extraction LLM call failed: {e}")
+    except Exception as exc:
+        logger.error("Extraction LLM call failed: %s", exc)
         return None
 
 
-# ---------------------------------------------------------------------------
-# ChromaDB memory saving
-# ---------------------------------------------------------------------------
+def _save_facts(user_id: str, facts: list[dict], source_message_id: Optional[int]):
+    for fact in facts:
+        if not _is_valid_fact(fact):
+            continue
+
+        db.save_user_fact(
+            user_id=user_id,
+            category=fact.get("category", "identity"),
+            key=fact["key"],
+            value=str(fact["value"]).strip(),
+            confidence=_safe_float(fact.get("confidence"), default=0.8),
+            source_message_id=source_message_id,
+            source_type="extractor",
+        )
+
+        if fact["key"] in {"name", "preferred_name", "first_name"}:
+            db.update_user_name(user_id, str(fact["value"]).strip())
+
+
+def _save_entities(user_id: str, entities: list[dict]) -> dict[str, int]:
+    entity_name_to_id: dict[str, int] = {}
+
+    for entity in entities:
+        name = (entity.get("name") or "").strip()
+        entity_type = (entity.get("type") or "").strip()
+        if not name or entity_type not in {"person", "place", "organization", "concept", "event"}:
+            continue
+
+        entity_id = db.upsert_entity(
+            user_id=user_id,
+            name=name,
+            entity_type=entity_type,
+            description=(entity.get("description") or "").strip() or None,
+            relationship_to_user=(entity.get("relationship_to_user") or "").strip() or None,
+            emotional_valence=_clamp(_safe_float(entity.get("emotional_valence")), -1.0, 1.0),
+        )
+        entity_name_to_id[name.lower()] = entity_id
+
+    return entity_name_to_id
+
+
+def _save_relationships(user_id: str, entity_name_to_id: dict[str, int], relationships: list[dict]):
+    for relationship in relationships:
+        entity_a_name = (relationship.get("entity_a") or "").strip()
+        entity_b_name = (relationship.get("entity_b") or "").strip()
+        if not entity_a_name or not entity_b_name:
+            continue
+
+        entity_a_id = entity_name_to_id.get(entity_a_name.lower())
+        entity_b_id = entity_name_to_id.get(entity_b_name.lower())
+        if not entity_a_id or not entity_b_id or entity_a_id == entity_b_id:
+            continue
+
+        db.save_entity_relationship(
+            user_id=user_id,
+            entity_a_id=entity_a_id,
+            entity_b_id=entity_b_id,
+            relationship_type=(relationship.get("relationship_type") or "").strip() or None,
+            description=(relationship.get("description") or "").strip() or None,
+        )
+
+
+def _save_emotions(user_id: str, message_id: Optional[int], emotions: list[dict]):
+    for item in emotions:
+        emotion = (item.get("emotion") or "").strip()
+        if not emotion:
+            continue
+        intensity = _clamp(_safe_float(item.get("intensity"), default=0.5), 0.0, 1.0)
+        db.log_emotional_event(
+            user_id=user_id,
+            message_id=message_id,
+            emotion=emotion,
+            intensity=intensity,
+            trigger_topic=(item.get("trigger_topic") or "").strip() or None,
+            trigger_entity=(item.get("trigger_entity") or "").strip() or None,
+            valence=emotion_to_valence(emotion),
+        )
+
+
+def _save_behavioral_patterns(user_id: str, patterns: list[dict]):
+    for pattern in patterns:
+        description = (pattern.get("description") or "").strip()
+        pattern_type = (pattern.get("pattern_type") or "").strip()
+        if not description or pattern_type not in {"temporal", "emotional", "communicative", "topical", "relational"}:
+            continue
+
+        db.upsert_behavioral_pattern(
+            user_id=user_id,
+            pattern_type=pattern_type,
+            description=description,
+            evidence_count=1,
+            confidence=_clamp(_safe_float(pattern.get("confidence"), default=0.55), 0.0, 1.0),
+            source="extractor",
+        )
+
 
 async def _save_memories_to_chroma(
     user_id: str,
@@ -225,78 +293,85 @@ async def _save_memories_to_chroma(
     memories: list[dict],
     source_message_ids: list[int],
 ) -> None:
-    """
-    Saves episodic memories to ChromaDB for semantic retrieval.
-    Also indexes them in SQLite for bookkeeping.
-
-    ChromaDB handles the embedding automatically — we just give it text.
-    """
     try:
-        # Import here to avoid circular imports and to lazy-load ChromaDB
         from memory.retriever import get_chroma_collection
 
         collection = get_chroma_collection(user_id)
 
         for memory in memories:
-            content = memory.get("content", "").strip()
-            if not content or len(content) < 10:
+            content = (memory.get("content") or "").strip()
+            if len(content) < 12:
                 continue
 
-            memory_id = str(uuid.uuid4())
-            importance = float(memory.get("importance", 0.5))
-            emotion_tag = memory.get("emotion_tag") or ""
+            chroma_id = str(uuid.uuid4())
+            title = (memory.get("title") or "").strip() or content[:80]
+            emotion_tag = (memory.get("emotion_tag") or "").strip() or None
+            importance = _clamp(_safe_float(memory.get("importance"), default=0.5), 0.0, 1.0)
 
-            # Add to ChromaDB (handles embedding automatically)
             collection.add(
-                ids=[memory_id],
+                ids=[chroma_id],
                 documents=[content],
                 metadatas=[{
                     "user_id": user_id,
                     "conversation_id": conversation_id,
-                    "emotion_tag": emotion_tag,
-                    "importance": importance,
-                }]
+                    "title": title,
+                    "emotion_tag": emotion_tag or "",
+                    "emotional_weight": importance,
+                }],
             )
 
-            # Log in SQLite for bookkeeping
             db.log_memory(
-                memory_id=memory_id,
+                chroma_id=chroma_id,
                 user_id=user_id,
                 content=content,
-                emotion_tag=emotion_tag or None,
-                importance=importance,
+                title=title,
+                emotion_tag=emotion_tag,
+                emotional_weight=importance,
+                strength=max(0.9, importance),
                 conversation_id=conversation_id,
                 source_message_ids=source_message_ids,
             )
 
-            logger.debug(f"Memory saved: [{emotion_tag}] {content[:60]}...")
+    except Exception as exc:
+        logger.error("Failed to save memories to ChromaDB: %s", exc, exc_info=True)
 
-    except Exception as e:
-        logger.error(f"Failed to save memories to ChromaDB: {e}", exc_info=True)
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _format_messages_for_extraction(messages: list[dict]) -> str:
-    """Formats a list of message dicts into a clean conversation string."""
     lines = []
-    for msg in messages:
-        role = "User" if msg["role"] == "user" else "Nova"
-        lines.append(f"{role}: {msg['content']}")
+    for message in messages:
+        role = "User" if message["role"] == "user" else "Nova"
+        lines.append(f"{role}: {message['content']}")
     return "\n".join(lines)
 
 
+def _latest_user_message_id(messages: list[dict]) -> Optional[int]:
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            return int(message["id"])
+    return None
+
+
+def _normalize_topics(topics: list) -> list[str]:
+    normalized = []
+    for topic in topics:
+        value = str(topic).strip()
+        if value and value not in normalized:
+            normalized.append(value)
+    return normalized[:8]
+
+
 def _is_valid_fact(fact: dict) -> bool:
-    """Validates that a fact has the required fields and non-empty values."""
-    return (
-        isinstance(fact, dict)
-        and "key" in fact
-        and "value" in fact
-        and fact["key"]
-        and fact["value"]
-        and str(fact["value"]).strip()
-        and len(str(fact["key"])) < 60    # Sanity check on key length
-        and len(str(fact["value"])) < 500  # Sanity check on value length
-    )
+    value = str(fact.get("value", "")).strip()
+    key = str(fact.get("key", "")).strip()
+    return bool(key and value and len(key) < 80 and len(value) < 500)
+
+
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _clamp(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(value, upper))

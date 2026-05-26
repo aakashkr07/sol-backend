@@ -1,163 +1,252 @@
 -- =============================================================================
--- schema.sql — SQLite Database Schema for Companion AI
+-- SOL memory system master schema
 -- =============================================================================
---
--- PURPOSE:
---   Defines the structure of the SQLite database that stores STRUCTURED data.
---   Think of this as the "hard facts" layer — things that should ALWAYS be
---   remembered about a user, not just retrieved by similarity.
---
--- TWO MEMORY SYSTEMS (understand this distinction):
---   1. SQLite (this file) — Structured facts: name, birthday, job, preferences.
---      Always loaded. Always in context. Never forgotten.
---
---   2. ChromaDB (vector DB) — Episodic memories: "she mentioned her dog died",
---      "he's stressed about exams". Retrieved by semantic similarity to the
---      current conversation. Fuzzy, emotional, contextual.
---
--- HOW IT'S USED:
---   - backend/db/ holds companion.db (the actual SQLite file, gitignored)
---   - store.py runs this schema at startup if tables don't exist yet
---   - The context_builder.py queries these tables to inject facts into prompts
---
--- TO APPLY MANUALLY:
---   sqlite3 backend/db/companion.db < backend/db/schema.sql
--- =============================================================================
+-- This schema keeps the original MVP metadata that the app already depends on
+-- while adding the layered memory tables needed for richer recall.
+
+PRAGMA journal_mode=WAL;
+PRAGMA foreign_keys=ON;
 
 
--- ---------------------------------------------------------------------------
--- users — one row per user (for MVP, likely just one row)
--- ---------------------------------------------------------------------------
+-- =============================================================================
+-- USERS
+-- =============================================================================
 CREATE TABLE IF NOT EXISTS users (
-    id              TEXT PRIMARY KEY,           -- UUID, generated at onboarding
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_seen       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    id                    TEXT PRIMARY KEY,
+    display_name          TEXT,
+    email                 TEXT,
+    created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_seen             DATETIME DEFAULT CURRENT_TIMESTAMP,
 
-    -- Onboarding data (collected in the first session)
-    name            TEXT,                       -- "Call me Aryan" → stored here
-    preferred_name  TEXT,                       -- nickname if different
-    age             INTEGER,
-    location        TEXT,                       -- city/country, not GPS
-    timezone        TEXT,                       -- e.g. "Asia/Kolkata" for timing
+    name                  TEXT,
+    preferred_name        TEXT,
+    age                   INTEGER,
+    location              TEXT,
+    timezone              TEXT,
+    character_id          TEXT DEFAULT 'nova',
+    relationship_label    TEXT DEFAULT 'friend',
 
-    -- Relationship metadata
-    character_id    TEXT DEFAULT 'nova',        -- which AI companion they chose
-    relationship_label TEXT DEFAULT 'friend',   -- how user defines the relationship
+    total_sessions        INTEGER DEFAULT 0,
+    total_messages        INTEGER DEFAULT 0,
 
-    -- Session tracking (for retention analytics)
-    total_sessions  INTEGER DEFAULT 0,
-    total_messages  INTEGER DEFAULT 0
+    emotional_baseline    REAL DEFAULT 0.5,
+    baseline_sample_size  INTEGER DEFAULT 0,
+
+    current_narrative     TEXT,
+    narrative_updated_at  DATETIME
 );
 
 
--- ---------------------------------------------------------------------------
--- user_facts — structured key-value facts extracted from conversations
--- ---------------------------------------------------------------------------
--- These are things Nova should ALWAYS know. Unlike ChromaDB memories (which
--- are retrieved by relevance), these are injected into EVERY prompt.
--- Keep this table lean — only facts that define who the user IS.
--- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS user_facts (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id         TEXT NOT NULL REFERENCES users(id),
-
-    category        TEXT NOT NULL,              -- 'personal', 'work', 'relationships',
-                                                --   'preferences', 'goals', 'struggles'
-    key             TEXT NOT NULL,              -- 'job', 'favorite_music', 'sister_name'
-    value           TEXT NOT NULL,              -- 'software engineer', 'lo-fi hip hop', 'Priya'
-    confidence      REAL DEFAULT 1.0,           -- 0.0–1.0, how sure we are
-    source          TEXT DEFAULT 'extracted',   -- 'onboarding' | 'extracted' | 'user_stated'
-
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-
-    -- Prevent duplicate keys per user (UPSERT target)
-    UNIQUE(user_id, key)
-);
-
-
--- ---------------------------------------------------------------------------
--- conversations — tracks each conversation session
--- ---------------------------------------------------------------------------
+-- =============================================================================
+-- CONVERSATIONS
+-- =============================================================================
 CREATE TABLE IF NOT EXISTS conversations (
-    id              TEXT PRIMARY KEY,           -- UUID
-    user_id         TEXT NOT NULL REFERENCES users(id),
-    character_id    TEXT NOT NULL DEFAULT 'nova',
-
-    started_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    ended_at        DATETIME,                   -- NULL if session still open
-    message_count   INTEGER DEFAULT 0,
-
-    -- A brief summary of this conversation (generated by summarizer.py after session ends)
-    -- Used to compress old sessions into the long-term context without burning tokens
-    summary         TEXT
+    id                    TEXT PRIMARY KEY,
+    user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    character_id          TEXT NOT NULL DEFAULT 'nova',
+    started_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ended_at              DATETIME,
+    message_count         INTEGER DEFAULT 0,
+    emotional_arc         TEXT,
+    topics_discussed      TEXT,
+    session_summary       TEXT,
+    summary               TEXT
 );
 
 
--- ---------------------------------------------------------------------------
--- messages — every single message exchanged
--- ---------------------------------------------------------------------------
--- This is the raw conversation history. Recent messages are pulled directly
--- into the prompt. Older messages are summarized into ChromaDB.
--- ---------------------------------------------------------------------------
+-- =============================================================================
+-- MESSAGES
+-- =============================================================================
 CREATE TABLE IF NOT EXISTS messages (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation_id TEXT NOT NULL REFERENCES conversations(id),
-    user_id         TEXT NOT NULL REFERENCES users(id),
-
-    role            TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
-    content         TEXT NOT NULL,
-
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-
-    -- Was this message used in memory extraction already?
-    memory_extracted INTEGER DEFAULT 0           -- 0 = pending, 1 = done
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id       TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role                  TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+    content               TEXT NOT NULL,
+    created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    emotional_tone        TEXT,
+    emotional_intensity   REAL DEFAULT 0.0,
+    topics                TEXT,
+    hour_of_day           INTEGER,
+    day_of_week           INTEGER,
+    memory_extracted      INTEGER DEFAULT 0
 );
 
 
--- ---------------------------------------------------------------------------
--- memories — index of what's been stored in ChromaDB
--- ---------------------------------------------------------------------------
--- ChromaDB handles the vector embeddings. This table is the structured index:
--- it tracks what memories exist, when they were created, and their metadata.
--- On startup, we can cross-reference to ensure ChromaDB and SQLite are in sync.
--- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS memories (
-    id              TEXT PRIMARY KEY,           -- UUID, matches ChromaDB document ID
-    user_id         TEXT NOT NULL REFERENCES users(id),
-
-    -- The actual memory text (e.g. "User's dog is named Mango and he loves her")
-    content         TEXT NOT NULL,
-
-    -- Emotion/importance tagging for retrieval ranking
-    emotion_tag     TEXT,                       -- 'grief', 'excitement', 'anxiety', null
-    importance      REAL DEFAULT 0.5,           -- 0.0 (trivial) to 1.0 (critical)
-
-    -- Source tracking
-    source_message_ids TEXT,                    -- JSON array of message IDs this came from
-    conversation_id TEXT REFERENCES conversations(id),
-
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-
-    -- Soft delete: mark memories as irrelevant without losing the record
-    archived        INTEGER DEFAULT 0
+-- =============================================================================
+-- USER FACTS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS user_facts (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    category              TEXT NOT NULL,
+    fact_key              TEXT NOT NULL,
+    fact_value            TEXT NOT NULL,
+    confidence            REAL DEFAULT 1.0,
+    source_message_id     INTEGER REFERENCES messages(id),
+    source_type           TEXT DEFAULT 'extracted',
+    created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    is_outdated           INTEGER DEFAULT 0,
+    superseded_by_id      INTEGER REFERENCES user_facts(id)
 );
 
 
--- ---------------------------------------------------------------------------
--- Indexes — speed up the queries that fire on every message
--- ---------------------------------------------------------------------------
-CREATE INDEX IF NOT EXISTS idx_messages_conversation
-    ON messages(conversation_id, created_at DESC);
+-- =============================================================================
+-- ENTITIES
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS entities (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name                  TEXT NOT NULL,
+    type                  TEXT NOT NULL CHECK(type IN (
+                              'person',
+                              'place',
+                              'organization',
+                              'concept',
+                              'event'
+                          )),
+    description           TEXT,
+    relationship_to_user  TEXT,
+    emotional_valence     REAL DEFAULT 0.0,
+    first_mentioned_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_mentioned_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+    mention_count         INTEGER DEFAULT 1,
+    UNIQUE(user_id, name)
+);
+
+
+-- =============================================================================
+-- ENTITY RELATIONSHIPS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS entity_relationships (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    entity_a_id           INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    entity_b_id           INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    relationship_type     TEXT,
+    description           TEXT,
+    created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, entity_a_id, entity_b_id, relationship_type)
+);
+
+
+-- =============================================================================
+-- EMOTIONAL EVENTS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS emotional_events (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message_id            INTEGER REFERENCES messages(id),
+    emotion               TEXT NOT NULL,
+    intensity             REAL NOT NULL DEFAULT 0.5,
+    trigger_topic         TEXT,
+    trigger_entity        TEXT,
+    valence               REAL DEFAULT 0.0,
+    created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    hour_of_day           INTEGER,
+    day_of_week           INTEGER
+);
+
+
+-- =============================================================================
+-- BEHAVIORAL PATTERNS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS behavioral_patterns (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    pattern_type          TEXT NOT NULL,
+    description           TEXT NOT NULL,
+    evidence_count        INTEGER DEFAULT 1,
+    confidence            REAL DEFAULT 0.5,
+    first_detected_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+    is_active             INTEGER DEFAULT 1,
+    source                TEXT DEFAULT 'detector',
+    UNIQUE(user_id, pattern_type, description)
+);
+
+
+-- =============================================================================
+-- NARRATIVE SUMMARIES
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS narrative_summaries (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    period_start          DATETIME,
+    period_end            DATETIME,
+    summary               TEXT NOT NULL,
+    themes                TEXT,
+    emotional_direction   TEXT,
+    created_at            DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- =============================================================================
+-- MEMORY INDEX
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS memory_index (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    chroma_id             TEXT NOT NULL,
+    title                 TEXT,
+    content               TEXT,
+    emotion_tag           TEXT,
+    strength              REAL DEFAULT 1.0,
+    emotional_weight      REAL DEFAULT 0.5,
+    created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_retrieved_at     DATETIME,
+    retrieval_count       INTEGER DEFAULT 0,
+    source_message_ids    TEXT,
+    conversation_id       TEXT REFERENCES conversations(id),
+    archived              INTEGER DEFAULT 0,
+    UNIQUE(user_id, chroma_id)
+);
+
+
+-- =============================================================================
+-- INDEXES
+-- =============================================================================
+CREATE INDEX IF NOT EXISTS idx_messages_user_created
+    ON messages(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_messages_conv
+    ON messages(conversation_id, created_at ASC);
 
 CREATE INDEX IF NOT EXISTS idx_messages_user_unextracted
-    ON messages(user_id, memory_extracted);
+    ON messages(user_id, memory_extracted, created_at ASC);
 
-CREATE INDEX IF NOT EXISTS idx_user_facts_user
-    ON user_facts(user_id, category);
+CREATE INDEX IF NOT EXISTS idx_facts_user_key
+    ON user_facts(user_id, fact_key, is_outdated);
 
-CREATE INDEX IF NOT EXISTS idx_memories_user
-    ON memories(user_id, importance DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_facts_category
+    ON user_facts(user_id, category, is_outdated);
 
-CREATE INDEX IF NOT EXISTS idx_conversations_user
-    ON conversations(user_id, started_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_facts_active_unique
+    ON user_facts(user_id, fact_key)
+    WHERE is_outdated = 0;
+
+CREATE INDEX IF NOT EXISTS idx_entities_user_name
+    ON entities(user_id, name);
+
+CREATE INDEX IF NOT EXISTS idx_entities_mention_count
+    ON entities(user_id, mention_count DESC, last_mentioned_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_relationships_user_entities
+    ON entity_relationships(user_id, entity_a_id, entity_b_id);
+
+CREATE INDEX IF NOT EXISTS idx_emotional_user_created
+    ON emotional_events(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_emotional_user_dayofweek
+    ON emotional_events(user_id, day_of_week, hour_of_day);
+
+CREATE INDEX IF NOT EXISTS idx_patterns_user_active
+    ON behavioral_patterns(user_id, is_active, confidence DESC);
+
+CREATE INDEX IF NOT EXISTS idx_narrative_user_created
+    ON narrative_summaries(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_memory_index_user
+    ON memory_index(user_id, archived, strength DESC, created_at DESC);
