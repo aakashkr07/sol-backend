@@ -506,9 +506,15 @@ class ApiService {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
         return SessionStartResponse.fromJson(json);
       }
-      return null;
-    } catch (_) {
-      return null;
+      throw ChatException(_parseError(response), response.statusCode);
+    } on SocketException {
+      throw const ChatException('No connection to server. Is the backend running?', 0);
+    } on TimeoutException {
+      throw const ChatException('The first thread took too long to open. Try again.', 408);
+    } on ChatException {
+      rethrow;
+    } catch (e) {
+      throw ChatException('Unexpected error: $e', -1);
     }
   }
 
@@ -538,10 +544,14 @@ class ApiService {
       }
 
       throw ChatException(_parseError(response), response.statusCode);
+    } on SocketException {
+      throw const ChatException('No connection to server. Is the backend running?', 0);
+    } on TimeoutException {
+      throw const ChatException('The companion roster took too long to load.', 408);
     } on ChatException {
       rethrow;
-    } catch (_) {
-      return null;
+    } catch (e) {
+      throw ChatException('Unexpected error: $e', -1);
     }
   }
 
@@ -559,10 +569,14 @@ class ApiService {
         return UserProfileResponse.fromJson(json);
       }
       throw ChatException(_parseError(response), response.statusCode);
+    } on SocketException {
+      throw const ChatException('No connection to server. Is the backend running?', 0);
+    } on TimeoutException {
+      throw const ChatException('Your Sol profile took too long to load.', 408);
     } on ChatException {
       rethrow;
-    } catch (_) {
-      return null;
+    } catch (e) {
+      throw ChatException('Unexpected error: $e', -1);
     }
   }
 

@@ -79,15 +79,37 @@ class Database:
 
         schema_path = Path(__file__).parent.parent / "db" / "schema.sql"
         with open(schema_path, "r", encoding="utf-8") as handle:
-            self.conn.executescript(handle.read())
+            schema_sql = handle.read()
+
+        schema_body, index_sql = self._split_schema_sections(schema_sql)
+
+        # Important ordering:
+        # 1. create canonical tables
+        # 2. add missing columns onto legacy tables
+        # 3. migrate/backfill data
+        # 4. create indexes that depend on pair-scoped columns
+        #
+        # Older local databases may not have `pair_id` yet. If we execute the
+        # index section first, SQLite fails before the migration code can run.
+        self.conn.executescript(schema_body)
 
         self._ensure_columns()
-        self._drop_legacy_indexes()
         self._sync_companion_rows()
         self._ensure_pair_rows_from_existing_data()
         self._migrate_legacy_data()
         self._migrate_pair_scoped_data()
+        self._dedupe_active_facts()
+        self._drop_legacy_indexes()
+        if index_sql.strip():
+            self.conn.executescript(index_sql)
         logger.info("Database schema initialized")
+
+    def _split_schema_sections(self, schema_sql: str) -> tuple[str, str]:
+        marker = "-- =============================================================================\n-- INDEXES"
+        if marker not in schema_sql:
+            return schema_sql, ""
+        body, tail = schema_sql.split(marker, 1)
+        return body, f"{marker}{tail}"
 
     def _prepare_legacy_tables_for_schema(self):
         if self._table_exists("user_facts"):
@@ -505,6 +527,56 @@ class Database:
             if self._table_exists(table_name):
                 self.conn.execute(f"DROP TABLE IF EXISTS {table_name}")
                 logger.info("Dropped migrated legacy table %s", table_name)
+
+    def _dedupe_active_facts(self):
+        if not self._table_exists("user_facts"):
+            return
+
+        duplicate_groups = self.conn.execute(
+            """
+            SELECT pair_id, fact_key, COUNT(*) AS duplicate_count
+            FROM user_facts
+            WHERE is_outdated = 0
+              AND pair_id IS NOT NULL
+              AND TRIM(COALESCE(fact_key, '')) != ''
+            GROUP BY pair_id, fact_key
+            HAVING COUNT(*) > 1
+            """
+        ).fetchall()
+
+        deduped = 0
+        for group in duplicate_groups:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM user_facts
+                WHERE pair_id = ? AND fact_key = ? AND is_outdated = 0
+                ORDER BY
+                    COALESCE(updated_at, created_at) DESC,
+                    confidence DESC,
+                    id DESC
+                """,
+                (group["pair_id"], group["fact_key"]),
+            ).fetchall()
+            if len(rows) <= 1:
+                continue
+
+            keeper = rows[0]
+            for stale in rows[1:]:
+                self.conn.execute(
+                    """
+                    UPDATE user_facts
+                    SET is_outdated = 1,
+                        superseded_by_id = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (keeper["id"], _utcnow_iso(), stale["id"]),
+                )
+                deduped += 1
+
+        if deduped:
+            logger.info("Deduplicated %s legacy active user facts before creating canonical indexes", deduped)
 
     def _backfill_conversation_pairs(self):
         if not self._table_exists("conversations"):

@@ -46,13 +46,13 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     final companion = _matchedCompanion;
     final firstName = _firstName();
     return [
-      firstName == null ? 'someone has already noticed you.' : '$firstName, someone has already noticed you.',
+      firstName == null ? 'you have a message waiting' : '$firstName, you have a message waiting',
       companion == null
-          ? 'this does not begin with a setup screen.'
-          : 'you are not building anyone. you are meeting ${companion.name}.',
+          ? 'the conversation is there. it just has to come into focus.'
+          : 'it is from ${companion.name}',
       companion?.summary.isNotEmpty == true
           ? companion!.summary
-          : 'the connection starts mid-thought, like you opened a conversation already in motion.',
+          : 'it should feel like opening a real thread, not setting up a product.',
     ];
   }
 
@@ -89,16 +89,23 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   Future<void> _loadEncounter() async {
     try {
       final roster = await ApiService.getMyCompanions();
-      if (!mounted) {
-        return;
-      }
-
       final matched = roster?.primaryCompanion ??
           (roster?.pairs.isNotEmpty == true
               ? roster!.pairs.first
               : roster?.availableCompanions.isNotEmpty == true
                   ? roster!.availableCompanions.first
                   : null);
+
+      if (matched == null || matched.id.trim().isEmpty) {
+        throw const ChatException(
+          'No matched companion could be loaded. Make sure the backend is running and try again.',
+          -1,
+        );
+      }
+
+      if (!mounted) {
+        return;
+      }
 
       setState(() {
         _roster = roster;
@@ -108,12 +115,20 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
       _fadeCtrl.forward(from: 0);
       _startEncounterLines();
+    } on ChatException catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = e.message;
+        _isLoading = false;
+      });
     } catch (_) {
       if (!mounted) {
         return;
       }
       setState(() {
-        _error = 'the connection took too long to settle. try again.';
+        _error = 'The conversation did not come through. Try again.';
         _isLoading = false;
       });
     }
@@ -144,9 +159,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   }
 
   String _ctaLabel() {
-    final companion = _matchedCompanion?.name ?? 'them';
-    final firstSession = (_matchedCompanion?.totalSessions ?? 0) == 0;
-    return firstSession ? 'Open the thread with $companion' : 'Go back to $companion';
+    return 'Open the chat';
   }
 
   Future<void> _beginEncounter() async {
@@ -156,7 +169,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
     final companionId = _matchedCompanion?.id;
     if (companionId == null || companionId.isEmpty) {
-      setState(() => _error = 'no companion was ready yet. try again.');
+      setState(() => _error = 'No matched conversation could be opened yet.');
       return;
     }
 
@@ -273,7 +286,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           ),
           const SizedBox(height: 24),
           Text(
-            'finding the thread that already has your name in it...',
+            'finding the conversation that is already waiting...',
             textAlign: TextAlign.center,
             style: GoogleFonts.jost(
               color: _muted.withValues(alpha: 0.74),
@@ -297,11 +310,11 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         children: [
           const SizedBox(height: 12),
           Text(
-            'First Contact',
+            'A message is waiting',
             style: GoogleFonts.jost(
               color: _muted.withValues(alpha: 0.65),
               fontSize: 11,
-              letterSpacing: 3.2,
+              letterSpacing: 2.2,
               fontWeight: FontWeight.w400,
             ),
           ),
@@ -342,12 +355,47 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             ),
           if (_error != null) ...[
             const SizedBox(height: 14),
-            Text(
-              _error!,
-              style: GoogleFonts.jost(
-                color: const Color(0xFFE08B8B),
-                fontSize: 12.5,
-                height: 1.45,
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF3A1717).withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: const Color(0xFFE08B8B).withValues(alpha: 0.22),
+                ),
+              ),
+              child: Text(
+                _error!,
+                style: GoogleFonts.jost(
+                  color: const Color(0xFFE08B8B),
+                  fontSize: 12.5,
+                  height: 1.45,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: _isStarting
+                    ? null
+                    : () {
+                        setState(() {
+                          _isLoading = true;
+                          _error = null;
+                          _matchedCompanion = null;
+                          _roster = null;
+                        });
+                        _loadEncounter();
+                      },
+                child: Text(
+                  'Try again',
+                  style: GoogleFonts.jost(
+                    color: _amber,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
           ],
@@ -428,8 +476,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                     ),
                     Text(
                       isNew
-                          ? 'you have not met yet'
-                          : '${companion.totalSessions} sessions of history already held here',
+                          ? 'first conversation'
+                          : '${companion.totalSessions} sessions already between you',
                       style: GoogleFonts.jost(
                         color: _muted.withValues(alpha: 0.72),
                         fontSize: 11.5,
@@ -444,7 +492,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           const SizedBox(height: 18),
           Text(
             companion.summary.isEmpty
-                ? 'their tone already exists. their habits already exist. you are stepping into a thread, not generating one.'
+                ? 'this should feel like opening a real thread, not configuring anything'
                 : companion.summary,
             style: GoogleFonts.jost(
               color: _cream.withValues(alpha: 0.76),
