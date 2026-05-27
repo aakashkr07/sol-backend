@@ -19,6 +19,30 @@ def _day_of_week(dt: datetime) -> int:
     return dt.weekday()
 
 
+def make_pair_id(user_id: str, companion_id: str) -> str:
+    return f"{user_id}::{companion_id}"
+
+
+PAIR_REBUILD_TABLES = {
+    "entities": {
+        "expected": ["unique(pair_id, name)"],
+        "legacy": ["unique(user_id, name)"],
+    },
+    "entity_relationships": {
+        "expected": ["unique(pair_id, entity_a_id, entity_b_id, relationship_type)"],
+        "legacy": ["unique(user_id, entity_a_id, entity_b_id, relationship_type)"],
+    },
+    "behavioral_patterns": {
+        "expected": ["unique(pair_id, pattern_type, description)"],
+        "legacy": ["unique(user_id, pattern_type, description)"],
+    },
+    "memory_index": {
+        "expected": ["unique(pair_id, chroma_id)"],
+        "legacy": ["unique(user_id, chroma_id)"],
+    },
+}
+
+
 class Database:
     def __init__(self):
         self._conn: Optional[sqlite3.Connection] = None
@@ -58,16 +82,24 @@ class Database:
             self.conn.executescript(handle.read())
 
         self._ensure_columns()
+        self._drop_legacy_indexes()
+        self._sync_companion_rows()
+        self._ensure_pair_rows_from_existing_data()
         self._migrate_legacy_data()
+        self._migrate_pair_scoped_data()
         logger.info("Database schema initialized")
 
     def _prepare_legacy_tables_for_schema(self):
         if self._table_exists("user_facts"):
             columns = self._get_table_columns("user_facts")
             if "fact_key" not in columns and "key" in columns:
-                if not self._table_exists("user_facts_legacy"):
-                    self.conn.execute("ALTER TABLE user_facts RENAME TO user_facts_legacy")
-                    logger.info("Renamed legacy user_facts table for migration")
+                self._rename_table_for_rebuild("user_facts", "user_facts_legacy")
+
+        for table_name, rules in PAIR_REBUILD_TABLES.items():
+            if not self._table_exists(table_name):
+                continue
+            if self._table_needs_pair_rebuild(table_name, rules["expected"], rules["legacy"]):
+                self._rename_table_for_rebuild(table_name, self._legacy_pair_table_name(table_name))
 
     def _migrate_legacy_data(self):
         if self._table_exists("user_facts_legacy"):
@@ -79,14 +111,16 @@ class Database:
             ).fetchall()
 
             for row in rows:
+                companion_id = self._legacy_companion_for_user(row["user_id"])
+                pair_id = make_pair_id(row["user_id"], companion_id)
                 existing = self.conn.execute(
                     """
                     SELECT id, fact_value
                     FROM user_facts
-                    WHERE user_id = ? AND fact_key = ? AND is_outdated = 0
+                    WHERE pair_id = ? AND fact_key = ? AND is_outdated = 0
                     LIMIT 1
                     """,
-                    (row["user_id"], row["key"]),
+                    (pair_id, row["key"]),
                 ).fetchone()
 
                 if existing and existing["fact_value"] == row["value"]:
@@ -118,11 +152,14 @@ class Database:
                 self.conn.execute(
                     """
                     INSERT INTO user_facts
-                        (user_id, category, fact_key, fact_value, confidence, source_type, created_at, updated_at, is_outdated)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+                        (user_id, pair_id, companion_id, category, fact_key, fact_value,
+                         confidence, source_type, created_at, updated_at, is_outdated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                     """,
                     (
                         row["user_id"],
+                        pair_id,
+                        companion_id,
                         row["category"],
                         row["key"],
                         row["value"],
@@ -143,16 +180,20 @@ class Database:
             ).fetchall()
 
             for row in rows:
+                companion_id = self._legacy_companion_for_user(row["user_id"])
+                pair_id = make_pair_id(row["user_id"], companion_id)
                 self.conn.execute(
                     """
                     INSERT INTO memory_index
-                        (user_id, chroma_id, title, content, emotion_tag, strength,
+                        (user_id, pair_id, companion_id, chroma_id, title, content, emotion_tag, strength,
                          emotional_weight, created_at, source_message_ids, conversation_id, archived)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id, chroma_id) DO NOTHING
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(pair_id, chroma_id) DO NOTHING
                     """,
                     (
                         row["user_id"],
+                        pair_id,
+                        companion_id,
                         row["id"],
                         self._build_memory_title(row["content"]),
                         row["content"],
@@ -165,6 +206,378 @@ class Database:
                         int(row["archived"] or 0),
                     ),
                 )
+
+        entity_id_map = self._migrate_legacy_entities()
+        self._migrate_legacy_entity_relationships(entity_id_map)
+        self._migrate_legacy_behavioral_patterns()
+        self._migrate_legacy_memory_index()
+        self._refresh_pair_memory_counts()
+        self._cleanup_migrated_legacy_tables()
+
+    def _migrate_pair_scoped_data(self):
+        self._backfill_conversation_pairs()
+        self._backfill_message_pairs()
+        for table_name in (
+            "user_facts",
+            "entities",
+            "entity_relationships",
+            "emotional_events",
+            "behavioral_patterns",
+            "narrative_summaries",
+            "memory_index",
+        ):
+            self._backfill_pair_columns_for_table(table_name)
+
+    def _drop_legacy_indexes(self):
+        self.conn.execute("DROP INDEX IF EXISTS idx_user_facts_active_unique")
+
+    def _legacy_pair_table_name(self, table_name: str) -> str:
+        return f"{table_name}_pair_legacy"
+
+    def _rename_table_for_rebuild(self, table_name: str, legacy_name: str):
+        if self._table_exists(legacy_name):
+            return
+        self.conn.execute(f"ALTER TABLE {table_name} RENAME TO {legacy_name}")
+        logger.info("Renamed legacy %s table to %s for canonical rebuild", table_name, legacy_name)
+
+    def _get_table_sql(self, table_name: str) -> str:
+        row = self.conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table_name,),
+        ).fetchone()
+        return (row["sql"] or "") if row else ""
+
+    def _table_needs_pair_rebuild(
+        self,
+        table_name: str,
+        expected_fragments: list[str],
+        legacy_fragments: list[str],
+    ) -> bool:
+        sql = self._get_table_sql(table_name).lower()
+        if not sql:
+            return False
+        return any(fragment not in sql for fragment in expected_fragments) or any(
+            fragment in sql for fragment in legacy_fragments
+        )
+
+    def _legacy_companion_for_user(self, user_id: str) -> str:
+        user = self.get_user(user_id) or {}
+        return user.get("character_id") or settings.DEFAULT_CHARACTER
+
+    def _sync_companion_rows(self):
+        if not self._table_exists("companions"):
+            return
+
+        rows = []
+        if self._table_exists("users") and "character_id" in self._get_table_columns("users"):
+            rows.extend(self.conn.execute("SELECT DISTINCT character_id FROM users").fetchall())
+        if self._table_exists("conversations") and "character_id" in self._get_table_columns("conversations"):
+            rows.extend(self.conn.execute("SELECT DISTINCT character_id FROM conversations").fetchall())
+
+        seen: set[str] = set()
+        for row in rows:
+            companion_id = row["character_id"]
+            if not companion_id or companion_id in seen:
+                continue
+            seen.add(companion_id)
+            self.conn.execute(
+                """
+                INSERT INTO companions (id, name, status, created_at, updated_at)
+                VALUES (?, ?, 'active', ?, ?)
+                ON CONFLICT(id) DO NOTHING
+                """,
+                (companion_id, companion_id.title(), _utcnow_iso(), _utcnow_iso()),
+            )
+
+    def _ensure_pair_rows_from_existing_data(self):
+        if not self._table_exists("relationship_pairs"):
+            return
+
+        user_rows = self.conn.execute(
+            "SELECT id, character_id, relationship_label FROM users"
+        ).fetchall()
+        for row in user_rows:
+            companion_id = row["character_id"] or settings.DEFAULT_CHARACTER
+            pair_id = make_pair_id(row["id"], companion_id)
+            self.conn.execute(
+                """
+                INSERT INTO relationship_pairs
+                    (id, user_id, companion_id, relationship_label, assignment_status,
+                     assignment_source, assignment_reason, is_primary, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'active', 'legacy_migration',
+                        'backfilled from pre-pair user data', 1, ?, ?)
+                ON CONFLICT(id) DO NOTHING
+                """,
+                (
+                    pair_id,
+                    row["id"],
+                    companion_id,
+                    row["relationship_label"] or "friend",
+                    _utcnow_iso(),
+                    _utcnow_iso(),
+                ),
+            )
+
+        if not self._table_exists("conversations"):
+            return
+
+        conversation_rows = self.conn.execute(
+            """
+            SELECT DISTINCT user_id, COALESCE(companion_id, character_id, ?) AS companion_id
+            FROM conversations
+            """,
+            (settings.DEFAULT_CHARACTER,),
+        ).fetchall()
+        for row in conversation_rows:
+            pair_id = make_pair_id(row["user_id"], row["companion_id"])
+            self.conn.execute(
+                """
+                INSERT INTO relationship_pairs
+                    (id, user_id, companion_id, relationship_label, assignment_status,
+                     assignment_source, assignment_reason, is_primary, created_at, updated_at)
+                VALUES (?, ?, ?, 'friend', 'active', 'legacy_migration',
+                        'backfilled from pre-pair conversation data', 0, ?, ?)
+                ON CONFLICT(id) DO NOTHING
+                """,
+                (
+                    pair_id,
+                    row["user_id"],
+                    row["companion_id"],
+                    _utcnow_iso(),
+                    _utcnow_iso(),
+                ),
+            )
+
+    def _migrate_legacy_entities(self) -> dict[int, int]:
+        legacy_table = self._legacy_pair_table_name("entities")
+        if not self._table_exists(legacy_table):
+            return {}
+
+        entity_id_map: dict[int, int] = {}
+        rows = self.conn.execute(f"SELECT * FROM {legacy_table} ORDER BY id ASC").fetchall()
+        for row in rows:
+            payload = dict(row)
+            companion_id = payload.get("companion_id") or self._legacy_companion_for_user(payload["user_id"])
+            pair_id = payload.get("pair_id") or make_pair_id(payload["user_id"], companion_id)
+            entity_id = self.upsert_entity(
+                user_id=payload["user_id"],
+                pair_id=pair_id,
+                companion_id=companion_id,
+                name=payload["name"],
+                entity_type=payload["type"],
+                description=payload.get("description"),
+                relationship_to_user=payload.get("relationship_to_user"),
+                emotional_valence=float(payload.get("emotional_valence") or 0.0),
+            )
+            self.conn.execute(
+                """
+                UPDATE entities
+                SET first_mentioned_at = COALESCE(?, first_mentioned_at),
+                    last_mentioned_at = COALESCE(?, last_mentioned_at),
+                    mention_count = MAX(mention_count, ?)
+                WHERE id = ?
+                """,
+                (
+                    payload.get("first_mentioned_at"),
+                    payload.get("last_mentioned_at"),
+                    int(payload.get("mention_count") or 1),
+                    entity_id,
+                ),
+            )
+            entity_id_map[int(payload["id"])] = entity_id
+        return entity_id_map
+
+    def _migrate_legacy_entity_relationships(self, entity_id_map: dict[int, int]):
+        legacy_table = self._legacy_pair_table_name("entity_relationships")
+        if not self._table_exists(legacy_table):
+            return
+
+        rows = self.conn.execute(f"SELECT * FROM {legacy_table} ORDER BY id ASC").fetchall()
+        for row in rows:
+            payload = dict(row)
+            entity_a_id = entity_id_map.get(int(payload["entity_a_id"]))
+            entity_b_id = entity_id_map.get(int(payload["entity_b_id"]))
+            if not entity_a_id or not entity_b_id:
+                continue
+            companion_id = payload.get("companion_id") or self._legacy_companion_for_user(payload["user_id"])
+            pair_id = payload.get("pair_id") or make_pair_id(payload["user_id"], companion_id)
+            self.save_entity_relationship(
+                user_id=payload["user_id"],
+                pair_id=pair_id,
+                companion_id=companion_id,
+                entity_a_id=entity_a_id,
+                entity_b_id=entity_b_id,
+                relationship_type=payload.get("relationship_type"),
+                description=payload.get("description"),
+            )
+
+    def _migrate_legacy_behavioral_patterns(self):
+        legacy_table = self._legacy_pair_table_name("behavioral_patterns")
+        if not self._table_exists(legacy_table):
+            return
+
+        rows = self.conn.execute(f"SELECT * FROM {legacy_table} ORDER BY id ASC").fetchall()
+        for row in rows:
+            payload = dict(row)
+            companion_id = payload.get("companion_id") or self._legacy_companion_for_user(payload["user_id"])
+            pair_id = payload.get("pair_id") or make_pair_id(payload["user_id"], companion_id)
+            self.upsert_behavioral_pattern(
+                user_id=payload["user_id"],
+                pair_id=pair_id,
+                companion_id=companion_id,
+                pattern_type=payload["pattern_type"],
+                description=payload["description"],
+                evidence_count=int(payload.get("evidence_count") or 1),
+                confidence=float(payload.get("confidence") or 0.5),
+                source=payload.get("source") or "legacy_migration",
+                is_active=bool(payload.get("is_active", 1)),
+            )
+
+    def _migrate_legacy_memory_index(self):
+        legacy_table = self._legacy_pair_table_name("memory_index")
+        if not self._table_exists(legacy_table):
+            return
+
+        rows = self.conn.execute(f"SELECT * FROM {legacy_table} ORDER BY id ASC").fetchall()
+        for row in rows:
+            payload = dict(row)
+            companion_id = payload.get("companion_id") or self._legacy_companion_for_user(payload["user_id"])
+            pair_id = payload.get("pair_id") or make_pair_id(payload["user_id"], companion_id)
+            self.conn.execute(
+                """
+                INSERT INTO memory_index
+                    (user_id, pair_id, companion_id, chroma_id, title, content, emotion_tag,
+                     strength, emotional_weight, created_at, last_retrieved_at, retrieval_count,
+                     source_message_ids, conversation_id, archived)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(pair_id, chroma_id) DO UPDATE SET
+                    title = COALESCE(excluded.title, memory_index.title),
+                    content = COALESCE(excluded.content, memory_index.content),
+                    emotion_tag = COALESCE(excluded.emotion_tag, memory_index.emotion_tag),
+                    strength = MAX(memory_index.strength, excluded.strength),
+                    emotional_weight = MAX(memory_index.emotional_weight, excluded.emotional_weight),
+                    last_retrieved_at = COALESCE(excluded.last_retrieved_at, memory_index.last_retrieved_at),
+                    retrieval_count = MAX(memory_index.retrieval_count, excluded.retrieval_count),
+                    source_message_ids = COALESCE(excluded.source_message_ids, memory_index.source_message_ids),
+                    conversation_id = COALESCE(excluded.conversation_id, memory_index.conversation_id),
+                    archived = MIN(memory_index.archived, excluded.archived)
+                """,
+                (
+                    payload["user_id"],
+                    pair_id,
+                    companion_id,
+                    payload["chroma_id"],
+                    payload.get("title"),
+                    payload.get("content"),
+                    payload.get("emotion_tag"),
+                    float(payload.get("strength") or 1.0),
+                    float(payload.get("emotional_weight") or 0.5),
+                    payload.get("created_at") or _utcnow_iso(),
+                    payload.get("last_retrieved_at"),
+                    int(payload.get("retrieval_count") or 0),
+                    payload.get("source_message_ids"),
+                    payload.get("conversation_id"),
+                    int(payload.get("archived") or 0),
+                ),
+            )
+
+    def _refresh_pair_memory_counts(self):
+        if not self._table_exists("relationship_pairs") or not self._table_exists("memory_index"):
+            return
+        self.conn.execute(
+            """
+            UPDATE relationship_pairs
+            SET memory_count = COALESCE(
+                (
+                    SELECT COUNT(*)
+                    FROM memory_index
+                    WHERE memory_index.pair_id = relationship_pairs.id
+                      AND memory_index.archived = 0
+                ),
+                0
+            )
+            """
+        )
+
+    def _cleanup_migrated_legacy_tables(self):
+        legacy_tables = ["user_facts_legacy", *[self._legacy_pair_table_name(name) for name in PAIR_REBUILD_TABLES]]
+        for table_name in legacy_tables:
+            if self._table_exists(table_name):
+                self.conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+                logger.info("Dropped migrated legacy table %s", table_name)
+
+    def _backfill_conversation_pairs(self):
+        if not self._table_exists("conversations"):
+            return
+
+        rows = self.conn.execute(
+            "SELECT id, user_id, pair_id, companion_id, character_id FROM conversations"
+        ).fetchall()
+        for row in rows:
+            companion_id = row["companion_id"] or row["character_id"] or self._legacy_companion_for_user(row["user_id"])
+            pair_id = row["pair_id"] or make_pair_id(row["user_id"], companion_id)
+            self.conn.execute(
+                """
+                UPDATE conversations
+                SET pair_id = COALESCE(pair_id, ?),
+                    companion_id = COALESCE(companion_id, ?),
+                    character_id = COALESCE(character_id, ?)
+                WHERE id = ?
+                """,
+                (pair_id, companion_id, companion_id, row["id"]),
+            )
+
+    def _backfill_message_pairs(self):
+        if not self._table_exists("messages"):
+            return
+
+        rows = self.conn.execute(
+            """
+            SELECT m.id, m.user_id, m.pair_id, m.companion_id, m.conversation_id,
+                   c.pair_id AS conv_pair_id, c.companion_id AS conv_companion_id, c.character_id
+            FROM messages m
+            LEFT JOIN conversations c ON c.id = m.conversation_id
+            """
+        ).fetchall()
+        for row in rows:
+            companion_id = (
+                row["companion_id"]
+                or row["conv_companion_id"]
+                or row["character_id"]
+                or self._legacy_companion_for_user(row["user_id"])
+            )
+            pair_id = row["pair_id"] or row["conv_pair_id"] or make_pair_id(row["user_id"], companion_id)
+            self.conn.execute(
+                """
+                UPDATE messages
+                SET pair_id = COALESCE(pair_id, ?),
+                    companion_id = COALESCE(companion_id, ?)
+                WHERE id = ?
+                """,
+                (pair_id, companion_id, row["id"]),
+            )
+
+    def _backfill_pair_columns_for_table(self, table_name: str):
+        if not self._table_exists(table_name):
+            return
+
+        columns = self._get_table_columns(table_name)
+        if "pair_id" not in columns or "companion_id" not in columns:
+            return
+
+        rows = self.conn.execute(f"SELECT rowid AS _rowid_, * FROM {table_name}").fetchall()
+        for row in rows:
+            companion_id = row["companion_id"] or self._legacy_companion_for_user(row["user_id"])
+            pair_id = row["pair_id"] or make_pair_id(row["user_id"], companion_id)
+            self.conn.execute(
+                f"""
+                UPDATE {table_name}
+                SET pair_id = COALESCE(pair_id, ?),
+                    companion_id = COALESCE(companion_id, ?)
+                WHERE rowid = ?
+                """,
+                (pair_id, companion_id, row["_rowid_"]),
+            )
 
     def _ensure_columns(self):
         required_columns = {
@@ -179,19 +592,58 @@ class Database:
                 "character_id TEXT DEFAULT 'nova'",
                 "relationship_label TEXT DEFAULT 'friend'",
                 "total_sessions INTEGER DEFAULT 0",
-                "emotional_baseline REAL DEFAULT 0.5",
-                "baseline_sample_size INTEGER DEFAULT 0",
-                "current_narrative TEXT",
-                "narrative_updated_at DATETIME",
+            ],
+            "companions": [
+                "status TEXT DEFAULT 'active'",
+                "archetype TEXT",
+                "summary TEXT",
+                "introduction_style TEXT",
+                "relationship_label TEXT DEFAULT 'friend'",
+                "match_weight INTEGER DEFAULT 1",
+                "sort_order INTEGER DEFAULT 0",
+                "created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
+                "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",
+            ],
+            "relationship_pairs": [
+                "relationship_label TEXT DEFAULT 'friend'",
+                "assignment_status TEXT DEFAULT 'assigned'",
+                "assignment_source TEXT DEFAULT 'matcher'",
+                "assignment_reason TEXT",
+                "is_primary INTEGER DEFAULT 0",
+                "introduced_at DATETIME",
+                "first_session_at DATETIME",
+                "last_session_started_at DATETIME",
+                "last_interaction_at DATETIME",
+                "last_user_message_at DATETIME",
+                "last_companion_message_at DATETIME",
+                "closeness_score REAL DEFAULT 0.18",
+                "trust_score REAL DEFAULT 0.18",
+                "openness_score REAL DEFAULT 0.12",
+                "comfort_score REAL DEFAULT 0.14",
+                "rhythm_score REAL DEFAULT 0.10",
+                "topic_familiarity_score REAL DEFAULT 0.05",
+                "total_sessions INTEGER DEFAULT 0",
+                "total_messages INTEGER DEFAULT 0",
+                "memory_count INTEGER DEFAULT 0",
+                "current_stage TEXT DEFAULT 'new'",
+                "created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
+                "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",
             ],
             "conversations": [
+                "pair_id TEXT",
+                "companion_id TEXT",
                 "character_id TEXT DEFAULT 'nova'",
+                "last_message_at DATETIME",
+                "session_number INTEGER DEFAULT 1",
+                "session_status TEXT DEFAULT 'active'",
                 "emotional_arc TEXT",
                 "topics_discussed TEXT",
                 "session_summary TEXT",
                 "summary TEXT",
             ],
             "messages": [
+                "pair_id TEXT",
+                "companion_id TEXT",
                 "emotional_tone TEXT",
                 "emotional_intensity REAL DEFAULT 0.0",
                 "topics TEXT",
@@ -200,18 +652,38 @@ class Database:
                 "memory_extracted INTEGER DEFAULT 0",
             ],
             "user_facts": [
+                "pair_id TEXT",
+                "companion_id TEXT",
                 "source_message_id INTEGER",
                 "source_type TEXT DEFAULT 'extracted'",
                 "is_outdated INTEGER DEFAULT 0",
                 "superseded_by_id INTEGER",
             ],
+            "entities": [
+                "pair_id TEXT",
+                "companion_id TEXT",
+            ],
+            "entity_relationships": [
+                "pair_id TEXT",
+                "companion_id TEXT",
+            ],
             "behavioral_patterns": [
+                "pair_id TEXT",
+                "companion_id TEXT",
                 "source TEXT DEFAULT 'detector'",
             ],
             "emotional_events": [
+                "pair_id TEXT",
+                "companion_id TEXT",
                 "valence REAL DEFAULT 0.0",
             ],
+            "narrative_summaries": [
+                "pair_id TEXT",
+                "companion_id TEXT",
+            ],
             "memory_index": [
+                "pair_id TEXT",
+                "companion_id TEXT",
                 "title TEXT",
                 "content TEXT",
                 "emotion_tag TEXT",
@@ -269,13 +741,26 @@ class Database:
     # User operations
     # ------------------------------------------------------------------
 
-    def get_or_create_user(self, user_id: str, character_id: str = "nova") -> dict:
+    def get_or_create_user(
+        self,
+        user_id: str,
+        character_id: str = "nova",
+        display_name: Optional[str] = None,
+        email: Optional[str] = None,
+    ) -> dict:
         row = self.conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
 
         if row:
             self.conn.execute(
-                "UPDATE users SET last_seen = ?, character_id = COALESCE(character_id, ?) WHERE id = ?",
-                (_utcnow_iso(), character_id, user_id),
+                """
+                UPDATE users
+                SET last_seen = ?,
+                    character_id = COALESCE(character_id, ?),
+                    display_name = COALESCE(?, display_name),
+                    email = COALESCE(?, email)
+                WHERE id = ?
+                """,
+                (_utcnow_iso(), character_id, display_name, email, user_id),
             )
             return dict(
                 self.conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -286,10 +771,10 @@ class Database:
             """
             INSERT INTO users
                 (id, created_at, last_seen, character_id, total_sessions, total_messages,
-                 emotional_baseline, baseline_sample_size)
-            VALUES (?, ?, ?, ?, 0, 0, 0.5, 0)
+                 display_name, email)
+            VALUES (?, ?, ?, ?, 0, 0, ?, ?)
             """,
-            (user_id, now, now, character_id),
+            (user_id, now, now, character_id, display_name, email),
         )
         logger.info("New user created: %s", user_id)
         return dict(self.conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
@@ -329,12 +814,221 @@ class Database:
         return int(row["total_sessions"]) if row else 0
 
     # ------------------------------------------------------------------
+    # Companion registry + relationship pairs
+    # ------------------------------------------------------------------
+
+    def upsert_companion(
+        self,
+        companion_id: str,
+        name: str,
+        archetype: Optional[str] = None,
+        summary: Optional[str] = None,
+        introduction_style: Optional[str] = None,
+        relationship_label: str = "friend",
+        match_weight: int = 1,
+        sort_order: int = 0,
+    ):
+        now = _utcnow_iso()
+        self.conn.execute(
+            """
+            INSERT INTO companions
+                (id, name, status, archetype, summary, introduction_style, relationship_label,
+                 match_weight, sort_order, created_at, updated_at)
+            VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                status = 'active',
+                archetype = COALESCE(excluded.archetype, companions.archetype),
+                summary = COALESCE(excluded.summary, companions.summary),
+                introduction_style = COALESCE(excluded.introduction_style, companions.introduction_style),
+                relationship_label = COALESCE(excluded.relationship_label, companions.relationship_label),
+                match_weight = excluded.match_weight,
+                sort_order = excluded.sort_order,
+                updated_at = excluded.updated_at
+            """,
+            (
+                companion_id,
+                name,
+                archetype,
+                summary,
+                introduction_style,
+                relationship_label,
+                max(1, int(match_weight)),
+                sort_order,
+                now,
+                now,
+            ),
+        )
+
+    def get_companion(self, companion_id: str) -> Optional[dict]:
+        return self._row_to_dict(
+            self.conn.execute("SELECT * FROM companions WHERE id = ?", (companion_id,)).fetchone()
+        )
+
+    def list_companions(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM companions WHERE status = 'active' ORDER BY sort_order ASC, name ASC"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_pair_by_id(self, pair_id: str) -> Optional[dict]:
+        return self._row_to_dict(
+            self.conn.execute("SELECT * FROM relationship_pairs WHERE id = ?", (pair_id,)).fetchone()
+        )
+
+    def get_pair(self, user_id: str, companion_id: str) -> Optional[dict]:
+        return self._row_to_dict(
+            self.conn.execute(
+                """
+                SELECT *
+                FROM relationship_pairs
+                WHERE user_id = ? AND companion_id = ?
+                LIMIT 1
+                """,
+                (user_id, companion_id),
+            ).fetchone()
+        )
+
+    def get_primary_pair(self, user_id: str) -> Optional[dict]:
+        return self._row_to_dict(
+            self.conn.execute(
+                """
+                SELECT *
+                FROM relationship_pairs
+                WHERE user_id = ?
+                ORDER BY is_primary DESC, updated_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+        )
+
+    def list_pairs_for_user(self, user_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM relationship_pairs
+            WHERE user_id = ?
+            ORDER BY is_primary DESC, updated_at DESC
+            """,
+            (user_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def set_primary_pair(self, pair_id: str):
+        pair = self.get_pair_by_id(pair_id)
+        if not pair:
+            return
+        self.conn.execute(
+            "UPDATE relationship_pairs SET is_primary = 0 WHERE user_id = ?",
+            (pair["user_id"],),
+        )
+        self.conn.execute(
+            "UPDATE relationship_pairs SET is_primary = 1, updated_at = ? WHERE id = ?",
+            (_utcnow_iso(), pair_id),
+        )
+        self.conn.execute(
+            "UPDATE users SET character_id = ?, relationship_label = COALESCE(relationship_label, ?) WHERE id = ?",
+            (pair["companion_id"], pair.get("relationship_label") or "friend", pair["user_id"]),
+        )
+
+    def get_or_create_relationship_pair(
+        self,
+        user_id: str,
+        companion_id: str,
+        relationship_label: str = "friend",
+        assignment_source: str = "matcher",
+        assignment_reason: Optional[str] = None,
+    ) -> dict:
+        pair = self.get_pair(user_id, companion_id)
+        if pair:
+            self.conn.execute(
+                """
+                UPDATE relationship_pairs
+                SET updated_at = ?,
+                    relationship_label = COALESCE(?, relationship_label),
+                    assignment_source = COALESCE(?, assignment_source),
+                    assignment_reason = COALESCE(?, assignment_reason)
+                WHERE id = ?
+                """,
+                (_utcnow_iso(), relationship_label, assignment_source, assignment_reason, pair["id"]),
+            )
+            return dict(
+                self.conn.execute("SELECT * FROM relationship_pairs WHERE id = ?", (pair["id"],)).fetchone()
+            )
+
+        pair_id = make_pair_id(user_id, companion_id)
+        now = _utcnow_iso()
+        self.conn.execute(
+            """
+            INSERT INTO relationship_pairs
+                (id, user_id, companion_id, relationship_label, assignment_status,
+                 assignment_source, assignment_reason, is_primary, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'assigned', ?, ?, 0, ?, ?)
+            """,
+            (
+                pair_id,
+                user_id,
+                companion_id,
+                relationship_label,
+                assignment_source,
+                assignment_reason,
+                now,
+                now,
+            ),
+        )
+        return dict(self.conn.execute("SELECT * FROM relationship_pairs WHERE id = ?", (pair_id,)).fetchone())
+
+    def increment_pair_stats(self, pair_id: str, messages: int = 1, sessions: int = 0):
+        self.conn.execute(
+            """
+            UPDATE relationship_pairs
+            SET total_messages = total_messages + ?,
+                total_sessions = total_sessions + ?,
+                updated_at = ?,
+                last_interaction_at = CASE
+                    WHEN ? > 0 THEN ?
+                    ELSE last_interaction_at
+                END
+            WHERE id = ?
+            """,
+            (messages, sessions, _utcnow_iso(), messages, _utcnow_iso(), pair_id),
+        )
+
+    def touch_pair_message(self, pair_id: str, role: str):
+        now = _utcnow_iso()
+        if role == "user":
+            self.conn.execute(
+                """
+                UPDATE relationship_pairs
+                SET last_user_message_at = ?, last_interaction_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (now, now, now, pair_id),
+            )
+        else:
+            self.conn.execute(
+                """
+                UPDATE relationship_pairs
+                SET last_companion_message_at = ?, last_interaction_at = ?, updated_at = ?,
+                    assignment_status = CASE
+                        WHEN assignment_status IN ('assigned', 'introduced') THEN 'active'
+                        ELSE assignment_status
+                    END
+                WHERE id = ?
+                """,
+                (now, now, now, pair_id),
+            )
+
+    # ------------------------------------------------------------------
     # Facts
     # ------------------------------------------------------------------
 
     def save_user_fact(
         self,
         user_id: str,
+        pair_id: str,
+        companion_id: str,
         category: str,
         key: str,
         value: str,
@@ -346,11 +1040,11 @@ class Database:
         current = self.conn.execute(
             """
             SELECT * FROM user_facts
-            WHERE user_id = ? AND fact_key = ? AND is_outdated = 0
+            WHERE pair_id = ? AND fact_key = ? AND is_outdated = 0
             ORDER BY updated_at DESC
             LIMIT 1
             """,
-            (user_id, key),
+            (pair_id, key),
         ).fetchone()
 
         if current:
@@ -388,12 +1082,14 @@ class Database:
         cursor = self.conn.execute(
             """
             INSERT INTO user_facts
-                (user_id, category, fact_key, fact_value, confidence, source_message_id,
-                 source_type, created_at, updated_at, is_outdated)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                (user_id, pair_id, companion_id, category, fact_key, fact_value, confidence,
+                 source_message_id, source_type, created_at, updated_at, is_outdated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """,
             (
                 user_id,
+                pair_id,
+                companion_id,
                 category,
                 key,
                 value,
@@ -414,75 +1110,154 @@ class Database:
 
         return new_id
 
-    def get_user_facts(self, user_id: str) -> dict[str, str]:
-        rows = self.conn.execute(
-            """
-            SELECT fact_key, fact_value
-            FROM user_facts
-            WHERE user_id = ? AND is_outdated = 0
-            ORDER BY updated_at DESC
-            """,
-            (user_id,),
-        ).fetchall()
+    def get_user_facts(self, user_id: str, pair_id: Optional[str] = None) -> dict[str, str]:
+        if pair_id:
+            rows = self.conn.execute(
+                """
+                SELECT fact_key, fact_value
+                FROM user_facts
+                WHERE pair_id = ? AND is_outdated = 0
+                ORDER BY updated_at DESC
+                """,
+                (pair_id,),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT fact_key, fact_value
+                FROM user_facts
+                WHERE user_id = ? AND is_outdated = 0
+                ORDER BY updated_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
         return {row["fact_key"]: row["fact_value"] for row in rows}
 
-    def get_user_fact_rows(self, user_id: str, limit: int = 12) -> list[dict]:
-        rows = self.conn.execute(
-            """
-            SELECT *
-            FROM user_facts
-            WHERE user_id = ? AND is_outdated = 0
-            ORDER BY confidence DESC, updated_at DESC
-            LIMIT ?
-            """,
-            (user_id, limit),
-        ).fetchall()
+    def get_user_fact_rows(self, user_id: str, pair_id: Optional[str] = None, limit: int = 12) -> list[dict]:
+        if pair_id:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM user_facts
+                WHERE pair_id = ? AND is_outdated = 0
+                ORDER BY confidence DESC, updated_at DESC
+                LIMIT ?
+                """,
+                (pair_id, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM user_facts
+                WHERE user_id = ? AND is_outdated = 0
+                ORDER BY confidence DESC, updated_at DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
         return [dict(row) for row in rows]
 
-    def get_user_facts_by_category(self, user_id: str, category: str) -> dict[str, str]:
-        rows = self.conn.execute(
-            """
-            SELECT fact_key, fact_value
-            FROM user_facts
-            WHERE user_id = ? AND category = ? AND is_outdated = 0
-            ORDER BY updated_at DESC
-            """,
-            (user_id, category),
-        ).fetchall()
+    def get_user_facts_by_category(
+        self,
+        user_id: str,
+        category: str,
+        pair_id: Optional[str] = None,
+    ) -> dict[str, str]:
+        if pair_id:
+            rows = self.conn.execute(
+                """
+                SELECT fact_key, fact_value
+                FROM user_facts
+                WHERE pair_id = ? AND category = ? AND is_outdated = 0
+                ORDER BY updated_at DESC
+                """,
+                (pair_id, category),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT fact_key, fact_value
+                FROM user_facts
+                WHERE user_id = ? AND category = ? AND is_outdated = 0
+                ORDER BY updated_at DESC
+                """,
+                (user_id, category),
+            ).fetchall()
         return {row["fact_key"]: row["fact_value"] for row in rows}
 
     # ------------------------------------------------------------------
     # Conversations
     # ------------------------------------------------------------------
 
-    def create_conversation(self, user_id: str, character_id: str = "nova") -> str:
+    def create_conversation(self, user_id: str, pair_id: str, companion_id: str) -> str:
         conv_id = str(uuid.uuid4())
+        pair = self.get_pair_by_id(pair_id) or {}
+        session_number = int(pair.get("total_sessions") or 0) + 1
+        now = _utcnow_iso()
+        existing_id = self.get_current_conversation(user_id, pair_id=pair_id)
+        if existing_id:
+            self.close_conversation(existing_id)
         self.conn.execute(
             """
-            INSERT INTO conversations (id, user_id, character_id, started_at, message_count)
-            VALUES (?, ?, ?, ?, 0)
+            INSERT INTO conversations
+                (id, user_id, pair_id, companion_id, character_id, started_at,
+                 last_message_at, session_number, session_status, message_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 0)
             """,
-            (conv_id, user_id, character_id, _utcnow_iso()),
+            (conv_id, user_id, pair_id, companion_id, companion_id, now, now, session_number),
         )
         self.increment_user_stats(user_id, messages=0, sessions=1)
+        self.increment_pair_stats(pair_id, messages=0, sessions=1)
+        self.conn.execute(
+            """
+            UPDATE relationship_pairs
+            SET first_session_at = COALESCE(first_session_at, ?),
+                last_session_started_at = ?,
+                assignment_status = CASE
+                    WHEN assignment_status = 'assigned' THEN 'introduced'
+                    ELSE assignment_status
+                END,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (now, now, now, pair_id),
+        )
         return conv_id
 
-    def get_current_conversation(self, user_id: str) -> Optional[str]:
-        row = self.conn.execute(
-            """
-            SELECT id
-            FROM conversations
-            WHERE user_id = ? AND ended_at IS NULL
-            ORDER BY started_at DESC
-            LIMIT 1
-            """,
-            (user_id,),
-        ).fetchone()
+    def get_current_conversation(self, user_id: str, pair_id: Optional[str] = None) -> Optional[str]:
+        if pair_id:
+            row = self.conn.execute(
+                """
+                SELECT id
+                FROM conversations
+                WHERE user_id = ? AND pair_id = ? AND ended_at IS NULL
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                (user_id, pair_id),
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                """
+                SELECT id
+                FROM conversations
+                WHERE user_id = ? AND ended_at IS NULL
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
         return row["id"] if row else None
+
+    def get_conversation(self, conversation_id: str) -> Optional[dict]:
+        return self._row_to_dict(
+            self.conn.execute("SELECT * FROM conversations WHERE id = ?", (conversation_id,)).fetchone()
+        )
 
     def close_conversation(self, conversation_id: str):
         self.conn.execute(
-            "UPDATE conversations SET ended_at = ? WHERE id = ?",
+            "UPDATE conversations SET ended_at = ?, session_status = 'closed' WHERE id = ?",
             (_utcnow_iso(), conversation_id),
         )
 
@@ -525,6 +1300,8 @@ class Database:
         self,
         conversation_id: str,
         user_id: str,
+        pair_id: str,
+        companion_id: str,
         role: str,
         content: str,
         emotional_tone: Optional[str] = None,
@@ -535,13 +1312,15 @@ class Database:
         cursor = self.conn.execute(
             """
             INSERT INTO messages
-                (conversation_id, user_id, role, content, created_at, emotional_tone,
-                 emotional_intensity, topics, hour_of_day, day_of_week)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (conversation_id, user_id, pair_id, companion_id, role, content, created_at,
+                 emotional_tone, emotional_intensity, topics, hour_of_day, day_of_week)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 conversation_id,
                 user_id,
+                pair_id,
+                companion_id,
                 role,
                 content,
                 now.isoformat(timespec="seconds"),
@@ -553,10 +1332,17 @@ class Database:
             ),
         )
         self.conn.execute(
-            "UPDATE conversations SET message_count = message_count + 1 WHERE id = ?",
-            (conversation_id,),
+            """
+            UPDATE conversations
+            SET message_count = message_count + 1,
+                last_message_at = ?
+            WHERE id = ?
+            """,
+            (now.isoformat(timespec="seconds"), conversation_id),
         )
         self.increment_user_stats(user_id, messages=1)
+        self.increment_pair_stats(pair_id, messages=1, sessions=0)
+        self.touch_pair_message(pair_id, role)
         return int(cursor.lastrowid)
 
     def annotate_message(
@@ -585,6 +1371,7 @@ class Database:
     def get_recent_messages(
         self,
         user_id: str,
+        pair_id: Optional[str] = None,
         limit: Optional[int] = None,
         conversation_id: Optional[str] = None,
     ) -> list[dict]:
@@ -599,6 +1386,17 @@ class Database:
                 LIMIT ?
                 """,
                 (conversation_id, n),
+            ).fetchall()
+        elif pair_id:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM messages
+                WHERE pair_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (pair_id, n),
             ).fetchall()
         else:
             rows = self.conn.execute(
@@ -617,6 +1415,7 @@ class Database:
     def get_unextracted_messages(
         self,
         user_id: str,
+        pair_id: Optional[str] = None,
         conversation_id: Optional[str] = None,
         limit: int = 20,
     ) -> list[dict]:
@@ -630,6 +1429,17 @@ class Database:
                 LIMIT ?
                 """,
                 (user_id, conversation_id, limit),
+            ).fetchall()
+        elif pair_id:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM messages
+                WHERE pair_id = ? AND memory_extracted = 0
+                ORDER BY created_at ASC
+                LIMIT ?
+                """,
+                (pair_id, limit),
             ).fetchall()
         else:
             rows = self.conn.execute(
@@ -660,6 +1470,8 @@ class Database:
     def upsert_entity(
         self,
         user_id: str,
+        pair_id: str,
+        companion_id: str,
         name: str,
         entity_type: str,
         description: Optional[str] = None,
@@ -668,8 +1480,8 @@ class Database:
     ) -> int:
         now = _utcnow_iso()
         existing = self.conn.execute(
-            "SELECT * FROM entities WHERE user_id = ? AND LOWER(name) = LOWER(?)",
-            (user_id, name),
+            "SELECT * FROM entities WHERE pair_id = ? AND LOWER(name) = LOWER(?)",
+            (pair_id, name),
         ).fetchone()
 
         if existing:
@@ -702,12 +1514,14 @@ class Database:
         cursor = self.conn.execute(
             """
             INSERT INTO entities
-                (user_id, name, type, description, relationship_to_user,
+                (user_id, pair_id, companion_id, name, type, description, relationship_to_user,
                  emotional_valence, first_mentioned_at, last_mentioned_at, mention_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
             """,
             (
                 user_id,
+                pair_id,
+                companion_id,
                 name,
                 entity_type,
                 description,
@@ -719,16 +1533,16 @@ class Database:
         )
         return int(cursor.lastrowid)
 
-    def get_entities_for_context(self, user_id: str, query_text: str, limit: int = 6) -> list[dict]:
+    def get_entities_for_context(self, user_id: str, pair_id: Optional[str], query_text: str, limit: int = 6) -> list[dict]:
         rows = self.conn.execute(
             """
             SELECT *
             FROM entities
-            WHERE user_id = ?
+            WHERE pair_id = ?
             ORDER BY mention_count DESC, last_mentioned_at DESC
             LIMIT 25
             """,
-            (user_id,),
+            (pair_id or make_pair_id(user_id, settings.DEFAULT_CHARACTER),),
         ).fetchall()
         entities = [dict(row) for row in rows]
         lowered_query = query_text.lower()
@@ -739,6 +1553,8 @@ class Database:
     def save_entity_relationship(
         self,
         user_id: str,
+        pair_id: str,
+        companion_id: str,
         entity_a_id: int,
         entity_b_id: int,
         relationship_type: Optional[str],
@@ -748,27 +1564,27 @@ class Database:
         self.conn.execute(
             """
             INSERT INTO entity_relationships
-                (user_id, entity_a_id, entity_b_id, relationship_type, description, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, entity_a_id, entity_b_id, relationship_type) DO UPDATE SET
+                (user_id, pair_id, companion_id, entity_a_id, entity_b_id, relationship_type, description, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(pair_id, entity_a_id, entity_b_id, relationship_type) DO UPDATE SET
                 description = COALESCE(excluded.description, entity_relationships.description),
                 updated_at = excluded.updated_at
             """,
-            (user_id, entity_a_id, entity_b_id, relationship_type, description, now, now),
+            (user_id, pair_id, companion_id, entity_a_id, entity_b_id, relationship_type, description, now, now),
         )
 
-    def get_relationships_for_entities(self, user_id: str, entity_ids: list[int], limit: int = 6) -> list[dict]:
+    def get_relationships_for_entities(self, user_id: str, pair_id: str, entity_ids: list[int], limit: int = 6) -> list[dict]:
         if not entity_ids:
             return []
         placeholders = ",".join("?" for _ in entity_ids)
-        params: list[Any] = [user_id, *entity_ids, *entity_ids, limit]
+        params: list[Any] = [pair_id, *entity_ids, *entity_ids, limit]
         rows = self.conn.execute(
             f"""
             SELECT rel.*, a.name AS entity_a_name, b.name AS entity_b_name
             FROM entity_relationships rel
             JOIN entities a ON a.id = rel.entity_a_id
             JOIN entities b ON b.id = rel.entity_b_id
-            WHERE rel.user_id = ?
+            WHERE rel.pair_id = ?
               AND (rel.entity_a_id IN ({placeholders}) OR rel.entity_b_id IN ({placeholders}))
             ORDER BY rel.updated_at DESC
             LIMIT ?
@@ -784,6 +1600,8 @@ class Database:
     def log_emotional_event(
         self,
         user_id: str,
+        pair_id: str,
+        companion_id: str,
         message_id: Optional[int],
         emotion: str,
         intensity: float,
@@ -795,12 +1613,14 @@ class Database:
         cursor = self.conn.execute(
             """
             INSERT INTO emotional_events
-                (user_id, message_id, emotion, intensity, trigger_topic, trigger_entity,
-                 valence, created_at, hour_of_day, day_of_week)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (user_id, pair_id, companion_id, message_id, emotion, intensity, trigger_topic,
+                 trigger_entity, valence, created_at, hour_of_day, day_of_week)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user_id,
+                pair_id,
+                companion_id,
                 message_id,
                 emotion,
                 intensity,
@@ -812,44 +1632,39 @@ class Database:
                 _day_of_week(now),
             ),
         )
-
-        user = self.get_user(user_id) or {}
-        sample_size = int(user.get("baseline_sample_size") or 0)
-        current_baseline = float(user.get("emotional_baseline") or 0.5)
-        normalized_valence = max(0.0, min(1.0, (valence + 1.0) / 2.0))
-        next_sample_size = sample_size + 1
-        next_baseline = ((current_baseline * sample_size) + normalized_valence) / next_sample_size
-
-        self.conn.execute(
-            """
-            UPDATE users
-            SET emotional_baseline = ?, baseline_sample_size = ?
-            WHERE id = ?
-            """,
-            (round(next_baseline, 4), next_sample_size, user_id),
-        )
         return int(cursor.lastrowid)
 
-    def get_recent_emotional_events(self, user_id: str, limit: int = 8) -> list[dict]:
-        rows = self.conn.execute(
-            """
-            SELECT *
-            FROM emotional_events
-            WHERE user_id = ?
-            ORDER BY created_at DESC
-            LIMIT ?
-            """,
-            (user_id, limit),
-        ).fetchall()
+    def get_recent_emotional_events(self, user_id: str, pair_id: Optional[str] = None, limit: int = 8) -> list[dict]:
+        if pair_id:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM emotional_events
+                WHERE pair_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (pair_id, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM emotional_events
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
         return [dict(row) for row in rows]
 
-    def get_emotional_summary(self, user_id: str, limit: int = 10) -> dict:
-        user = self.get_user(user_id) or {}
-        events = self.get_recent_emotional_events(user_id, limit=limit)
+    def get_emotional_summary(self, user_id: str, pair_id: Optional[str] = None, limit: int = 10) -> dict:
+        events = self.get_recent_emotional_events(user_id, pair_id=pair_id, limit=limit)
         if not events:
             return {
-                "baseline": float(user.get("emotional_baseline") or 0.5),
-                "sample_size": int(user.get("baseline_sample_size") or 0),
+                "baseline": None,
+                "sample_size": 0,
                 "recent_average": None,
                 "direction": None,
                 "dominant_emotions": [],
@@ -865,8 +1680,8 @@ class Database:
         dominant = [emotion for emotion, _ in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:3]]
 
         return {
-            "baseline": float(user.get("emotional_baseline") or 0.5),
-            "sample_size": int(user.get("baseline_sample_size") or 0),
+            "baseline": round(sum(normalized) / len(normalized), 3),
+            "sample_size": len(events),
             "recent_average": recent_average,
             "direction": direction,
             "dominant_emotions": dominant,
@@ -897,6 +1712,8 @@ class Database:
     def upsert_behavioral_pattern(
         self,
         user_id: str,
+        pair_id: str,
+        companion_id: str,
         pattern_type: str,
         description: str,
         evidence_count: int = 1,
@@ -909,10 +1726,10 @@ class Database:
             """
             SELECT *
             FROM behavioral_patterns
-            WHERE user_id = ? AND pattern_type = ? AND description = ?
+            WHERE pair_id = ? AND pattern_type = ? AND description = ?
             LIMIT 1
             """,
-            (user_id, pattern_type, description),
+            (pair_id, pattern_type, description),
         ).fetchone()
 
         if existing:
@@ -944,12 +1761,14 @@ class Database:
         cursor = self.conn.execute(
             """
             INSERT INTO behavioral_patterns
-                (user_id, pattern_type, description, evidence_count, confidence,
+                (user_id, pair_id, companion_id, pattern_type, description, evidence_count, confidence,
                  first_detected_at, last_seen_at, is_active, source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user_id,
+                pair_id,
+                companion_id,
                 pattern_type,
                 description,
                 evidence_count,
@@ -962,17 +1781,29 @@ class Database:
         )
         return int(cursor.lastrowid)
 
-    def get_active_patterns(self, user_id: str, limit: int = 5) -> list[dict]:
-        rows = self.conn.execute(
-            """
-            SELECT *
-            FROM behavioral_patterns
-            WHERE user_id = ? AND is_active = 1
-            ORDER BY confidence DESC, evidence_count DESC, last_seen_at DESC
-            LIMIT ?
-            """,
-            (user_id, limit),
-        ).fetchall()
+    def get_active_patterns(self, user_id: str, pair_id: Optional[str] = None, limit: int = 5) -> list[dict]:
+        if pair_id:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM behavioral_patterns
+                WHERE pair_id = ? AND is_active = 1
+                ORDER BY confidence DESC, evidence_count DESC, last_seen_at DESC
+                LIMIT ?
+                """,
+                (pair_id, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM behavioral_patterns
+                WHERE user_id = ? AND is_active = 1
+                ORDER BY confidence DESC, evidence_count DESC, last_seen_at DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
         return [dict(row) for row in rows]
 
     # ------------------------------------------------------------------
@@ -982,6 +1813,8 @@ class Database:
     def save_narrative_summary(
         self,
         user_id: str,
+        pair_id: str,
+        companion_id: str,
         period_start: Optional[str],
         period_end: Optional[str],
         summary: str,
@@ -992,11 +1825,13 @@ class Database:
         cursor = self.conn.execute(
             """
             INSERT INTO narrative_summaries
-                (user_id, period_start, period_end, summary, themes, emotional_direction, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (user_id, pair_id, companion_id, period_start, period_end, summary, themes, emotional_direction, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user_id,
+                pair_id,
+                companion_id,
                 period_start,
                 period_end,
                 summary,
@@ -1005,34 +1840,31 @@ class Database:
                 created_at,
             ),
         )
-        self.conn.execute(
-            """
-            UPDATE users
-            SET current_narrative = ?, narrative_updated_at = ?
-            WHERE id = ?
-            """,
-            (summary, created_at, user_id),
-        )
         return int(cursor.lastrowid)
 
-    def get_current_narrative(self, user_id: str) -> Optional[dict]:
-        user = self.get_user(user_id)
-        if user and user.get("current_narrative"):
-            return {
-                "summary": user["current_narrative"],
-                "created_at": user.get("narrative_updated_at"),
-            }
-
-        row = self.conn.execute(
-            """
-            SELECT *
-            FROM narrative_summaries
-            WHERE user_id = ?
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            (user_id,),
-        ).fetchone()
+    def get_current_narrative(self, user_id: str, pair_id: Optional[str] = None) -> Optional[dict]:
+        if pair_id:
+            row = self.conn.execute(
+                """
+                SELECT *
+                FROM narrative_summaries
+                WHERE pair_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (pair_id,),
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                """
+                SELECT *
+                FROM narrative_summaries
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
         if not row:
             return None
         payload = dict(row)
@@ -1047,6 +1879,8 @@ class Database:
         self,
         chroma_id: str,
         user_id: str,
+        pair_id: str,
+        companion_id: str,
         content: str,
         title: Optional[str] = None,
         emotion_tag: Optional[str] = None,
@@ -1055,13 +1889,17 @@ class Database:
         conversation_id: Optional[str] = None,
         source_message_ids: Optional[list[int]] = None,
     ):
+        existing = self.conn.execute(
+            "SELECT 1 FROM memory_index WHERE pair_id = ? AND chroma_id = ? LIMIT 1",
+            (pair_id, chroma_id),
+        ).fetchone()
         self.conn.execute(
             """
             INSERT INTO memory_index
-                (user_id, chroma_id, title, content, emotion_tag, strength, emotional_weight,
+                (user_id, pair_id, companion_id, chroma_id, title, content, emotion_tag, strength, emotional_weight,
                  created_at, source_message_ids, conversation_id, archived)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-            ON CONFLICT(user_id, chroma_id) DO UPDATE SET
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            ON CONFLICT(pair_id, chroma_id) DO UPDATE SET
                 title = COALESCE(excluded.title, memory_index.title),
                 content = COALESCE(excluded.content, memory_index.content),
                 emotion_tag = COALESCE(excluded.emotion_tag, memory_index.emotion_tag),
@@ -1072,6 +1910,8 @@ class Database:
             """,
             (
                 user_id,
+                pair_id,
+                companion_id,
                 chroma_id,
                 title or self._build_memory_title(content),
                 content,
@@ -1083,8 +1923,18 @@ class Database:
                 conversation_id,
             ),
         )
+        if not existing:
+            self.conn.execute(
+                """
+                UPDATE relationship_pairs
+                SET memory_count = memory_count + 1,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (_utcnow_iso(), pair_id),
+            )
 
-    def get_memory_metadata_map(self, user_id: str, chroma_ids: list[str]) -> dict[str, dict]:
+    def get_memory_metadata_map(self, pair_id: str, chroma_ids: list[str]) -> dict[str, dict]:
         if not chroma_ids:
             return {}
         placeholders = ",".join("?" for _ in chroma_ids)
@@ -1092,13 +1942,13 @@ class Database:
             f"""
             SELECT *
             FROM memory_index
-            WHERE user_id = ? AND chroma_id IN ({placeholders})
+            WHERE pair_id = ? AND chroma_id IN ({placeholders})
             """,
-            [user_id, *chroma_ids],
+            [pair_id, *chroma_ids],
         ).fetchall()
         return {row["chroma_id"]: dict(row) for row in rows}
 
-    def reinforce_memories(self, user_id: str, chroma_ids: list[str]):
+    def reinforce_memories(self, pair_id: str, chroma_ids: list[str]):
         if not chroma_ids:
             return
         placeholders = ",".join("?" for _ in chroma_ids)
@@ -1108,18 +1958,41 @@ class Database:
             SET retrieval_count = retrieval_count + 1,
                 last_retrieved_at = ?,
                 strength = MIN(strength + 0.08, 2.5)
-            WHERE user_id = ? AND chroma_id IN ({placeholders})
+            WHERE pair_id = ? AND chroma_id IN ({placeholders})
             """,
-            [_utcnow_iso(), user_id, *chroma_ids],
+            [_utcnow_iso(), pair_id, *chroma_ids],
         )
 
     def get_recent_memory_rows(
         self,
         user_id: str,
+        pair_id: Optional[str] = None,
         limit: int = 8,
         since: Optional[str] = None,
     ) -> list[dict]:
-        if since:
+        if pair_id and since:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM memory_index
+                WHERE pair_id = ? AND archived = 0 AND created_at >= ?
+                ORDER BY created_at DESC, emotional_weight DESC
+                LIMIT ?
+                """,
+                (pair_id, since, limit),
+            ).fetchall()
+        elif pair_id:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM memory_index
+                WHERE pair_id = ? AND archived = 0
+                ORDER BY created_at DESC, emotional_weight DESC
+                LIMIT ?
+                """,
+                (pair_id, limit),
+            ).fetchall()
+        elif since:
             rows = self.conn.execute(
                 """
                 SELECT *
@@ -1143,8 +2016,36 @@ class Database:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def get_recent_emotions_since(self, user_id: str, since: Optional[str], limit: int = 10) -> list[dict]:
-        if since:
+    def get_recent_emotions_since(
+        self,
+        user_id: str,
+        since: Optional[str],
+        pair_id: Optional[str] = None,
+        limit: int = 10,
+    ) -> list[dict]:
+        if pair_id and since:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM emotional_events
+                WHERE pair_id = ? AND created_at >= ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (pair_id, since, limit),
+            ).fetchall()
+        elif pair_id:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM emotional_events
+                WHERE pair_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (pair_id, limit),
+            ).fetchall()
+        elif since:
             rows = self.conn.execute(
                 """
                 SELECT *

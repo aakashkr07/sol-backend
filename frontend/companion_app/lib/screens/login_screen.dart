@@ -288,7 +288,7 @@ class _LoginScreenState extends State<LoginScreen>
       if (!mounted) return;
       if (user != null) {
         HapticFeedback.heavyImpact();
-        // The auth gate in main.dart will switch to ChatScreen automatically.
+        // The root gate will route into onboarding or chat automatically.
       } else {
         if (!mounted) return;
         setState(() => _isLoading = false);

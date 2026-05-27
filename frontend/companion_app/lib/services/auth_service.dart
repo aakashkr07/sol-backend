@@ -113,8 +113,7 @@ class AuthService {
   static bool get isSignedIn => _auth.currentUser != null;
 
   /// Gets a fresh Firebase ID token for the current user.
-  /// Use this for secure backend calls in production (token verification).
-  /// For MVP we use uid directly — add token verification post-launch.
+  /// The backend verifies this token before accepting any pair-scoped requests.
   static Future<String?> getIdToken() async {
     return await _auth.currentUser?.getIdToken();
   }

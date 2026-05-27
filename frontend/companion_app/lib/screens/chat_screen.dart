@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../models/message_model.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import '../services/session_bootstrap_service.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/typing_indicator.dart';
 
@@ -19,7 +20,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   static const Color _navySurface = Color(0xFF111827);
   static const Color _amber = Color(0xFFF5A623);
   static const Color _stone = Color(0xFFE8DCC8);
-  static const String _characterId = 'nova';
 
   final List<Message> _messages = [];
   final TextEditingController _inputController = TextEditingController();
@@ -29,9 +29,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _isTyping = false;
   bool _isSending = false;
   bool _isInitializing = true;
+  bool _isSwitchingCompanion = false;
   String? _errorMessage;
   String? _conversationId;
+  String? _companionId;
+  String _companionName = 'Companion';
   int _memoryCount = 0;
+  List<CompanionSummary> _companions = const [];
 
   @override
   void initState() {
@@ -56,22 +60,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<void> _initialize() async {
     try {
-      final session = await ApiService.startSession(characterId: _characterId);
+      final session =
+          SessionBootstrapService.consume() ?? await ApiService.startSession();
       if (session != null && mounted) {
         setState(() {
           _conversationId = session.conversationId;
+          _companionId = session.companionId;
+          _companionName = session.companionName;
           _memoryCount = session.memoryCount;
         });
-
-        final firstName = _getFirstName();
-        if (session.isFirstSession) {
-          _addNovaMessage("hey. glad you're here.");
-        } else if (session.memoryCount > 0 && firstName != null) {
-          _addNovaMessage("hey ${firstName.toLowerCase()}. was thinking about you.");
-        } else {
-          _addNovaMessage("hey. you're back.");
+        if (_messages.isEmpty) {
+          _addCompanionMessage(session.openingMessage);
         }
       }
+      await _loadCompanions();
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -85,6 +87,31 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _loadCompanions() async {
+    final response = await ApiService.getMyCompanions();
+    if (response == null || !mounted) {
+      return;
+    }
+
+    final byId = <String, CompanionSummary>{};
+    for (final pair in response.pairs) {
+      byId[pair.id] = pair;
+    }
+    for (final companion in response.availableCompanions) {
+      byId[companion.id] = byId[companion.id] ?? companion;
+    }
+
+    setState(() {
+      _companions = byId.values.toList()
+        ..sort((a, b) {
+          if (a.isPrimary == b.isPrimary) {
+            return a.name.compareTo(b.name);
+          }
+          return a.isPrimary ? -1 : 1;
+        });
+    });
+  }
+
   String? _getFirstName() {
     final name = AuthService.currentUserName;
     if (name == null || name.trim().isEmpty) {
@@ -93,11 +120,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return name.trim().split(' ').first;
   }
 
-  void _addNovaMessage(String text) {
+  void _addCompanionMessage(String text) {
     if (!mounted) {
       return;
     }
-    setState(() => _messages.add(Message.fromNova(text)));
+    setState(() => _messages.add(Message.fromCompanion(text)));
     _scrollToBottom();
   }
 
@@ -116,7 +143,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
         ),
         content: Text(
-          'Your memories with Nova stay saved.',
+          'Your memories with $_companionName stay saved.',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.55),
             fontSize: 14,
@@ -140,6 +167,143 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (confirmed == true && mounted) {
       await AuthService.signOut();
+    }
+  }
+
+  Future<void> _openCompanionPicker() async {
+    if (_isSwitchingCompanion || _companions.isEmpty) {
+      return;
+    }
+
+    final selected = await showModalBottomSheet<CompanionSummary>(
+      context: context,
+      backgroundColor: const Color(0xFF111827),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Choose who you want to talk to',
+                  style: TextStyle(
+                    color: Color(0xFFEEE8DF),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Each companion keeps a separate relationship and memory thread.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                for (final companion in _companions)
+                  ListTile(
+                    onTap: () => Navigator.pop(context, companion),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      companion.name,
+                      style: const TextStyle(
+                        color: Color(0xFFEEE8DF),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    subtitle: Text(
+                      companion.summary.isEmpty
+                          ? 'A different emotional rhythm.'
+                          : companion.summary,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.48),
+                        fontSize: 12.5,
+                      ),
+                    ),
+                    trailing: companion.isPrimary
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _amber.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: _amber.withValues(alpha: 0.22),
+                              ),
+                            ),
+                            child: const Text(
+                              'current',
+                              style: TextStyle(
+                                color: _amber,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          )
+                        : Text(
+                            companion.totalSessions > 0
+                                ? '${companion.totalSessions} chats'
+                                : 'new',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.4),
+                              fontSize: 12,
+                            ),
+                          ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected == null || selected.id == _companionId) {
+      return;
+    }
+
+    await _switchCompanion(selected.id);
+  }
+
+  Future<void> _switchCompanion(String companionId) async {
+    setState(() {
+      _isSwitchingCompanion = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final session = await ApiService.startSession(characterId: companionId);
+      if (session == null || !mounted) {
+        throw const ChatException('Could not switch companions.', -1);
+      }
+
+      setState(() {
+        _messages.clear();
+        _conversationId = session.conversationId;
+        _companionId = session.companionId;
+        _companionName = session.companionName;
+        _memoryCount = session.memoryCount;
+        _messages.add(Message.fromCompanion(session.openingMessage));
+      });
+      await _loadCompanions();
+      _scrollToBottom();
+    } on ChatException catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _errorMessage = e.message);
+    } finally {
+      if (mounted) {
+        setState(() => _isSwitchingCompanion = false);
+      }
     }
   }
 
@@ -167,7 +331,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       final response = await ApiService.sendMessage(
         message: text,
         conversationId: _conversationId,
-        characterId: _characterId,
+        characterId: _companionId,
       );
 
       if (!mounted) {
@@ -176,14 +340,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       setState(() {
         _conversationId = response?.conversationId ?? _conversationId;
+        _companionId = response?.companionId ?? _companionId;
+        _companionName = response?.companionName ?? _companionName;
         _memoryCount = response?.memoryCount ?? _memoryCount;
         _isTyping = false;
         _isSending = false;
         _replaceMessageStatus(userMessage.id, MessageStatus.read);
         if (response != null) {
-          _messages.add(Message.fromNova(response.reply));
+          _messages.add(Message.fromCompanion(response.reply));
         }
       });
+      await _loadCompanions();
       HapticFeedback.selectionClick();
       _scrollToBottom();
     } on ChatException catch (e) {
@@ -196,7 +363,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _isSending = false;
         _replaceMessageStatus(userMessage.id, MessageStatus.failed);
         if (e.statusCode == 503) {
-          _errorMessage = "nova's quiet right now. try again.";
+          _errorMessage = "${_companionName.toLowerCase()}'s quiet right now. try again.";
         } else if (e.statusCode == 422) {
           _errorMessage = 'request validation failed (${e.statusCode}): ${e.message}';
         } else if (e.statusCode > 0) {
@@ -309,14 +476,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ),
       child: Row(
         children: [
-          _buildNovaAvatar(),
+          _buildCompanionAvatar(),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Nova',
+                Text(
+                  _companionName,
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -327,6 +494,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 Text(
                   _isTyping
                       ? 'typing...'
+                      : _isSwitchingCompanion
+                          ? 'switching...'
                       : firstName != null
                           ? 'online with $firstName'
                           : 'online now',
@@ -339,6 +508,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
           ),
           if (_memoryCount > 0) _buildMemoryIndicator(),
+          const SizedBox(width: 8),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _isSwitchingCompanion ? null : _openCompanionPicker,
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.05),
+                ),
+                child: Icon(
+                  Icons.swap_horiz_rounded,
+                  size: 18,
+                  color: Colors.white.withValues(alpha: 0.45),
+                ),
+              ),
+            ),
+          ),
           const SizedBox(width: 8),
           Material(
             color: Colors.transparent,
@@ -365,7 +555,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildNovaAvatar() {
+  Widget _buildCompanionAvatar() {
     return Container(
       width: 40,
       height: 40,
@@ -391,7 +581,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           height: 22,
           fit: BoxFit.contain,
           errorBuilder: (_, __, ___) => Text(
-            'N',
+            _companionName.isNotEmpty ? _companionName[0].toUpperCase() : 'C',
             style: TextStyle(
               color: _stone,
               fontSize: 16,

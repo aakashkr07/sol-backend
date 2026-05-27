@@ -36,6 +36,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from auth.firebase import initialize_firebase_auth
 from config import settings
 
 # ---------------------------------------------------------------------------
@@ -75,7 +76,7 @@ async def lifespan(app: FastAPI):
 
     # ── STARTUP ────────────────────────────────────────────────────────────
     logger.info("=" * 60)
-    logger.info("Companion AI Backend — Starting up")
+    logger.info("Sol backend starting up")
     logger.info("=" * 60)
 
     # 1. Validate critical configuration
@@ -107,11 +108,28 @@ async def lifespan(app: FastAPI):
 
     # 4. Load default character (validates the JSON is parseable)
     from personality.loader import load_character
+    from personality.registry import sync_companion_registry
     try:
         char = load_character(settings.DEFAULT_CHARACTER)
         logger.info(f"Default character loaded: {char.name}")
     except Exception as e:
         logger.critical(f"Failed to load default character: {e}")
+        sys.exit(1)
+
+    # 5. Initialize Firebase token verification
+    try:
+        initialize_firebase_auth()
+        logger.info("Firebase auth verification ready")
+    except Exception as e:
+        logger.critical(f"Failed to initialize Firebase auth: {e}")
+        sys.exit(1)
+
+    # 6. Sync companion registry from personality assets
+    try:
+        sync_companion_registry()
+        logger.info("Companion registry synced")
+    except Exception as e:
+        logger.critical(f"Failed to sync companion registry: {e}")
         sys.exit(1)
 
     logger.info("=" * 60)
@@ -131,8 +149,8 @@ async def lifespan(app: FastAPI):
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
-    title="Companion AI API",
-    description="Backend for the Companion AI app — Nova's brain.",
+    title="Sol API",
+    description="Backend for Sol's companion relationship system.",
     version="0.1.0",
     docs_url="/docs" if settings.DEBUG else None,    # Hide Swagger in production
     redoc_url="/redoc" if settings.DEBUG else None,
@@ -173,7 +191,7 @@ async def root():
     """Root endpoint — quick check that the server is alive."""
     return {
         "status": "alive",
-        "app": "Companion AI",
+        "app": "Sol",
         "version": "0.1.0",
         "character": settings.DEFAULT_CHARACTER,
     }

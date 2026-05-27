@@ -95,6 +95,8 @@ class Settings:
 
     # Default character loaded at startup
     DEFAULT_CHARACTER: str = os.getenv("DEFAULT_CHARACTER", "nova")
+    FIREBASE_PROJECT_ID: str = os.getenv("FIREBASE_PROJECT_ID", "sol-mvp-4f7c1")
+    FIREBASE_SERVICE_ACCOUNT_PATH: str = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "")
 
     # ── App / API ──────────────────────────────────────────────────────────
     APP_HOST: str = os.getenv("APP_HOST", "0.0.0.0")
@@ -122,6 +124,10 @@ class Settings:
             raise ValueError(
                 "GROQ_API_KEY is missing. Add it to your .env file.\n"
                 "Get one free at: https://console.groq.com"
+            )
+        if not self.FIREBASE_PROJECT_ID:
+            raise ValueError(
+                "FIREBASE_PROJECT_ID is missing. Add it to your .env file."
             )
         return self
 

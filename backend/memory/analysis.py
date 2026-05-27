@@ -45,16 +45,18 @@ def emotion_to_valence(emotion: str | None) -> float:
     return EMOTION_VALENCE.get(emotion.strip().lower(), 0.0)
 
 
-def detect_behavioral_patterns(user_id: str) -> list[dict]:
+def detect_behavioral_patterns(user_id: str, pair_id: str, companion_id: str) -> list[dict]:
     patterns: list[dict] = []
-    patterns.extend(_detect_late_night_openness(user_id))
-    patterns.extend(_detect_recurring_emotional_day(user_id))
-    patterns.extend(_detect_recurring_triggers(user_id))
-    patterns.extend(_detect_volatility(user_id))
+    patterns.extend(_detect_late_night_openness(pair_id))
+    patterns.extend(_detect_recurring_emotional_day(pair_id))
+    patterns.extend(_detect_recurring_triggers(pair_id))
+    patterns.extend(_detect_volatility(user_id, pair_id))
 
     for pattern in patterns:
         db.upsert_behavioral_pattern(
             user_id=user_id,
+            pair_id=pair_id,
+            companion_id=companion_id,
             pattern_type=pattern["pattern_type"],
             description=pattern["description"],
             evidence_count=pattern["evidence_count"],
@@ -106,14 +108,14 @@ def emotional_direction_from_events(emotions: list[dict]) -> str:
     return "stable"
 
 
-def _detect_late_night_openness(user_id: str) -> list[dict]:
+def _detect_late_night_openness(pair_id: str) -> list[dict]:
     rows = db.conn.execute(
         """
         SELECT hour_of_day, LENGTH(content) AS length
         FROM messages
-        WHERE user_id = ? AND role = 'user' AND hour_of_day IS NOT NULL
+        WHERE pair_id = ? AND role = 'user' AND hour_of_day IS NOT NULL
         """,
-        (user_id,),
+        (pair_id,),
     ).fetchall()
 
     if len(rows) < 6:
@@ -141,36 +143,36 @@ def _detect_late_night_openness(user_id: str) -> list[dict]:
     }]
 
 
-def _detect_recurring_emotional_day(user_id: str) -> list[dict]:
-    rows = db.conn.execute(
+def _detect_recurring_emotional_day(pair_id: str) -> list[dict]:
+    row = db.conn.execute(
         """
         SELECT day_of_week, COUNT(*) AS count, AVG(valence) AS avg_valence, AVG(intensity) AS avg_intensity
         FROM emotional_events
-        WHERE user_id = ?
+        WHERE pair_id = ?
         GROUP BY day_of_week
         HAVING COUNT(*) >= 3
         ORDER BY avg_valence ASC, avg_intensity DESC
         LIMIT 1
         """,
-        (user_id,),
+        (pair_id,),
     ).fetchone()
 
-    if not rows:
+    if not row:
         return []
-    if float(rows["avg_valence"] or 0.0) > -0.2 or float(rows["avg_intensity"] or 0.0) < 0.45:
+    if float(row["avg_valence"] or 0.0) > -0.2 or float(row["avg_intensity"] or 0.0) < 0.45:
         return []
 
-    day_name = DAY_NAMES.get(int(rows["day_of_week"]), "That day")
-    confidence = min(0.88, 0.4 + (int(rows["count"]) * 0.08))
+    day_name = DAY_NAMES.get(int(row["day_of_week"]), "That day")
+    confidence = min(0.88, 0.4 + (int(row["count"]) * 0.08))
     return [{
         "pattern_type": "emotional",
         "description": f"{day_name} tend to carry heavier emotions for them.",
-        "evidence_count": int(rows["count"]),
+        "evidence_count": int(row["count"]),
         "confidence": round(confidence, 3),
     }]
 
 
-def _detect_recurring_triggers(user_id: str) -> list[dict]:
+def _detect_recurring_triggers(pair_id: str) -> list[dict]:
     rows = db.conn.execute(
         """
         SELECT
@@ -183,14 +185,14 @@ def _detect_recurring_triggers(user_id: str) -> list[dict]:
             AVG(intensity) AS avg_intensity,
             AVG(valence) AS avg_valence
         FROM emotional_events
-        WHERE user_id = ?
+        WHERE pair_id = ?
           AND COALESCE(NULLIF(trigger_entity, ''), NULLIF(trigger_topic, '')) IS NOT NULL
         GROUP BY trigger_name, trigger_type
         HAVING COUNT(*) >= 3
         ORDER BY count DESC, avg_intensity DESC
         LIMIT 2
         """,
-        (user_id,),
+        (pair_id,),
     ).fetchall()
 
     patterns = []
@@ -222,8 +224,8 @@ def _detect_recurring_triggers(user_id: str) -> list[dict]:
     return patterns
 
 
-def _detect_volatility(user_id: str) -> list[dict]:
-    events = db.get_recent_emotional_events(user_id, limit=8)
+def _detect_volatility(user_id: str, pair_id: str) -> list[dict]:
+    events = db.get_recent_emotional_events(user_id=user_id, pair_id=pair_id, limit=8)
     if len(events) < 6:
         return []
 

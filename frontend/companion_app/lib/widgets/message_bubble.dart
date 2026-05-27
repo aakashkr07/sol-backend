@@ -114,7 +114,7 @@ class _MessageBubbleState extends State<MessageBubble>
                     isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  if (!isUser) _buildNovaAvatar(),
+                  if (!isUser) _buildCompanionAvatar(),
                   if (!isUser) const SizedBox(width: 6),
                   ConstrainedBox(
                     constraints: BoxConstraints(
@@ -133,7 +133,7 @@ class _MessageBubbleState extends State<MessageBubble>
     );
   }
 
-  Widget _buildNovaAvatar() {
+  Widget _buildCompanionAvatar() {
     if (!widget.showAvatar) {
       return const SizedBox(width: 28);
     }
@@ -154,13 +154,10 @@ class _MessageBubbleState extends State<MessageBubble>
         ],
       ),
       child: const Center(
-        child: Text(
-          'N',
-          style: TextStyle(
-            color: Color(0xFFEEE8DF),
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-          ),
+        child: Image(
+          image: AssetImage('assets/images/sol_logo.png'),
+          width: 14,
+          height: 14,
         ),
       ),
     );

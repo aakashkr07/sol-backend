@@ -45,12 +45,18 @@ class Character:
         self.raw = data
         self.id = data["id"]
         self.name = data["name"]
+        self.archetype = data.get("archetype", "")
+        self.summary = data.get("summary", "")
+        self.introduction_style = data.get("introduction_style", "")
         self.core_identity = data.get("core_identity", {})
         self.personality_traits = data.get("personality_traits", {})
         self.texting_style = data.get("texting_style", {})
         self.emotional_intelligence = data.get("emotional_intelligence", {})
         self.memory_behavior = data.get("memory_behavior", {})
         self.relationship_arc = data.get("relationship_arc", {})
+        self.relationship_defaults = data.get("relationship_defaults", {})
+        self.discovery = data.get("discovery", {})
+        self.matching_profile = data.get("matching_profile", {})
         self.opinion_seeds = data.get("opinion_seeds", {})
         self.forbidden_behaviors = data.get("forbidden_behaviors", [])
 

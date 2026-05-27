@@ -34,6 +34,7 @@ httpx==0.27.0
 
 # ── Environment Config ─────────────────────────────────────────────────────
 python-dotenv==1.0.1
+firebase-admin==6.8.0
 
 # ── Vector Database (episodic memory) ─────────────────────────────────────
 # chromadb includes: sentence-transformers, hnswlib, pydantic

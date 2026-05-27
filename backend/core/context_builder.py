@@ -17,6 +17,7 @@ RELATIONSHIP_LIMIT = 6
 
 async def build_context(
     user_id: str,
+    pair_id: str,
     current_message: str,
     conversation_id: Optional[str] = None,
     character_id: Optional[str] = None,
@@ -25,10 +26,11 @@ async def build_context(
     if not user:
         user = db.get_or_create_user(user_id)
 
-    cid = character_id or user.get("character_id") or settings.DEFAULT_CHARACTER
-    session_count = db.get_total_sessions(user_id)
-    active_facts = db.get_user_facts(user_id)
-    fact_rows = db.get_user_fact_rows(user_id, limit=FACT_LIMIT)
+    pair = db.get_pair_by_id(pair_id) or {}
+    cid = character_id or pair.get("companion_id") or user.get("character_id") or settings.DEFAULT_CHARACTER
+    session_count = int(pair.get("total_sessions") or 0)
+    active_facts = db.get_user_facts(user_id, pair_id=pair_id)
+    fact_rows = db.get_user_fact_rows(user_id, pair_id=pair_id, limit=FACT_LIMIT)
     user_name = user.get("preferred_name") or user.get("name")
 
     character = load_character(cid)
@@ -41,26 +43,29 @@ async def build_context(
 
     history_messages = db.get_recent_messages(
         user_id=user_id,
+        pair_id=pair_id,
         limit=settings.RECENT_HISTORY_TURNS,
         conversation_id=conversation_id,
     )
     memory_query = _build_memory_query(current_message, history_messages)
     episodic_memories = retrieve_relevant_memories(
+        pair_id=pair_id,
         user_id=user_id,
         query_text=memory_query,
         n_results=settings.MEMORY_RETRIEVAL_COUNT,
     )
 
-    entities = db.get_entities_for_context(user_id, memory_query, limit=ENTITY_LIMIT)
+    entities = db.get_entities_for_context(user_id, pair_id, memory_query, limit=ENTITY_LIMIT)
     relationships = db.get_relationships_for_entities(
         user_id=user_id,
+        pair_id=pair_id,
         entity_ids=[int(entity["id"]) for entity in entities],
         limit=RELATIONSHIP_LIMIT,
     )
-    emotional_summary = db.get_emotional_summary(user_id, limit=EMOTION_LIMIT)
-    recent_emotions = db.get_recent_emotional_events(user_id, limit=EMOTION_LIMIT)
-    active_patterns = db.get_active_patterns(user_id, limit=PATTERN_LIMIT)
-    current_narrative = db.get_current_narrative(user_id)
+    emotional_summary = db.get_emotional_summary(user_id, pair_id=pair_id, limit=EMOTION_LIMIT)
+    recent_emotions = db.get_recent_emotional_events(user_id, pair_id=pair_id, limit=EMOTION_LIMIT)
+    active_patterns = db.get_active_patterns(user_id, pair_id=pair_id, limit=PATTERN_LIMIT)
+    current_narrative = db.get_current_narrative(user_id, pair_id=pair_id)
 
     layered_memory_block = _build_layered_memory_block(
         fact_rows=fact_rows,
@@ -223,9 +228,9 @@ def _format_history_as_messages(history: list[dict]) -> list[dict]:
     return messages
 
 
-def get_or_create_conversation(user_id: str, character_id: str = "nova") -> str:
-    conversation_id = db.get_current_conversation(user_id)
+def get_or_create_conversation(user_id: str, pair_id: str, companion_id: str) -> str:
+    conversation_id = db.get_current_conversation(user_id, pair_id=pair_id)
     if not conversation_id:
-        conversation_id = db.create_conversation(user_id, character_id)
+        conversation_id = db.create_conversation(user_id, pair_id, companion_id)
         logger.info("New conversation created for %s: %s", user_id, conversation_id)
     return conversation_id

@@ -83,9 +83,9 @@ Rules:
 - If a section has nothing useful, return an empty array or empty object."""
 
 
-async def extract_and_save(user_id: str, conversation_id: str) -> None:
+async def extract_and_save(user_id: str, pair_id: str, companion_id: str, conversation_id: str) -> None:
     try:
-        pending_messages = db.get_unextracted_messages(user_id, conversation_id=conversation_id)
+        pending_messages = db.get_unextracted_messages(user_id, pair_id=pair_id, conversation_id=conversation_id)
         if not pending_messages:
             return
 
@@ -109,11 +109,11 @@ async def extract_and_save(user_id: str, conversation_id: str) -> None:
                 topics=topics,
             )
 
-        _save_facts(user_id, extracted.get("facts") or [], latest_user_message_id)
-        entity_name_to_id = _save_entities(user_id, extracted.get("entities") or [])
-        _save_relationships(user_id, entity_name_to_id, extracted.get("relationships") or [])
-        _save_emotions(user_id, latest_user_message_id, extracted.get("emotions") or [])
-        _save_behavioral_patterns(user_id, extracted.get("behavioral_patterns") or [])
+        _save_facts(user_id, pair_id, companion_id, extracted.get("facts") or [], latest_user_message_id)
+        entity_name_to_id = _save_entities(user_id, pair_id, companion_id, extracted.get("entities") or [])
+        _save_relationships(user_id, pair_id, companion_id, entity_name_to_id, extracted.get("relationships") or [])
+        _save_emotions(user_id, pair_id, companion_id, latest_user_message_id, extracted.get("emotions") or [])
+        _save_behavioral_patterns(user_id, pair_id, companion_id, extracted.get("behavioral_patterns") or [])
         db.save_conversation_insights(
             conversation_id=conversation_id,
             emotional_arc=conversation_meta.get("emotional_arc"),
@@ -125,13 +125,15 @@ async def extract_and_save(user_id: str, conversation_id: str) -> None:
         if memories:
             await _save_memories_to_chroma(
                 user_id=user_id,
+                pair_id=pair_id,
+                companion_id=companion_id,
                 conversation_id=conversation_id,
                 memories=memories,
                 source_message_ids=message_ids,
             )
 
-        detect_behavioral_patterns(user_id)
-        await maybe_consolidate_narrative(user_id)
+        detect_behavioral_patterns(user_id, pair_id, companion_id)
+        await maybe_consolidate_narrative(user_id, pair_id, companion_id)
         db.mark_messages_extracted(message_ids)
 
         logger.info(
@@ -191,13 +193,15 @@ async def _run_extraction_llm(conversation_text: str) -> Optional[dict]:
         return None
 
 
-def _save_facts(user_id: str, facts: list[dict], source_message_id: Optional[int]):
+def _save_facts(user_id: str, pair_id: str, companion_id: str, facts: list[dict], source_message_id: Optional[int]):
     for fact in facts:
         if not _is_valid_fact(fact):
             continue
 
         db.save_user_fact(
             user_id=user_id,
+            pair_id=pair_id,
+            companion_id=companion_id,
             category=fact.get("category", "identity"),
             key=fact["key"],
             value=str(fact["value"]).strip(),
@@ -210,7 +214,7 @@ def _save_facts(user_id: str, facts: list[dict], source_message_id: Optional[int
             db.update_user_name(user_id, str(fact["value"]).strip())
 
 
-def _save_entities(user_id: str, entities: list[dict]) -> dict[str, int]:
+def _save_entities(user_id: str, pair_id: str, companion_id: str, entities: list[dict]) -> dict[str, int]:
     entity_name_to_id: dict[str, int] = {}
 
     for entity in entities:
@@ -221,6 +225,8 @@ def _save_entities(user_id: str, entities: list[dict]) -> dict[str, int]:
 
         entity_id = db.upsert_entity(
             user_id=user_id,
+            pair_id=pair_id,
+            companion_id=companion_id,
             name=name,
             entity_type=entity_type,
             description=(entity.get("description") or "").strip() or None,
@@ -232,7 +238,13 @@ def _save_entities(user_id: str, entities: list[dict]) -> dict[str, int]:
     return entity_name_to_id
 
 
-def _save_relationships(user_id: str, entity_name_to_id: dict[str, int], relationships: list[dict]):
+def _save_relationships(
+    user_id: str,
+    pair_id: str,
+    companion_id: str,
+    entity_name_to_id: dict[str, int],
+    relationships: list[dict],
+):
     for relationship in relationships:
         entity_a_name = (relationship.get("entity_a") or "").strip()
         entity_b_name = (relationship.get("entity_b") or "").strip()
@@ -246,6 +258,8 @@ def _save_relationships(user_id: str, entity_name_to_id: dict[str, int], relatio
 
         db.save_entity_relationship(
             user_id=user_id,
+            pair_id=pair_id,
+            companion_id=companion_id,
             entity_a_id=entity_a_id,
             entity_b_id=entity_b_id,
             relationship_type=(relationship.get("relationship_type") or "").strip() or None,
@@ -253,7 +267,7 @@ def _save_relationships(user_id: str, entity_name_to_id: dict[str, int], relatio
         )
 
 
-def _save_emotions(user_id: str, message_id: Optional[int], emotions: list[dict]):
+def _save_emotions(user_id: str, pair_id: str, companion_id: str, message_id: Optional[int], emotions: list[dict]):
     for item in emotions:
         emotion = (item.get("emotion") or "").strip()
         if not emotion:
@@ -261,6 +275,8 @@ def _save_emotions(user_id: str, message_id: Optional[int], emotions: list[dict]
         intensity = _clamp(_safe_float(item.get("intensity"), default=0.5), 0.0, 1.0)
         db.log_emotional_event(
             user_id=user_id,
+            pair_id=pair_id,
+            companion_id=companion_id,
             message_id=message_id,
             emotion=emotion,
             intensity=intensity,
@@ -270,7 +286,7 @@ def _save_emotions(user_id: str, message_id: Optional[int], emotions: list[dict]
         )
 
 
-def _save_behavioral_patterns(user_id: str, patterns: list[dict]):
+def _save_behavioral_patterns(user_id: str, pair_id: str, companion_id: str, patterns: list[dict]):
     for pattern in patterns:
         description = (pattern.get("description") or "").strip()
         pattern_type = (pattern.get("pattern_type") or "").strip()
@@ -279,6 +295,8 @@ def _save_behavioral_patterns(user_id: str, patterns: list[dict]):
 
         db.upsert_behavioral_pattern(
             user_id=user_id,
+            pair_id=pair_id,
+            companion_id=companion_id,
             pattern_type=pattern_type,
             description=description,
             evidence_count=1,
@@ -289,6 +307,8 @@ def _save_behavioral_patterns(user_id: str, patterns: list[dict]):
 
 async def _save_memories_to_chroma(
     user_id: str,
+    pair_id: str,
+    companion_id: str,
     conversation_id: str,
     memories: list[dict],
     source_message_ids: list[int],
@@ -296,7 +316,7 @@ async def _save_memories_to_chroma(
     try:
         from memory.retriever import get_chroma_collection
 
-        collection = get_chroma_collection(user_id)
+        collection = get_chroma_collection(pair_id=pair_id, user_id=user_id)
 
         for memory in memories:
             content = (memory.get("content") or "").strip()
@@ -313,6 +333,8 @@ async def _save_memories_to_chroma(
                 documents=[content],
                 metadatas=[{
                     "user_id": user_id,
+                    "pair_id": pair_id,
+                    "companion_id": companion_id,
                     "conversation_id": conversation_id,
                     "title": title,
                     "emotion_tag": emotion_tag or "",
@@ -323,6 +345,8 @@ async def _save_memories_to_chroma(
             db.log_memory(
                 chroma_id=chroma_id,
                 user_id=user_id,
+                pair_id=pair_id,
+                companion_id=companion_id,
                 content=content,
                 title=title,
                 emotion_tag=emotion_tag,
@@ -339,7 +363,7 @@ async def _save_memories_to_chroma(
 def _format_messages_for_extraction(messages: list[dict]) -> str:
     lines = []
     for message in messages:
-        role = "User" if message["role"] == "user" else "Nova"
+        role = "User" if message["role"] == "user" else "Companion"
         lines.append(f"{role}: {message['content']}")
     return "\n".join(lines)
 

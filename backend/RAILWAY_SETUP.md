@@ -19,6 +19,8 @@ This ensures Railway sees:
 In Railway service variables, add:
 
 - `GROQ_API_KEY` (required)
+- `FIREBASE_PROJECT_ID=sol-mvp-4f7c1`
+- `FIREBASE_SERVICE_ACCOUNT_PATH=/app/firebase-service-account.json` if you mount a service account file
 - `SQLITE_DB_PATH=/data/db/companion.db`
 - `CHROMA_DB_PATH=/data/chroma_db`
 - Optional tuning vars from `.env.example`

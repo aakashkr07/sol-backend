@@ -24,19 +24,19 @@ Rules:
 - Return plain text only."""
 
 
-async def maybe_consolidate_narrative(user_id: str) -> Optional[str]:
-    user = db.get_user(user_id) or {}
-    last_updated = user.get("narrative_updated_at")
+async def maybe_consolidate_narrative(user_id: str, pair_id: str, companion_id: str) -> Optional[str]:
+    current_narrative = db.get_current_narrative(user_id, pair_id=pair_id) or {}
+    last_updated = current_narrative.get("created_at")
 
-    recent_emotions = db.get_recent_emotions_since(user_id, last_updated, limit=EMOTION_WINDOW)
-    recent_memories = db.get_recent_memory_rows(user_id, limit=MEMORY_WINDOW, since=last_updated)
+    recent_emotions = db.get_recent_emotions_since(user_id, last_updated, pair_id=pair_id, limit=EMOTION_WINDOW)
+    recent_memories = db.get_recent_memory_rows(user_id, pair_id=pair_id, limit=MEMORY_WINDOW, since=last_updated)
 
     if len(recent_emotions) + len(recent_memories) < MIN_NEW_ITEMS_FOR_SUMMARY:
         return None
 
-    facts = db.get_user_fact_rows(user_id, limit=8)
-    patterns = db.get_active_patterns(user_id, limit=4)
-    summary = await _generate_narrative(user_id, facts, recent_emotions, recent_memories, patterns)
+    facts = db.get_user_fact_rows(user_id, pair_id=pair_id, limit=8)
+    patterns = db.get_active_patterns(user_id, pair_id=pair_id, limit=4)
+    summary = await _generate_narrative(user_id, pair_id, companion_id, facts, recent_emotions, recent_memories, patterns)
     if not summary:
         return None
 
@@ -48,6 +48,8 @@ async def maybe_consolidate_narrative(user_id: str) -> Optional[str]:
 
     db.save_narrative_summary(
         user_id=user_id,
+        pair_id=pair_id,
+        companion_id=companion_id,
         period_start=period_start,
         period_end=period_end,
         summary=summary,
@@ -59,12 +61,14 @@ async def maybe_consolidate_narrative(user_id: str) -> Optional[str]:
 
 async def _generate_narrative(
     user_id: str,
+    pair_id: str,
+    companion_id: str,
     facts: list[dict],
     emotions: list[dict],
     memories: list[dict],
     patterns: list[dict],
 ) -> Optional[str]:
-    prompt = _build_narrative_prompt(user_id, facts, emotions, memories, patterns)
+    prompt = _build_narrative_prompt(user_id, pair_id, companion_id, facts, emotions, memories, patterns)
 
     try:
         return await generate_reply(
@@ -81,6 +85,8 @@ async def _generate_narrative(
 
 def _build_narrative_prompt(
     user_id: str,
+    pair_id: str,
+    companion_id: str,
     facts: list[dict],
     emotions: list[dict],
     memories: list[dict],
@@ -107,6 +113,8 @@ def _build_narrative_prompt(
 
     return "\n".join([
         f"User id: {user_id}",
+        f"Pair id: {pair_id}",
+        f"Companion id: {companion_id}",
         "",
         "Relevant facts:",
         *fact_lines,

@@ -33,6 +33,7 @@ from typing import Optional
 import httpx
 
 from config import settings
+from personality.loader import list_characters, load_character
 
 logger = logging.getLogger(__name__)
 
@@ -202,8 +203,9 @@ def _clean_response(text: str) -> str:
 
     cleaned = text.strip()
 
-    # Remove "Nova: " or "Assistant: " prefix if model added it
-    cleaned = re.sub(r'^(Nova|Assistant|AI)\s*:\s*', '', cleaned, flags=re.IGNORECASE)
+    # Remove a leaked speaker prefix if the model echoed the role label.
+    labels = "|".join(re.escape(label) for label in _known_speaker_labels())
+    cleaned = re.sub(rf'^(?:{labels})\s*:\s*', '', cleaned, flags=re.IGNORECASE)
 
     # Remove markdown bold and italic
     cleaned = re.sub(r'\*\*(.+?)\*\*', r'\1', cleaned)  # **bold** → bold
@@ -224,6 +226,18 @@ def _clean_response(text: str) -> str:
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
 
     return cleaned.strip()
+
+
+def _known_speaker_labels() -> list[str]:
+    labels = {"Assistant", "AI"}
+    try:
+        for character_id in list_characters():
+            character = load_character(character_id)
+            labels.add(character.id)
+            labels.add(character.name)
+    except Exception:
+        labels.add(settings.DEFAULT_CHARACTER)
+    return sorted(labels, key=len, reverse=True)
 
 
 # ---------------------------------------------------------------------------

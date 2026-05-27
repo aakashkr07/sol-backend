@@ -73,13 +73,10 @@ class _TypingIndicatorState extends State<TypingIndicator>
               ],
             ),
             child: const Center(
-              child: Text(
-                'N',
-                style: TextStyle(
-                  color: Color(0xFFEEE8DF),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                ),
+              child: Image(
+                image: AssetImage('assets/images/sol_logo.png'),
+                width: 14,
+                height: 14,
               ),
             ),
           ),

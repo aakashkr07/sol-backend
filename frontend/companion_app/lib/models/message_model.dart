@@ -29,7 +29,7 @@ class Message {
     return '$hour:$minute $suffix';
   }
 
-  factory Message.fromNova(String content) {
+  factory Message.fromCompanion(String content) {
     return Message(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       role: MessageRole.assistant,
@@ -39,6 +39,8 @@ class Message {
       status: MessageStatus.read,
     );
   }
+
+  factory Message.fromNova(String content) => Message.fromCompanion(content);
 
   factory Message.fromUser(String content) {
     return Message(

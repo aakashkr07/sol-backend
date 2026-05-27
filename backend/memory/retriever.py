@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from typing import Optional
 
@@ -26,18 +27,24 @@ def get_chroma_client() -> chromadb.PersistentClient:
     return _chroma_client
 
 
-def get_chroma_collection(user_id: str) -> chromadb.Collection:
+def get_chroma_collection(pair_id: str, user_id: Optional[str] = None) -> chromadb.Collection:
     client = get_chroma_client()
-    collection_name = _sanitize_collection_name(f"user_{user_id}")
-    return client.get_or_create_collection(
+    collection_name = _collection_name_for_pair(pair_id)
+    collection = client.get_or_create_collection(
         name=collection_name,
         metadata={"hnsw:space": "cosine"},
     )
 
+    if user_id:
+        _migrate_legacy_user_collection(user_id=user_id, pair_id=pair_id, target_collection=collection)
+
+    return collection
+
 
 def retrieve_relevant_memories(
-    user_id: str,
+    pair_id: str,
     query_text: str,
+    user_id: Optional[str] = None,
     n_results: Optional[int] = None,
     min_similarity: Optional[float] = None,
 ) -> list[dict]:
@@ -45,7 +52,7 @@ def retrieve_relevant_memories(
     threshold = min_similarity or settings.MEMORY_SIMILARITY_THRESHOLD
 
     try:
-        collection = get_chroma_collection(user_id)
+        collection = get_chroma_collection(pair_id=pair_id, user_id=user_id)
         count = collection.count()
         if count == 0:
             return []
@@ -62,7 +69,7 @@ def retrieve_relevant_memories(
         distances = results["distances"][0] if results.get("distances") else []
         ids = results["ids"][0] if results.get("ids") else []
 
-        metadata_map = db.get_memory_metadata_map(user_id, ids)
+        metadata_map = db.get_memory_metadata_map(pair_id, ids)
         memories = []
         retrieved_ids = []
 
@@ -97,38 +104,38 @@ def retrieve_relevant_memories(
             reverse=True,
         )
 
-        db.reinforce_memories(user_id, retrieved_ids)
+        db.reinforce_memories(pair_id, retrieved_ids)
         return memories
 
     except Exception as exc:
-        logger.error("Memory retrieval failed for user %s: %s", user_id, exc, exc_info=True)
+        logger.error("Memory retrieval failed for pair %s: %s", pair_id, exc, exc_info=True)
         return []
 
 
-def get_memory_count(user_id: str) -> int:
+def get_memory_count(pair_id: str, user_id: Optional[str] = None) -> int:
     try:
-        return get_chroma_collection(user_id).count()
+        return get_chroma_collection(pair_id=pair_id, user_id=user_id).count()
     except Exception:
         return 0
 
 
-def delete_memory(user_id: str, memory_id: str) -> bool:
+def delete_memory(pair_id: str, memory_id: str, user_id: Optional[str] = None) -> bool:
     try:
-        get_chroma_collection(user_id).delete(ids=[memory_id])
+        get_chroma_collection(pair_id=pair_id, user_id=user_id).delete(ids=[memory_id])
         return True
     except Exception as exc:
         logger.error("Failed to delete memory %s: %s", memory_id, exc)
         return False
 
 
-def clear_all_memories(user_id: str) -> bool:
+def clear_all_memories(pair_id: str) -> bool:
     try:
         client = get_chroma_client()
-        client.delete_collection(_sanitize_collection_name(f"user_{user_id}"))
-        logger.info("Cleared all memories for user %s", user_id)
+        client.delete_collection(_collection_name_for_pair(pair_id))
+        logger.info("Cleared all memories for pair %s", pair_id)
         return True
     except Exception as exc:
-        logger.error("Failed to clear memories for user %s: %s", user_id, exc)
+        logger.error("Failed to clear memories for pair %s: %s", pair_id, exc)
         return False
 
 
@@ -149,5 +156,42 @@ def _derive_title(document: str) -> str:
     return text[:80] if text else "Untitled moment"
 
 
-def _sanitize_collection_name(name: str) -> str:
-    return name.replace("_", "-").lower()[:63]
+def _collection_name_for_pair(pair_id: str) -> str:
+    digest = hashlib.sha1(pair_id.encode("utf-8")).hexdigest()
+    return f"pair-{digest[:24]}"
+
+
+def _legacy_collection_name_for_user(user_id: str) -> str:
+    return f"user-{user_id.replace('_', '-').lower()[:58]}"
+
+
+def _migrate_legacy_user_collection(
+    user_id: str,
+    pair_id: str,
+    target_collection: chromadb.Collection,
+) -> None:
+    client = get_chroma_client()
+    legacy_name = _legacy_collection_name_for_user(user_id)
+
+    if legacy_name == target_collection.name:
+        return
+
+    try:
+        legacy = client.get_collection(legacy_name)
+    except Exception:
+        return
+
+    if target_collection.count() > 0:
+        return
+
+    payload = legacy.get(include=["documents", "metadatas"])
+    ids = payload.get("ids") or []
+    if not ids:
+        return
+
+    target_collection.add(
+        ids=ids,
+        documents=payload.get("documents") or [],
+        metadatas=payload.get("metadatas") or [],
+    )
+    logger.info("Migrated legacy Chroma collection %s -> %s", legacy_name, target_collection.name)
