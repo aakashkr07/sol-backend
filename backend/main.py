@@ -35,7 +35,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from auth.firebase import initialize_firebase_auth
@@ -233,7 +233,7 @@ async def root():
 
 
 @app.get("/health", tags=["health"])
-async def health_check():
+async def health_check(deep: bool = Query(default=False)):
     """
     Detailed health check — used by monitoring, Flutter app on startup.
     Returns status of each subsystem.
@@ -263,15 +263,22 @@ async def health_check():
         health["subsystems"]["chromadb"] = f"error: {e}"
         health["status"] = "degraded"
 
-    # Check Groq (quick ping)
-    try:
-        from core.llm import check_llm_health
-        llm_health = await check_llm_health()
-        health["subsystems"]["groq"] = llm_health["status"]
-        health["model"] = llm_health.get("model")
-    except Exception as e:
-        health["subsystems"]["groq"] = f"error: {e}"
-        health["status"] = "degraded"
+    # Check LLM configuration. Railway should not depend on an external Groq
+    # round-trip just to consider the service alive.
+    health["subsystems"]["groq"] = "configured" if settings.GROQ_API_KEY else "missing_api_key"
+    health["model"] = settings.LLM_MODEL
+
+    if deep:
+        try:
+            from core.llm import check_llm_health
+            llm_health = await check_llm_health()
+            health["subsystems"]["groq_deep"] = llm_health["status"]
+            health["deep_model"] = llm_health.get("model")
+            if llm_health["status"] != "ok":
+                health["status"] = "degraded"
+        except Exception as e:
+            health["subsystems"]["groq_deep"] = f"error: {e}"
+            health["status"] = "degraded"
 
     return health
 

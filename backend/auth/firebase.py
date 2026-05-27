@@ -1,4 +1,5 @@
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -28,13 +29,32 @@ def initialize_firebase_auth() -> None:
     app_kwargs = {"options": {"projectId": settings.FIREBASE_PROJECT_ID}}
 
     if service_account_path:
-        cred = credentials.Certificate(Path(service_account_path))
+        path = Path(service_account_path)
+        if not path.exists():
+            raise RuntimeError(
+                f"Firebase service account file not found at {path}. "
+                "Set FIREBASE_SERVICE_ACCOUNT_PATH to a real mounted credential file."
+            )
+        cred = credentials.Certificate(path)
         firebase_admin.initialize_app(cred, **app_kwargs)
         logger.info("Firebase Admin initialized with service account credentials")
         return
 
-    firebase_admin.initialize_app(**app_kwargs)
-    logger.info("Firebase Admin initialized with project id only")
+    try:
+        firebase_admin.initialize_app(**app_kwargs)
+        logger.info("Firebase Admin initialized with application default credentials")
+    except Exception as exc:
+        hint = (
+            "Firebase Admin could not initialize without explicit credentials. "
+            "On Railway, mount a Firebase service account JSON and set "
+            "FIREBASE_SERVICE_ACCOUNT_PATH, or provide GOOGLE_APPLICATION_CREDENTIALS."
+        )
+        if settings.DEBUG or os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+            hint = (
+                "Firebase Admin initialization failed. Provide a valid "
+                "FIREBASE_SERVICE_ACCOUNT_PATH or GOOGLE_APPLICATION_CREDENTIALS."
+            )
+        raise RuntimeError(hint) from exc
 
 
 def verify_id_token(id_token: str) -> AuthenticatedIdentity:

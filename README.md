@@ -35,7 +35,8 @@ cd backend
 pip install -r requirements.txt
 ```
 
-4. Create `backend/.env` from `backend/.env.example`.
+4. Create either `backend/.env` or a repo-root `.env` from `backend/.env.example`.
+   The backend now reads both, with `backend/.env` taking precedence.
 5. Provide a Firebase service account JSON file and point `FIREBASE_SERVICE_ACCOUNT_PATH` to it.
 6. Start the API:
 

@@ -41,6 +41,8 @@ Do not rely on local `.env` for cloud deployment.
 - restart policy
 
 Railway will only route traffic after `/health` returns `200`.
+The default `/health` check is intentionally lightweight and does not call Groq.
+For manual deep verification, call `/health?deep=true`.
 
 ## 4) Persistence (important)
 

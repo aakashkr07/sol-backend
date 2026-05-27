@@ -23,15 +23,19 @@
 
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 # ---------------------------------------------------------------------------
 # Load .env from the project root (one level above /backend)
 # ---------------------------------------------------------------------------
-ROOT_DIR = Path(__file__).parent.parent          # companion-ai/
-BACKEND_DIR = Path(__file__).parent              # companion-ai/backend/
+ROOT_DIR = Path(__file__).parent.parent          # sol_mvp/
+BACKEND_DIR = Path(__file__).parent              # sol_mvp/backend/
 
-load_dotenv(ROOT_DIR / ".env")                   # silently ignored if .env missing
+# Support both the repo-root .env and backend/.env so local setup is less brittle.
+# Root-level env loads first for existing setups; backend/.env can override it.
+load_dotenv(ROOT_DIR / ".env")
+load_dotenv(BACKEND_DIR / ".env", override=True)
 
 
 # ---------------------------------------------------------------------------
