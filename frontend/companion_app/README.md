@@ -1,16 +1,30 @@
-# companion_app
+# Sol Companion App
 
-A new Flutter project.
+Flutter client for the Sol MVP.
 
-## Getting Started
+## What It Covers
 
-This project is a starting point for a Flutter application.
+- Firebase sign-in
+- first-run encounter and onboarding
+- burst-style companion chat playback
+- profile, transparency, and privacy controls
+- proactive message intake hooks
 
-A few resources to get you started if this is your first Flutter project:
+## Run Locally
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+```powershell
+flutter pub get
+flutter run
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Useful Checks
+
+```powershell
+dart analyze
+flutter test
+```
+
+## Notes
+
+- Set the backend base URL to your local FastAPI instance or Railway deployment.
+- Firebase app configuration must be present for sign-in and messaging to work.
