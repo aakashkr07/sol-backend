@@ -22,7 +22,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'screens/chat_screen.dart';
+import 'screens/inbox_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'services/api_service.dart';
@@ -156,8 +156,8 @@ class _AuthGateState extends State<_AuthGate> {
                 return OnboardingScreen(onComplete: _finishOnboarding);
               }
 
-              return ChatScreen(
-                key: ValueKey('chat-${decision.uid}'),
+              return InboxScreen(
+                key: ValueKey('inbox-${decision.uid}'),
               );
             },
           );

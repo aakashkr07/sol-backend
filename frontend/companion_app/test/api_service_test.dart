@@ -37,6 +37,7 @@ void main() {
       'memories': [],
       'memory_count': 3,
       'pairs': [],
+      'inbox_entries': const [],
     });
 
     expect(profile.selectedPair?.id, 'nova');
@@ -70,5 +71,51 @@ void main() {
     expect(event.companionName, 'Nova');
     expect(event.bursts, hasLength(1));
     expect(event.bursts.first.text, 'you still up');
+  });
+
+  test('parses inbox entries and resumed session history', () {
+    final roster = MyCompanionsResponse.fromJson({
+      'user_name': 'Aakash',
+      'pairs': const [],
+      'available_companions': const [],
+      'inbox_entries': [
+        {
+          'entry_kind': 'arrival',
+          'pair_id': '',
+          'companion_id': 'atlas',
+          'companion_name': 'Atlas',
+          'preview_text': 'nova brought you up once',
+          'preview_at': 'arrival-123',
+          'status_text': 'nova mentioned you',
+          'unread_count': 1,
+        }
+      ],
+    });
+
+    final session = SessionStartResponse.fromJson({
+      'conversation_id': 'conv-1',
+      'session_number': 3,
+      'memory_count': 4,
+      'is_first_session': false,
+      'pair_id': 'u1::nova',
+      'companion_id': 'nova',
+      'companion_name': 'Nova',
+      'companion_summary': 'warm',
+      'opening_message': '',
+      'opening_bursts': const [],
+      'resumed_existing': true,
+      'history_messages': [
+        {
+          'role': 'assistant',
+          'content': 'you disappeared yesterday',
+          'created_at': '2026-05-27T10:00:00',
+        }
+      ],
+    });
+
+    expect(roster.inboxEntries.single.isArrival, isTrue);
+    expect(session.resumedExisting, isTrue);
+    expect(session.openingBursts, isEmpty);
+    expect(session.historyMessages.single.content, 'you disappeared yesterday');
   });
 }

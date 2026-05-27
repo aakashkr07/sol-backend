@@ -58,24 +58,10 @@ async def get_my_profile(
     pairs = [build_pair_payload(item) for item in db.list_pairs_for_user(identity.uid)]
 
     selected_pair = None
-    facts = {}
-    fact_rows = []
-    conflicts = []
-    memories = []
-    relationship_state = None
-    narrative = None
-    session_summaries = []
     memory_count = 0
 
     if pair:
         selected_pair = build_pair_payload(pair)
-        facts = db.get_user_facts(identity.uid, pair_id=pair["id"])
-        fact_rows = db.get_user_fact_rows(identity.uid, pair_id=pair["id"], limit=12)
-        conflicts = db.get_fact_conflicts(pair["id"], limit=6)
-        memories = db.list_pair_memories(pair["id"], limit=20)
-        relationship_state = db.get_relationship_state_snapshot(pair["id"])
-        narrative = db.get_current_narrative(identity.uid, pair_id=pair["id"])
-        session_summaries = db.get_recent_conversation_summaries(pair["id"], limit=5)
         memory_count = get_memory_count(pair["id"], user_id=identity.uid)
 
     return {
@@ -91,14 +77,7 @@ async def get_my_profile(
         "preferences": preferences,
         "pairs": pairs,
         "selected_pair": selected_pair,
-        "what_sol_knows": facts,
-        "fact_rows": fact_rows,
-        "fact_conflicts": conflicts,
-        "memories": memories,
         "memory_count": memory_count,
-        "relationship_state": relationship_state,
-        "current_narrative": narrative,
-        "recent_session_summaries": session_summaries,
     }
 
 

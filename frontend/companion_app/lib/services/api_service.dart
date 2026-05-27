@@ -85,6 +85,8 @@ class SessionStartResponse {
   final String companionSummary;
   final String openingMessage;
   final List<ChatBurst> openingBursts;
+  final bool resumedExisting;
+  final List<SessionHistoryMessage> historyMessages;
 
   const SessionStartResponse({
     required this.conversationId,
@@ -98,11 +100,14 @@ class SessionStartResponse {
     required this.companionSummary,
     required this.openingMessage,
     required this.openingBursts,
+    required this.resumedExisting,
+    required this.historyMessages,
   });
 
   factory SessionStartResponse.fromJson(Map<String, dynamic> json) {
     final openingBursts = _parseBursts(json['opening_bursts']);
     final openingText = json['opening_message'] as String? ?? '';
+    final resumedExisting = _asBool(json['resumed_existing'], false);
     return SessionStartResponse(
       conversationId: json['conversation_id'] as String,
       userName: json['user_name'] as String?,
@@ -113,10 +118,39 @@ class SessionStartResponse {
       companionId: json['companion_id'] as String? ?? '',
       companionName: json['companion_name'] as String? ?? 'Companion',
       companionSummary: json['companion_summary'] as String? ?? '',
-      openingMessage: openingText.ifEmpty(_combinedBurstText(openingBursts).ifEmpty('hey')),
-      openingBursts: openingBursts.isNotEmpty
-          ? openingBursts
-          : [ChatBurst.single(openingText.ifEmpty('hey'))],
+      openingMessage: resumedExisting
+          ? ''
+          : openingText.ifEmpty(_combinedBurstText(openingBursts).ifEmpty('hey')),
+      openingBursts: resumedExisting
+          ? const []
+          : (openingBursts.isNotEmpty
+              ? openingBursts
+              : [ChatBurst.single(openingText.ifEmpty('hey'))]),
+      resumedExisting: resumedExisting,
+      historyMessages: (json['history_messages'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(SessionHistoryMessage.fromJson)
+          .toList(),
+    );
+  }
+}
+
+class SessionHistoryMessage {
+  final String role;
+  final String content;
+  final String createdAt;
+
+  const SessionHistoryMessage({
+    required this.role,
+    required this.content,
+    required this.createdAt,
+  });
+
+  factory SessionHistoryMessage.fromJson(Map<String, dynamic> json) {
+    return SessionHistoryMessage(
+      role: json['role'] as String? ?? 'assistant',
+      content: json['content'] as String? ?? '',
+      createdAt: json['created_at'] as String? ?? '',
     );
   }
 }
@@ -412,12 +446,14 @@ class MyCompanionsResponse {
   final CompanionSummary? primaryCompanion;
   final List<CompanionSummary> pairs;
   final List<CompanionSummary> availableCompanions;
+  final List<InboxEntrySummary> inboxEntries;
 
   const MyCompanionsResponse({
     required this.userName,
     required this.primaryCompanion,
     required this.pairs,
     required this.availableCompanions,
+    required this.inboxEntries,
   });
 
   factory MyCompanionsResponse.fromJson(Map<String, dynamic> json) {
@@ -436,6 +472,80 @@ class MyCompanionsResponse {
       primaryCompanion: primaryJson == null ? null : CompanionSummary.fromJson(primaryJson),
       pairs: pairList,
       availableCompanions: available,
+      inboxEntries: (json['inbox_entries'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(InboxEntrySummary.fromJson)
+          .toList(),
+    );
+  }
+}
+
+class InboxEntrySummary {
+  final String entryKind;
+  final String pairId;
+  final String companionId;
+  final String companionName;
+  final String companionSummary;
+  final String previewText;
+  final String previewAt;
+  final String statusText;
+  final String? currentConversationId;
+  final bool isPrimary;
+  final bool isDiscovered;
+  final int unreadCount;
+  final String latestRole;
+  final bool waitingOnUser;
+  final String socialPresence;
+  final String arrivalHint;
+  final String relationshipStage;
+  final int totalSessions;
+
+  const InboxEntrySummary({
+    required this.entryKind,
+    required this.pairId,
+    required this.companionId,
+    required this.companionName,
+    required this.companionSummary,
+    required this.previewText,
+    required this.previewAt,
+    required this.statusText,
+    required this.currentConversationId,
+    required this.isPrimary,
+    required this.isDiscovered,
+    required this.unreadCount,
+    required this.latestRole,
+    required this.waitingOnUser,
+    required this.socialPresence,
+    required this.arrivalHint,
+    required this.relationshipStage,
+    required this.totalSessions,
+  });
+
+  bool get isArrival => entryKind == 'arrival';
+  bool get hasUnread => unreadCount > 0;
+
+  DateTime? get previewDateTime => DateTime.tryParse(previewAt);
+
+  factory InboxEntrySummary.fromJson(Map<String, dynamic> json) {
+    return InboxEntrySummary(
+      entryKind: json['entry_kind'] as String? ?? 'thread',
+      pairId: json['pair_id'] as String? ?? '',
+      companionId: json['companion_id'] as String? ?? '',
+      companionName: json['companion_name'] as String? ?? 'Companion',
+      companionSummary: json['companion_summary'] as String? ?? '',
+      previewText: json['preview_text'] as String? ?? '',
+      previewAt: json['preview_at'] as String? ?? '',
+      statusText: json['status_text'] as String? ?? '',
+      currentConversationId: json['current_conversation_id'] as String?,
+      isPrimary: _asBool(json['is_primary'], false),
+      isDiscovered: _asBool(json['is_discovered'], true),
+      unreadCount: json['unread_count'] as int? ?? 0,
+      latestRole: json['latest_role'] as String? ?? 'assistant',
+      waitingOnUser: _asBool(json['waiting_on_user'], false),
+      socialPresence: json['social_presence'] as String? ?? '',
+      arrivalHint: json['arrival_hint'] as String? ?? '',
+      relationshipStage: json['relationship_stage'] as String? ?? 'new',
+      totalSessions: json['total_sessions'] as int? ?? 0,
     );
   }
 }
@@ -455,6 +565,9 @@ class ApiService {
     required String message,
     String? conversationId,
     String? characterId,
+    String? clientSentAt,
+    int? draftDurationMs,
+    int? replyLatencyMs,
   }) async {
     try {
       final response = await _client
@@ -466,6 +579,9 @@ class ApiService {
               'message': message,
               'conversation_id': conversationId,
               'character_id': characterId,
+              'client_sent_at': clientSentAt,
+              'draft_duration_ms': draftDurationMs,
+              'reply_latency_ms': replyLatencyMs,
             }),
           )
           .timeout(ApiConfig.requestTimeout);
@@ -489,6 +605,7 @@ class ApiService {
 
   static Future<SessionStartResponse?> startSession({
     String? characterId,
+    bool resumeExisting = true,
   }) async {
     try {
       final response = await _client
@@ -498,6 +615,7 @@ class ApiService {
             body: jsonEncode({
               'user_id': _userId,
               'character_id': characterId,
+              'resume_existing': resumeExisting,
             }),
           )
           .timeout(ApiConfig.requestTimeout);

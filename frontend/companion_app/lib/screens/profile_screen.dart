@@ -124,37 +124,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  Future<void> _deleteMemory(MemoryEntry memory) async {
-    final pairId = _profile?.selectedPair?.pairId;
-    if (pairId == null) {
-      return;
-    }
-    final confirmed = await _confirm(
-      title: 'Delete this memory?',
-      body: 'Sol will stop using this specific remembered moment.',
-      confirmLabel: 'Delete',
-    );
-    if (!confirmed) {
-      return;
-    }
-    try {
-      await ApiService.deleteMemory(pairId, memory.id);
-      await _load();
-    } on ChatException catch (e) {
-      _showSnack(e.message);
-    }
-  }
-
   Future<void> _resetRelationship() async {
     final pair = _profile?.selectedPair;
     if (pair == null) {
       return;
     }
     final confirmed = await _confirm(
-      title: 'Reset this relationship?',
+      title: 'Start this thread over?',
       body:
-          'This clears Sol\'s long-term memory, emotional timeline, and relationship state for ${pair.name}.',
-      confirmLabel: 'Reset',
+          'This clears the private continuity built with ${pair.name} and starts the thread fresh.',
+      confirmLabel: 'Start over',
     );
     if (!confirmed) {
       return;
@@ -172,7 +151,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final confirmed = await _confirm(
       title: 'Delete your Sol account?',
       body:
-          'This removes your relationships, memories, and stored settings across the app.',
+          'This removes your inbox, thread history, and saved settings across the app.',
       confirmLabel: 'Delete account',
       destructive: true,
     );
@@ -244,7 +223,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       appBar: AppBar(
         backgroundColor: _navy,
         elevation: 0,
-        title: const Text('Sol & Privacy'),
+        title: const Text('Presence & Privacy'),
         actions: [
           if (_isSaving)
             const Padding(
@@ -280,13 +259,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       _buildIdentityCard(),
                       const SizedBox(height: 14),
-                      _buildRelationshipCard(),
+                      _buildConversationCard(),
                       const SizedBox(height: 14),
                       _buildPrivacyCard(),
                       const SizedBox(height: 14),
-                      _buildKnowledgeCard(),
-                      const SizedBox(height: 14),
-                      _buildMemoryCard(),
+                      _buildNotificationCard(),
                       const SizedBox(height: 14),
                       _buildDestructiveCard(),
                     ],
@@ -300,7 +277,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final pair = _profile?.selectedPair;
     return _sectionCard(
       title: 'You and Sol',
-      subtitle: 'The current relationship thread and your account footprint.',
+      subtitle: 'The person you are currently talking to and the threads tied to your account.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -315,16 +292,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 6),
           Text(
             pair == null
-                ? 'No active companion selected.'
-                : 'Talking with ${pair.name} right now.',
+                ? 'No active thread selected yet.'
+                : 'You are in ${pair.name}\'s thread right now.',
             style: TextStyle(color: Colors.white.withValues(alpha: 0.62)),
           ),
+          if (pair != null) ...[
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.035),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    pair.summary.ifEmpty('A thread that keeps its own pace.'),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.72),
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Each thread stays private to that person.',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           if ((_profile?.pairs.length ?? 0) > 1)
             DropdownButtonFormField<String>(
               value: _selectedPairId,
               dropdownColor: _surface,
-              decoration: _inputDecoration('View another relationship'),
+              decoration: _inputDecoration('View another thread'),
               items: _profile!.pairs
                   .map(
                     (pair) => DropdownMenuItem<String>(
@@ -346,64 +354,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildRelationshipCard() {
-    final state = _profile?.relationshipState;
+  Widget _buildConversationCard() {
+    final pair = _profile?.selectedPair;
     final pairPrefs = _profile?.pairPreferences;
-    if (state == null || pairPrefs == null) {
+    if (pair == null || pairPrefs == null) {
       return const SizedBox.shrink();
     }
 
     return _sectionCard(
-      title: 'Relationship State',
+      title: 'Thread Behavior',
       subtitle:
-          'This is the live emotional model that shapes how your companion responds.',
+          'Shape how this specific person reaches out without exposing the machinery underneath.',
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _scoreChip('Closeness', state.closeness),
-              _scoreChip('Trust', state.trust),
-              _scoreChip('Openness', state.openness),
-              _scoreChip('Comfort', state.comfort),
-              _scoreChip('Rhythm', state.rhythm),
-              _scoreChip('Familiarity', state.topicFamiliarity),
-            ],
+          Text(
+            '${pair.name} can feel more present here than someone else in your inbox. These controls stay local to this thread.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.6),
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 14),
-          _infoRow('Stage', state.stage),
           _toggleRow(
-            title: 'Let this companion message first',
+            title: 'Let ${pair.name} start the conversation',
             value: pairPrefs.proactiveEnabled,
             onChanged: (value) => _updatePairPreferences({
               'proactive_enabled': value,
             }),
           ),
           _toggleRow(
-            title: 'Allow emotional callbacks',
-            subtitle: 'Reach out after heavier moments, not just long silence.',
+            title: 'Allow more emotionally aware check-ins',
+            subtitle: 'Lets ${pair.name} follow up after heavier moments, not just silence.',
             value: pairPrefs.proactiveEmotionalCallbacksEnabled,
             onChanged: (value) => _updatePairPreferences({
               'proactive_emotional_callbacks_enabled': value,
             }),
-          ),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            value: pairPrefs.proactiveCadence,
-            dropdownColor: _surface,
-            decoration: _inputDecoration('Proactive cadence'),
-            items: const [
-              DropdownMenuItem(value: 'gentle', child: Text('Gentle')),
-              DropdownMenuItem(value: 'balanced', child: Text('Balanced')),
-              DropdownMenuItem(value: 'frequent', child: Text('Frequent')),
-            ],
-            onChanged: (value) {
-              if (value == null) {
-                return;
-              }
-              _updatePairPreferences({'proactive_cadence': value});
-            },
           ),
         ],
       ),
@@ -418,22 +404,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return _sectionCard(
       title: 'Privacy & Presence',
-      subtitle: 'Control what Sol stores and how it can reach back out.',
+      subtitle: 'Quiet controls for storage, notifications, and when the app should leave you alone.',
       child: Column(
         children: [
           _toggleRow(
-            title: 'Allow long-term memory storage',
-            subtitle: 'Facts, emotional patterns, and episodic recall.',
+            title: 'Allow continuity across conversations',
+            subtitle: 'Keep context so threads feel consistent over time.',
             value: prefs.allowMemoryStorage,
             onChanged: (value) => _updatePreferences({
               'allow_memory_storage': value,
-            }),
-          ),
-          _toggleRow(
-            title: 'Show memory overview in this screen',
-            value: prefs.showMemoryOverview,
-            onChanged: (value) => _updatePreferences({
-              'show_memory_overview': value,
             }),
           ),
           _toggleRow(
@@ -484,173 +463,83 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildKnowledgeCard() {
-    final facts = _profile?.factRows ?? const [];
-    final conflicts = _profile?.factConflicts ?? const [];
-    final narrative = _profile?.currentNarrative;
-
+  Widget _buildNotificationCard() {
+    final pair = _profile?.selectedPair;
+    final pairPrefs = _profile?.pairPreferences;
+    final prefs = _profile?.preferences;
+    if (pair == null || pairPrefs == null || prefs == null) {
+      return const SizedBox.shrink();
+    }
     return _sectionCard(
-      title: 'What Sol Knows',
+      title: 'Notification Style',
       subtitle:
-          'The durable facts and narrative threads currently shaping responses.',
+          'Fine-tune how this thread should feel when it reaches back out.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (narrative != null && narrative.trim().isNotEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.035),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                narrative,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.76),
-                  height: 1.45,
-                ),
-              ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.035),
+              borderRadius: BorderRadius.circular(16),
             ),
-          if (narrative != null && narrative.trim().isNotEmpty)
-            const SizedBox(height: 14),
-          if (facts.isEmpty)
-            Text(
-              'No durable facts stored yet.',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.54)),
-            )
-          else
-            ...facts.take(10).map(
-                  (fact) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    title: Text(
-                      (fact['fact_key'] as String? ?? '').replaceAll('_', ' '),
-                      style: const TextStyle(color: _stone),
-                    ),
-                    subtitle: Text(
-                      fact['fact_value'] as String? ?? '',
-                      style:
-                          TextStyle(color: Colors.white.withValues(alpha: 0.6)),
-                    ),
-                  ),
-                ),
-          if (conflicts.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Recent shifts',
+            child: Text(
+              prefs.allowPushNotifications
+                  ? '${pair.name} can appear quietly when the moment feels right.'
+                  : 'Push is off, so ${pair.name} will only wait inside the inbox.',
               style: TextStyle(
-                color: _amber.withValues(alpha: 0.9),
-                fontWeight: FontWeight.w600,
+                color: Colors.white.withValues(alpha: 0.72),
+                height: 1.4,
               ),
             ),
-            const SizedBox(height: 8),
-            ...conflicts.take(4).map(
-                  (item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      '${(item['fact_key'] as String? ?? '').replaceAll('_', ' ')} changed from ${item['previous_value']} to ${item['current_value']}',
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.58)),
-                    ),
-                  ),
-                ),
-          ],
+          ),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<String>(
+            value: pairPrefs.proactiveCadence,
+            dropdownColor: _surface,
+            decoration: _inputDecoration('Reach-out frequency'),
+            items: const [
+              DropdownMenuItem(value: 'gentle', child: Text('Gentle')),
+              DropdownMenuItem(value: 'balanced', child: Text('Balanced')),
+              DropdownMenuItem(value: 'frequent', child: Text('Frequent')),
+            ],
+            onChanged: (value) {
+              if (value == null) {
+                return;
+              }
+              _updatePairPreferences({'proactive_cadence': value});
+            },
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Quiet hours make every thread hold off until you are more likely to want it.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.52),
+              height: 1.35,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildMemoryCard() {
-    final showMemories = _profile?.preferences.showMemoryOverview ?? true;
-    final memories = _profile?.memories ?? const [];
-
-    return _sectionCard(
-      title: 'Visible Memories',
-      subtitle:
-          'The episodic moments Sol can currently retrieve for this relationship.',
-      child: !showMemories
-          ? Text(
-              'Memory visibility is hidden by your current privacy preference.',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.54)),
-            )
-          : memories.isEmpty
-              ? Text(
-                  'No stored episodic memories yet.',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.54)),
-                )
-              : Column(
-                  children: memories.take(12).map((memory) {
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.03),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.05)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  memory.title,
-                                  style: const TextStyle(
-                                    color: _stone,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                onPressed: () => _deleteMemory(memory),
-                                icon: Icon(
-                                  Icons.delete_outline_rounded,
-                                  size: 18,
-                                  color: Colors.white.withValues(alpha: 0.42),
-                                ),
-                              ),
-                            ],
-                          ),
-                          Text(
-                            memory.content,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.62),
-                              height: 1.4,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
-                            children: [
-                              _tag(memory.emotionTag.ifEmpty('memory')),
-                              _tag(
-                                  'weight ${memory.emotionalWeight.toStringAsFixed(2)}'),
-                              _tag(
-                                  'strength ${memory.strength.toStringAsFixed(2)}'),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-    );
-  }
-
   Widget _buildDestructiveCard() {
+    final pair = _profile?.selectedPair;
     return _sectionCard(
       title: 'Reset & Delete',
-      subtitle: 'These actions change or remove stored relationship history.',
+      subtitle: 'Use these only if you want to clear a thread or leave Sol entirely.',
       child: Column(
         children: [
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
-              onPressed: _resetRelationship,
-              child: const Text('Reset current relationship memory'),
+              onPressed: pair == null ? null : _resetRelationship,
+              child: Text(
+                pair == null
+                    ? 'No thread selected'
+                    : 'Start ${pair.name}\'s thread over',
+              ),
             ),
           ),
           const SizedBox(height: 10),
@@ -708,25 +597,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _scoreChip(String label, double value) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: _amber.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _amber.withValues(alpha: 0.14)),
-      ),
-      child: Text(
-        '$label ${(value * 100).round()}%',
-        style: const TextStyle(
-          color: _amber,
-          fontSize: 12.5,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
   Widget _toggleRow({
     required String title,
     String? subtitle,
@@ -744,43 +614,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
             ),
       onChanged: _isSaving ? null : onChanged,
-    );
-  }
-
-  Widget _infoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Text(
-            '$label: ',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.52)),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(color: _stone),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _tag(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.045),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.54),
-          fontSize: 11.5,
-        ),
-      ),
     );
   }
 

@@ -15,6 +15,7 @@ from memory.retriever import get_memory_count
 from memory.store import db
 from personality.loader import load_character
 from personality.registry import (
+    build_inbox_entries,
     build_opening_line,
     build_pair_payload,
     get_active_companion_summaries,
@@ -31,6 +32,9 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
     conversation_id: Optional[str] = None
     character_id: Optional[str] = None
+    client_sent_at: Optional[str] = None
+    draft_duration_ms: Optional[int] = Field(default=None, ge=0, le=600000)
+    reply_latency_ms: Optional[int] = Field(default=None, ge=0, le=86400000)
 
 
 class BurstPayload(BaseModel):
@@ -54,6 +58,13 @@ class ChatResponse(BaseModel):
 class SessionStartRequest(BaseModel):
     user_id: Optional[str] = None
     character_id: Optional[str] = None
+    resume_existing: bool = True
+
+
+class SessionHistoryMessage(BaseModel):
+    role: str
+    content: str
+    created_at: Optional[str] = None
 
 
 class SessionStartResponse(BaseModel):
@@ -68,6 +79,8 @@ class SessionStartResponse(BaseModel):
     companion_summary: str
     opening_message: str
     opening_bursts: list[BurstPayload]
+    resumed_existing: bool = False
+    history_messages: list[SessionHistoryMessage] = []
 
 
 def _ensure_request_matches_auth(request_user_id: Optional[str], identity: AuthenticatedIdentity) -> None:
@@ -122,6 +135,9 @@ async def chat(
         companion_id=pair["companion_id"],
         role="user",
         content=request.message,
+        client_sent_at=request.client_sent_at,
+        draft_duration_ms=request.draft_duration_ms,
+        reply_latency_ms=request.reply_latency_ms,
     )
     on_message_saved(pair["id"], "user", request.message)
 
@@ -214,6 +230,45 @@ async def start_session(
         display_name=identity.display_name,
         email=identity.email,
     )
+    existing_conversation_id = (
+        db.get_current_conversation(identity.uid, pair_id=pair["id"])
+        if request.resume_existing
+        else None
+    )
+    character = load_character(pair["companion_id"])
+    mem_count = get_memory_count(pair_id=pair["id"], user_id=identity.uid)
+
+    if existing_conversation_id:
+        history_messages = db.get_recent_messages(
+            user_id=identity.uid,
+            pair_id=pair["id"],
+            conversation_id=existing_conversation_id,
+            limit=settings.RECENT_HISTORY_TURNS,
+        )
+        pair = db.get_pair_by_id(pair["id"]) or pair
+        return SessionStartResponse(
+            conversation_id=existing_conversation_id,
+            user_name=user.get("preferred_name") or user.get("name") or identity.display_name,
+            session_number=int(pair.get("total_sessions") or 1),
+            memory_count=mem_count,
+            is_first_session=int(pair.get("total_sessions") or 1) <= 1,
+            pair_id=pair["id"],
+            companion_id=character.id,
+            companion_name=character.name,
+            companion_summary=character.summary or character.core_identity.get("vibe", ""),
+            opening_message="",
+            opening_bursts=[],
+            resumed_existing=True,
+            history_messages=[
+                SessionHistoryMessage(
+                    role=message.get("role") or "assistant",
+                    content=message.get("content") or "",
+                    created_at=message.get("created_at"),
+                )
+                for message in history_messages
+                if (message.get("content") or "").strip()
+            ],
+        )
 
     conversation_id = db.create_conversation(
         user_id=identity.uid,
@@ -222,8 +277,6 @@ async def start_session(
     )
     on_session_started(pair["id"])
     pair = db.get_pair_by_id(pair["id"]) or pair
-    character = load_character(pair["companion_id"])
-    mem_count = get_memory_count(pair_id=pair["id"], user_id=identity.uid)
     opening_message = build_opening_line(character, session_count=int(pair.get("total_sessions") or 1))
     opening_plan = plan_burst_response(
         raw_text=opening_message,
@@ -253,6 +306,8 @@ async def start_session(
         companion_summary=character.summary or character.core_identity.get("vibe", ""),
         opening_message=opening_plan.combined_text,
         opening_bursts=[_burst_payload(burst) for burst in opening_plan.bursts],
+        resumed_existing=False,
+        history_messages=[],
     )
 
 
@@ -304,6 +359,7 @@ async def get_my_companions(identity: AuthenticatedIdentity = Depends(get_authen
         "available_companions": get_active_companion_summaries(),
         "pairs": [build_pair_payload(pair) for pair in db.list_pairs_for_user(identity.uid)],
         "primary_pair": build_pair_payload(primary_pair),
+        "inbox_entries": build_inbox_entries(identity.uid),
         "user_name": user.get("preferred_name") or user.get("name") or user.get("display_name"),
     }
 

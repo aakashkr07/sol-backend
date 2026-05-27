@@ -159,7 +159,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   }
 
   String _ctaLabel() {
-    return 'Open the chat';
+    return 'Open your messages';
   }
 
   Future<void> _beginEncounter() async {

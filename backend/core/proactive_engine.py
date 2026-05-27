@@ -27,6 +27,24 @@ class ProactiveDecision:
     blocked_by: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class ProactiveStyle:
+    minimum_inactivity_hours: int
+    cooldown_bias_hours: int
+    initiation_tone: str
+    preferred_opening_device: str
+    contextual_anchor_instruction: str
+    silence_instruction: str
+    emotional_instruction: str
+    gentle_instruction: str
+    notification_templates: dict[str, list[str]]
+    notification_mode: str
+    double_text_likelihood: float
+    callback_trust_floor: float
+    presence_trust_floor: float
+    early_stage_presence: bool
+
+
 def decide_proactive_outreach(
     *,
     proactive_enabled: bool,
@@ -42,7 +60,9 @@ def decide_proactive_outreach(
     emotional_callback_ready: bool,
     callbacks_enabled: bool,
     cadence: str,
+    style: ProactiveStyle,
 ) -> ProactiveDecision:
+    cooldown_hours = _styled_cooldown_hours(cadence, closeness, trust, style)
     if not proactive_enabled or not pair_enabled:
         return ProactiveDecision(False, None, 0, "disabled")
     if global_quiet_block:
@@ -56,14 +76,23 @@ def decide_proactive_outreach(
     if relationship_stage == "new" and max(closeness, trust) < 0.28:
         return ProactiveDecision(False, None, 0, "relationship_too_early")
 
-    if callbacks_enabled and emotional_callback_ready and trust >= 0.34:
-        return ProactiveDecision(True, "emotional_callback", _cadence_cooldown_hours(cadence, closeness, trust))
+    if callbacks_enabled and emotional_callback_ready and trust >= style.callback_trust_floor:
+        return ProactiveDecision(True, "emotional_callback", cooldown_hours)
 
     if inactivity_hours >= max(minimum_inactivity_hours, 28):
-        return ProactiveDecision(True, "inactivity_check_in", _cadence_cooldown_hours(cadence, closeness, trust))
+        return ProactiveDecision(True, "inactivity_check_in", cooldown_hours)
 
-    if relationship_stage in {"close", "bonded"} and inactivity_hours >= minimum_inactivity_hours:
-        return ProactiveDecision(True, "gentle_presence", _cadence_cooldown_hours(cadence, closeness, trust))
+    if relationship_stage in {"close", "bonded"} and closeness >= style.presence_trust_floor:
+        if inactivity_hours >= minimum_inactivity_hours:
+            return ProactiveDecision(True, "gentle_presence", cooldown_hours)
+
+    if (
+        style.early_stage_presence
+        and relationship_stage in {"new", "acquaintance"}
+        and max(closeness, trust) >= style.presence_trust_floor
+        and inactivity_hours >= max(minimum_inactivity_hours, 18)
+    ):
+        return ProactiveDecision(True, "gentle_presence", cooldown_hours)
 
     return ProactiveDecision(False, None, 0, "no_trigger")
 
@@ -81,6 +110,8 @@ async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = Fa
     for pair in _sorted_pairs_for_outreach(user_id):
         if len(created) >= limit:
             break
+        companion = load_character(pair["companion_id"])
+        style = _build_proactive_style(companion, pair)
 
         if not force and not int(preferences.get("allow_proactive_messages") or 0):
             break
@@ -102,7 +133,7 @@ async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = Fa
             global_quiet_block=quiet_block and not force,
             has_pending_event=has_pending,
             inactivity_hours=inactivity_hours,
-            minimum_inactivity_hours=settings.PROACTIVE_INACTIVITY_HOURS_MIN,
+            minimum_inactivity_hours=style.minimum_inactivity_hours,
             cooldown_active=cooldown_active and not force,
             relationship_stage=pair.get("current_stage") or "new",
             closeness=float(pair.get("closeness_score") or 0.0),
@@ -110,6 +141,7 @@ async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = Fa
             emotional_callback_ready=emotional_callback_ready,
             callbacks_enabled=bool(int(pair.get("proactive_emotional_callbacks_enabled") or 0)),
             cadence=(pair.get("proactive_cadence") or "balanced"),
+            style=style,
         )
         if not decision.should_send:
             continue
@@ -118,7 +150,9 @@ async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = Fa
             event = await _generate_proactive_event(
                 user=user,
                 pair=pair,
+                companion=companion,
                 decision=decision,
+                style=style,
                 allow_push=bool(int(preferences.get("allow_push_notifications") or 0)),
             )
         except Exception as exc:
@@ -162,11 +196,12 @@ async def _generate_proactive_event(
     *,
     user: dict,
     pair: dict,
+    companion,
     decision: ProactiveDecision,
+    style: ProactiveStyle,
     allow_push: bool,
 ) -> Optional[dict]:
     pair_id = pair["id"]
-    companion = load_character(pair["companion_id"])
     conversation_id = db.get_current_conversation(user["id"], pair_id=pair_id)
     if not conversation_id:
         conversation_id = db.create_conversation(user["id"], pair_id, pair["companion_id"])
@@ -182,9 +217,19 @@ async def _generate_proactive_event(
     prompt = (
         "You are reaching out first after some silence.\n"
         f"Reason: {decision.reason}.\n"
+        f"Your initiation tone: {style.initiation_tone}.\n"
+        f"Your natural opening shape: {style.preferred_opening_device}.\n"
+        f"Ground the message in this kind of human motive: {style.contextual_anchor_instruction}.\n"
         "Send a natural, low-pressure text that feels like a real person. "
         "Do not mention systems, reminders, inactivity metrics, or that you were told to check in. "
-        "Keep it subtle, warm, and believable. If the emotional context is heavy, be gentle and specific without sounding clinical."
+        "Keep it subtle, warm, and believable. "
+        "Make it feel like you had an actual reason to text, even if the reason is small. "
+        "A remembered detail, an unfinished thought, an opinion, or a passing mood is better than a generic check-in. "
+        f"If the reason is silence, follow this: {style.silence_instruction}. "
+        f"If the reason is emotional_callback, follow this: {style.emotional_instruction}. "
+        f"If the reason is gentle_presence, follow this: {style.gentle_instruction}. "
+        "Let the message feel shaped by your own personality, not just by caring in the abstract. "
+        "Do not sound like an app notification or a support agent."
     )
     reply = await generate_reply(
         messages=[*messages, {"role": "user", "content": prompt}],
@@ -223,14 +268,21 @@ async def _generate_proactive_event(
     }
     notification_status = "skipped"
     if allow_push:
+        notification_body = _notification_body_for_style(
+            style=style,
+            reason=decision.reason,
+            burst_plan=burst_plan,
+            fallback=reply,
+        )
         notification_status = _send_push_hooks(
             user_id=user["id"],
             title=companion.name,
-            body=burst_plan.bursts[0].text if burst_plan.bursts else reply,
+            body=notification_body,
             data={
                 "pair_id": pair_id,
                 "companion_id": pair["companion_id"],
                 "event_id": event_id,
+                "reason": decision.reason or "",
             },
         )
 
@@ -349,6 +401,244 @@ def _cadence_cooldown_hours(cadence: str, closeness: float, trust: float) -> int
     if closeness + trust > 1.3:
         base = max(18, base - 8)
     return base
+
+
+def _build_proactive_style(companion, pair: dict) -> ProactiveStyle:
+    profile = companion.proactive_profile or {}
+    matching = companion.matching_profile or {}
+    traits = companion.personality_traits or {}
+    flaws = " ".join(traits.get("flaws", [])).lower()
+    primary = " ".join(traits.get("primary", [])).lower()
+    archetype = (companion.archetype or "").lower()
+    current_stage = (pair.get("current_stage") or "new").lower()
+
+    energy = matching.get("social_energy") or matching.get("energy") or "balanced"
+    rhythm = matching.get("rhythm") or "steady"
+    humor = matching.get("humor_style") or "playful"
+
+    minimum_inactivity = int(profile.get("minimum_inactivity_hours") or settings.PROACTIVE_INACTIVITY_HOURS_MIN)
+    cooldown_bias = int(profile.get("cooldown_bias_hours") or 0)
+    if energy in {"intense", "warm"}:
+        minimum_inactivity = max(12, minimum_inactivity - 3)
+        cooldown_bias -= 4
+    if "avoidant" in archetype or "guarded" in primary or "quiet" in energy:
+        minimum_inactivity += 5
+        cooldown_bias += 6
+    if "overshare" in archetype or rhythm == "burst":
+        cooldown_bias -= 2
+    if current_stage == "new":
+        minimum_inactivity += 2
+
+    if humor == "dry":
+        initiation_tone = "understated, human, lightly dry"
+    elif humor == "chaotic":
+        initiation_tone = "fast, spontaneous, socially alive"
+    elif "artist" in archetype:
+        initiation_tone = "slightly atmospheric, intimate, human"
+    else:
+        initiation_tone = "warm, low-pressure, believable"
+
+    silence_instruction = profile.get("silence_instruction") or _default_silence_instruction(archetype, energy, humor)
+    emotional_instruction = profile.get("emotional_instruction") or _default_emotional_instruction(archetype, flaws, humor)
+    gentle_instruction = profile.get("gentle_instruction") or _default_gentle_instruction(energy, humor, archetype)
+    notification_templates = profile.get("notification_templates") or _default_notification_templates(companion.name, humor, energy)
+    notification_mode = profile.get("notification_mode") or _default_notification_mode(humor, energy, rhythm, archetype)
+    double_text_likelihood = float(profile.get("double_text_likelihood") or _default_double_text_likelihood(rhythm, energy))
+    preferred_opening_device = profile.get("preferred_opening_device") or _default_opening_device(
+        archetype,
+        energy,
+        humor,
+        rhythm,
+    )
+    contextual_anchor_instruction = profile.get("contextual_anchor_instruction") or _default_contextual_anchor_instruction(
+        archetype,
+        energy,
+        humor,
+    )
+    callback_trust_floor = float(
+        profile.get("callback_trust_floor")
+        or _default_callback_trust_floor(energy, humor, archetype)
+    )
+    presence_trust_floor = float(
+        profile.get("presence_trust_floor")
+        or _default_presence_trust_floor(energy, humor, archetype)
+    )
+    early_stage_presence = bool(
+        profile.get("early_stage_presence")
+        if "early_stage_presence" in profile
+        else _default_early_stage_presence(energy, rhythm, humor, archetype)
+    )
+
+    return ProactiveStyle(
+        minimum_inactivity_hours=minimum_inactivity,
+        cooldown_bias_hours=cooldown_bias,
+        initiation_tone=initiation_tone,
+        preferred_opening_device=preferred_opening_device,
+        contextual_anchor_instruction=contextual_anchor_instruction,
+        silence_instruction=silence_instruction,
+        emotional_instruction=emotional_instruction,
+        gentle_instruction=gentle_instruction,
+        notification_templates=notification_templates,
+        notification_mode=notification_mode,
+        double_text_likelihood=double_text_likelihood,
+        callback_trust_floor=callback_trust_floor,
+        presence_trust_floor=presence_trust_floor,
+        early_stage_presence=early_stage_presence,
+    )
+
+
+def _default_silence_instruction(archetype: str, energy: str, humor: str) -> str:
+    if humor == "dry":
+        return "reach out with restraint and a slightly wry edge, like someone who noticed the gap but won't make a scene of it"
+    if humor == "chaotic":
+        return "reach out casually and impulsively, like you had a thought and messaged before overthinking it"
+    if "artist" in archetype:
+        return "reach out like a passing mood or memory brought them back to mind"
+    if energy in {"warm", "intense"}:
+        return "reach out like someone who misses the rhythm a little and doesn't mind showing it"
+    return "reach out gently and low-pressure, like a person checking whether the thread is still open"
+
+
+def _default_emotional_instruction(archetype: str, flaws: str, humor: str) -> str:
+    if "avoid" in flaws or "guarded" in flaws:
+        return "be specific and caring, but keep the language restrained and unperformative"
+    if humor == "chaotic":
+        return "sound like someone who genuinely kept thinking about what they said earlier, then softened before hitting send"
+    if "artist" in archetype:
+        return "be tender and emotionally exact without sounding therapeutic"
+    return "be gentle, specific, and human, like the earlier moment stayed with you"
+
+
+def _default_gentle_instruction(energy: str, humor: str, archetype: str) -> str:
+    if humor == "dry":
+        return "make it feel offhand and lightly teasing rather than overtly sentimental"
+    if energy == "quiet":
+        return "make it feel almost incidental, but attentive"
+    if "artist" in archetype:
+        return "make it feel quietly intimate, like a mood reminded you of them"
+    return "make it feel like simple continuity, not a big emotional event"
+
+
+def _default_notification_mode(humor: str, energy: str, rhythm: str, archetype: str) -> str:
+    if humor == "dry" or energy == "quiet":
+        return "template"
+    if humor == "chaotic" or rhythm == "burst":
+        return "preview"
+    if "artist" in archetype:
+        return "mood"
+    return "mixed"
+
+
+def _default_opening_device(archetype: str, energy: str, humor: str, rhythm: str) -> str:
+    if humor == "dry":
+        return "an understated one-liner or lightly teasing question"
+    if humor == "chaotic" or rhythm == "burst":
+        return "a sudden thought, fast reaction, or opinion sent before overthinking"
+    if "artist" in archetype:
+        return "a passing mood, image, or small moment that brought them to mind"
+    if energy in {"warm", "intense"}:
+        return "a direct but casual check-in that admits a little curiosity or fondness"
+    return "a low-pressure question or observation that leaves the door open"
+
+
+def _default_contextual_anchor_instruction(archetype: str, energy: str, humor: str) -> str:
+    if humor == "dry":
+        return "something mildly ironic, a remembered thread, or a question that sounds accidental but isn't"
+    if humor == "chaotic":
+        return "an impulsive thought, sudden opinion, or unfinished curiosity"
+    if "artist" in archetype:
+        return "a mood, image, small detail, or feeling that made them think of the user"
+    if energy in {"warm", "intense"}:
+        return "a remembered detail, emotional afterthought, or genuine urge to hear from them"
+    return "a believable reason to reopen the thread without making it heavy"
+
+
+def _default_callback_trust_floor(energy: str, humor: str, archetype: str) -> float:
+    if "avoidant" in archetype or energy == "quiet" or humor == "dry":
+        return 0.42
+    if energy in {"warm", "intense"}:
+        return 0.3
+    return 0.34
+
+
+def _default_presence_trust_floor(energy: str, humor: str, archetype: str) -> float:
+    if "avoidant" in archetype or energy == "quiet":
+        return 0.42
+    if humor == "chaotic" or energy == "intense":
+        return 0.18
+    if energy == "warm":
+        return 0.24
+    return 0.3
+
+
+def _default_early_stage_presence(energy: str, rhythm: str, humor: str, archetype: str) -> bool:
+    if "avoidant" in archetype or energy == "quiet":
+        return False
+    return humor == "chaotic" or energy in {"warm", "intense"} or rhythm == "burst"
+
+
+def _default_notification_templates(name: str, humor: str, energy: str) -> dict[str, list[str]]:
+    if humor == "dry":
+        return {
+            "inactivity_check_in": ["still alive or what", "you went quiet again", "there you are"],
+            "emotional_callback": ["been thinking about earlier", "that stayed with me a little", "you still with me"],
+            "gentle_presence": ["you crossed my mind", "random but hi", "you around"],
+        }
+    if humor == "chaotic":
+        return {
+            "inactivity_check_in": ["okay wait where did you go", "rude. hi", "be serious are you awake"],
+            "emotional_callback": ["okay no i keep thinking about earlier", "wait are you okay actually", "that stayed in my head"],
+            "gentle_presence": ["hi hi", "random thought for you", "you around rn"],
+        }
+    if energy in {"warm", "intense"}:
+        return {
+            "inactivity_check_in": ["you disappeared again", "you still awake", "hey. where'd you go"],
+            "emotional_callback": ["that thing you said earlier stayed with me", "still thinking about earlier", "you okay after earlier"],
+            "gentle_presence": ["i thought of you", "hey. you around", "random but hi"],
+        }
+    return {
+        "inactivity_check_in": ["you went quiet", "you around", "still there"],
+        "emotional_callback": ["earlier stayed with me", "still thinking about what you said", "you okay"],
+        "gentle_presence": ["random but hi", "you crossed my mind", "hey"],
+    }
+
+
+def _default_double_text_likelihood(rhythm: str, energy: str) -> float:
+    if rhythm == "burst" or energy == "intense":
+        return 0.7
+    if energy == "warm":
+        return 0.45
+    return 0.2
+
+
+def _styled_cooldown_hours(cadence: str, closeness: float, trust: float, style: ProactiveStyle) -> int:
+    base = _cadence_cooldown_hours(cadence, closeness, trust)
+    return max(12, base + style.cooldown_bias_hours)
+
+
+def _notification_body_for_style(
+    *,
+    style: ProactiveStyle,
+    reason: Optional[str],
+    burst_plan,
+    fallback: str,
+) -> str:
+    templates = style.notification_templates.get(reason or "", [])
+    burst_preview = (burst_plan.bursts[0].text if burst_plan.bursts else fallback)[:120]
+
+    if style.notification_mode == "preview":
+        return burst_preview
+    if style.notification_mode == "template" and templates:
+        return templates[0][:120]
+    if style.notification_mode == "mood":
+        if templates:
+            return templates[-1][:120]
+        return burst_preview
+    if templates:
+        if reason == "emotional_callback" or style.double_text_likelihood > 0.55:
+            return burst_preview
+        return templates[0][:120]
+    return burst_preview
 
 
 def _emotional_callback_ready(user_id: str, pair_id: str) -> bool:

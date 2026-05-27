@@ -9,6 +9,10 @@ class SessionBootstrapService {
     _pendingSession = session;
   }
 
+  static SessionStartResponse? peek() {
+    return _pendingSession;
+  }
+
   static SessionStartResponse? consume() {
     final session = _pendingSession;
     _pendingSession = null;

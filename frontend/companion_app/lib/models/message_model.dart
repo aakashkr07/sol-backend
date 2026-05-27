@@ -45,6 +45,22 @@ class Message {
 
   factory Message.fromNova(String content) => Message.fromCompanion(content);
 
+  factory Message.fromHistory({
+    required String role,
+    required String content,
+    required String? createdAt,
+  }) {
+    return Message(
+      id: '${role}_${createdAt ?? DateTime.now().microsecondsSinceEpoch}_${content.hashCode}',
+      role: role == 'user' ? MessageRole.user : MessageRole.assistant,
+      content: content,
+      timestamp: DateTime.tryParse(createdAt ?? '') ?? DateTime.now(),
+      isNew: false,
+      status: MessageStatus.read,
+      startsNewGroup: false,
+    );
+  }
+
   factory Message.fromUser(String content) {
     return Message(
       id: DateTime.now().microsecondsSinceEpoch.toString(),

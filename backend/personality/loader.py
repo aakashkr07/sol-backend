@@ -56,7 +56,9 @@ class Character:
         self.relationship_arc = data.get("relationship_arc", {})
         self.relationship_defaults = data.get("relationship_defaults", {})
         self.discovery = data.get("discovery", {})
+        self.social_graph = data.get("social_graph", {})
         self.matching_profile = data.get("matching_profile", {})
+        self.proactive_profile = data.get("proactive_profile", {})
         self.opinion_seeds = data.get("opinion_seeds", {})
         self.forbidden_behaviors = data.get("forbidden_behaviors", [])
 

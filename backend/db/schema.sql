@@ -198,6 +198,10 @@ CREATE TABLE IF NOT EXISTS messages (
     topics                TEXT,
     hour_of_day           INTEGER,
     day_of_week           INTEGER,
+    client_sent_at        DATETIME,
+    draft_duration_ms     INTEGER,
+    reply_latency_ms      INTEGER,
+    text_length           INTEGER,
     memory_extracted      INTEGER DEFAULT 0
 );
 

@@ -13,7 +13,12 @@ import '../widgets/message_bubble.dart';
 import '../widgets/typing_indicator.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  final SessionStartResponse? initialSession;
+
+  const ChatScreen({
+    super.key,
+    this.initialSession,
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -32,7 +37,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   bool _isSending = false;
   bool _isInitializing = true;
-  bool _isSwitchingCompanion = false;
   bool _isAssistantDelivering = false;
   String? _errorMessage;
   String? _conversationId;
@@ -40,9 +44,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   String? _companionId;
   String _companionName = 'Companion';
   int _memoryCount = 0;
-  List<CompanionSummary> _companions = const [];
   TypingIndicatorSpec? _typingSpec;
   int _assistantPlaybackGeneration = 0;
+  DateTime? _draftStartedAt;
 
   bool get _isTyping => _typingSpec != null;
 
@@ -79,21 +83,31 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     List<ChatBurst> openingBursts = const [];
     try {
       await NotificationHooksService.initialize();
-      final session =
-          SessionBootstrapService.consume() ?? await ApiService.startSession();
+      final session = widget.initialSession ??
+          SessionBootstrapService.consume() ??
+          await ApiService.startSession(resumeExisting: true);
       if (session != null && mounted) {
-        setState(() {
-          _conversationId = session.conversationId;
-          _pairId = session.pairId;
-          _companionId = session.companionId;
-          _companionName = session.companionName;
-          _memoryCount = session.memoryCount;
-        });
-        openingBursts = session.openingBursts.isNotEmpty
-            ? session.openingBursts
-            : [ChatBurst.single(session.openingMessage)];
+        _applySession(session);
+        if (session.historyMessages.isNotEmpty) {
+          _messages
+            ..clear()
+            ..addAll(
+              session.historyMessages
+                  .map(
+                    (message) => Message.fromHistory(
+                      role: message.role,
+                      content: message.content,
+                      createdAt: message.createdAt,
+                    ),
+                  )
+                  .toList(),
+            );
+        } else if (session.openingBursts.isNotEmpty || session.openingMessage.trim().isNotEmpty) {
+          openingBursts = session.openingBursts.isNotEmpty
+              ? session.openingBursts
+              : [ChatBurst.single(session.openingMessage)];
+        }
       }
-      await _loadCompanions();
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -111,28 +125,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     await _loadPendingProactiveEvents(silent: true);
   }
 
-  Future<void> _loadCompanions() async {
-    final response = await ApiService.getMyCompanions();
-    if (response == null || !mounted) {
+  void _applySession(SessionStartResponse session) {
+    if (!mounted) {
       return;
     }
-
-    final byId = <String, CompanionSummary>{};
-    for (final pair in response.pairs) {
-      byId[pair.id] = pair;
-    }
-    for (final companion in response.availableCompanions) {
-      byId[companion.id] = byId[companion.id] ?? companion;
-    }
-
     setState(() {
-      _companions = byId.values.toList()
-        ..sort((a, b) {
-          if (a.isPrimary == b.isPrimary) {
-            return a.name.compareTo(b.name);
-          }
-          return a.isPrimary ? -1 : 1;
-        });
+      _conversationId = session.conversationId;
+      _pairId = session.pairId;
+      _companionId = session.companionId;
+      _companionName = session.companionName;
+      _memoryCount = session.memoryCount;
     });
   }
 
@@ -142,14 +144,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return null;
     }
     return name.trim().split(' ').first;
-  }
-
-  void _addCompanionMessage(String text) {
-    if (!mounted) {
-      return;
-    }
-    setState(() => _messages.add(Message.fromCompanion(text)));
-    _scrollToBottom();
   }
 
   void _cancelAssistantPlayback({bool clearTyping = true}) {
@@ -288,156 +282,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _openCompanionPicker() async {
-    if (_isSwitchingCompanion || _companions.isEmpty) {
-      return;
-    }
-
-    final selected = await showModalBottomSheet<CompanionSummary>(
-      context: context,
-      backgroundColor: const Color(0xFF111827),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Choose who you want to talk to',
-                  style: TextStyle(
-                    color: Color(0xFFEEE8DF),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Each companion keeps a separate relationship and memory thread.',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.5),
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                for (final companion in _companions)
-                  ListTile(
-                    onTap: () => Navigator.pop(context, companion),
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      companion.name,
-                      style: const TextStyle(
-                        color: Color(0xFFEEE8DF),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    subtitle: Text(
-                      companion.summary.isEmpty
-                          ? 'A different emotional rhythm.'
-                          : companion.summary,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.48),
-                        fontSize: 12.5,
-                      ),
-                    ),
-                    trailing: companion.isPrimary
-                        ? Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _amber.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: _amber.withValues(alpha: 0.22),
-                              ),
-                            ),
-                            child: const Text(
-                              'current',
-                              style: TextStyle(
-                                color: _amber,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          )
-                        : Text(
-                            companion.totalSessions > 0
-                                ? '${companion.totalSessions} chats'
-                                : 'new',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.4),
-                              fontSize: 12,
-                            ),
-                          ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    if (selected == null || selected.id == _companionId) {
-      return;
-    }
-
-    await _switchCompanion(selected.id);
-  }
-
-  Future<void> _switchCompanion(String companionId) async {
-    _cancelAssistantPlayback();
-    setState(() {
-      _isSwitchingCompanion = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final session = await ApiService.startSession(characterId: companionId);
-      if (session == null || !mounted) {
-        throw const ChatException('Could not switch companions.', -1);
-      }
-
-      setState(() {
-        _messages.clear();
-        _conversationId = session.conversationId;
-        _pairId = session.pairId;
-        _companionId = session.companionId;
-        _companionName = session.companionName;
-        _memoryCount = session.memoryCount;
-      });
-      await _loadCompanions();
-      await _playCompanionBursts(
-        session.openingBursts.isNotEmpty
-            ? session.openingBursts
-            : [ChatBurst.single(session.openingMessage)],
-      );
-    } on ChatException catch (e) {
-      if (!mounted) {
-        return;
-      }
-      setState(() => _errorMessage = e.message);
-    } finally {
-      if (mounted) {
-        setState(() => _isSwitchingCompanion = false);
-      }
-    }
-  }
-
   Future<void> _sendMessage() async {
     final text = _inputController.text.trim();
     if (text.isEmpty || _isSending || _isAssistantDelivering) {
       return;
     }
 
+    final clientSentAt = DateTime.now();
+    final draftDurationMs = _draftStartedAt == null
+        ? null
+        : clientSentAt.difference(_draftStartedAt!).inMilliseconds.clamp(0, 600000).toInt();
+    final replyLatencyMs = _latestAssistantTimestamp() == null
+        ? null
+        : clientSentAt
+            .difference(_latestAssistantTimestamp()!)
+            .inMilliseconds
+            .clamp(0, 86400000)
+            .toInt();
     final userMessage = Message.fromUser(text);
     _inputController.clear();
+    _draftStartedAt = null;
     _inputFocusNode.requestFocus();
     HapticFeedback.lightImpact();
 
@@ -457,6 +321,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         message: text,
         conversationId: _conversationId,
         characterId: _companionId,
+        clientSentAt: clientSentAt.toIso8601String(),
+        draftDurationMs: draftDurationMs,
+        replyLatencyMs: replyLatencyMs,
       );
 
       if (!mounted) {
@@ -484,7 +351,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       } else {
         _cancelAssistantPlayback();
       }
-      await _loadCompanions();
       HapticFeedback.selectionClick();
       _scrollToBottom();
     } on ChatException catch (e) {
@@ -522,6 +388,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  DateTime? _latestAssistantTimestamp() {
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      final message = _messages[i];
+      if (!message.isUser) {
+        return message.timestamp;
+      }
+    }
+    return null;
+  }
+
   Future<void> _openProfile() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -529,7 +405,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ),
     );
     if (mounted) {
-      await _loadCompanions();
       await _loadPendingProactiveEvents(silent: true);
     }
   }
@@ -556,13 +431,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       final otherEvents = events.where((event) => event.pairId != _pairId).toList();
       if (otherEvents.isNotEmpty && !silent) {
         _showNotice(
-          '${otherEvents.first.companionName} reached out while you were away.',
+          '${otherEvents.first.companionName} left something in your inbox.',
         );
       } else if (otherEvents.isNotEmpty && silent) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             _showNotice(
-              '${otherEvents.first.companionName} reached out while you were away.',
+              '${otherEvents.first.companionName} left something in your inbox.',
             );
           }
         });
@@ -659,6 +534,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Widget _buildTopBar() {
     final firstName = _getFirstName();
+    final canPop = Navigator.of(context).canPop();
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
@@ -671,6 +547,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ),
       child: Row(
         children: [
+          if (canPop) ...[
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => Navigator.of(context).maybePop(),
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.05),
+                  ),
+                  child: Icon(
+                    Icons.arrow_back_rounded,
+                    size: 18,
+                    color: Colors.white.withValues(alpha: 0.56),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+          ],
           _buildCompanionAvatar(),
           const SizedBox(width: 12),
           Expanded(
@@ -689,8 +588,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 Text(
                   _isTyping
                       ? 'typing...'
-                      : _isSwitchingCompanion
-                          ? 'switching...'
                       : firstName != null
                           ? 'online with $firstName'
                           : 'online now',
@@ -720,27 +617,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   Icons.tune_rounded,
                   size: 17,
                   color: Colors.white.withValues(alpha: 0.42),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: _isSwitchingCompanion ? null : _openCompanionPicker,
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.05),
-                ),
-                child: Icon(
-                  Icons.swap_horiz_rounded,
-                  size: 18,
-                  color: Colors.white.withValues(alpha: 0.45),
                 ),
               ),
             ),
@@ -982,7 +858,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     vertical: 12,
                   ),
                 ),
-                onChanged: (_) => setState(() {}),
+                onChanged: (value) {
+                  if (value.trim().isNotEmpty && _draftStartedAt == null) {
+                    _draftStartedAt = DateTime.now();
+                  }
+                  if (value.trim().isEmpty) {
+                    _draftStartedAt = null;
+                  }
+                  setState(() {});
+                },
                 onTap: _scrollToBottom,
               ),
             ),

@@ -727,6 +727,10 @@ class Database:
                 "topics TEXT",
                 "hour_of_day INTEGER",
                 "day_of_week INTEGER",
+                "client_sent_at DATETIME",
+                "draft_duration_ms INTEGER",
+                "reply_latency_ms INTEGER",
+                "text_length INTEGER",
                 "memory_extracted INTEGER DEFAULT 0",
             ],
             "user_facts": [
@@ -1575,14 +1579,19 @@ class Database:
         emotional_tone: Optional[str] = None,
         emotional_intensity: float = 0.0,
         topics: Optional[list[str]] = None,
+        client_sent_at: Optional[str] = None,
+        draft_duration_ms: Optional[int] = None,
+        reply_latency_ms: Optional[int] = None,
     ) -> int:
         now = datetime.utcnow()
+        text_length = len((content or "").strip())
         cursor = self.conn.execute(
             """
             INSERT INTO messages
                 (conversation_id, user_id, pair_id, companion_id, role, content, created_at,
-                 emotional_tone, emotional_intensity, topics, hour_of_day, day_of_week)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 emotional_tone, emotional_intensity, topics, hour_of_day, day_of_week,
+                 client_sent_at, draft_duration_ms, reply_latency_ms, text_length)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 conversation_id,
@@ -1597,6 +1606,10 @@ class Database:
                 json.dumps(topics or []),
                 now.hour,
                 _day_of_week(now),
+                client_sent_at,
+                draft_duration_ms,
+                reply_latency_ms,
+                text_length,
             ),
         )
         self.conn.execute(
@@ -1679,6 +1692,21 @@ class Database:
             ).fetchall()
 
         return [self._normalize_message_row(row) for row in reversed(rows)]
+
+    def get_latest_message_for_pair(self, pair_id: str) -> Optional[dict]:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM messages
+            WHERE pair_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (pair_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return self._normalize_message_row(row)
 
     def get_unextracted_messages(
         self,
@@ -2424,6 +2452,22 @@ class Database:
                 (user_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def get_pending_proactive_counts(self, user_id: str) -> dict[str, int]:
+        rows = self.conn.execute(
+            """
+            SELECT pair_id, COUNT(*) AS pending_count
+            FROM proactive_events
+            WHERE user_id = ? AND status = 'pending'
+            GROUP BY pair_id
+            """,
+            (user_id,),
+        ).fetchall()
+        return {
+            str(row["pair_id"]): int(row["pending_count"] or 0)
+            for row in rows
+            if row["pair_id"]
+        }
 
     def mark_proactive_events_delivered(self, event_ids: list[str]) -> None:
         if not event_ids:
