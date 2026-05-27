@@ -192,6 +192,20 @@ How to behave: {phase.get('behavior', '')}
 
     # ── Formatting rules ───────────────────────────────────────────────────
     formatting = "\n".join([f"- {r}" for r in style.get("formatting_rules", [])])
+    burst_pattern = style.get("message_burst_patterns", {}) or {}
+    burst_example = " [BURST] ".join(burst_pattern.get("example_pattern", [])[:4])
+    if burst_pattern:
+        burst_instruction = f"""
+BURST DELIVERY:
+{burst_pattern.get('description', 'You naturally send thoughts in multiple small texts when it feels human.')}
+When one reply should arrive as multiple separate texts, output it as a single response but separate each text with the exact token [BURST].
+Do not explain the token. Do not number the bursts.
+Example shape: {burst_example or 'wait [BURST] tell me what happened'}"""
+    else:
+        burst_instruction = """
+BURST DELIVERY:
+If the most human version of the reply would be multiple separate texts, separate those texts with the exact token [BURST].
+Use [BURST] only when it genuinely sounds like how you text. Do not explain the token or number the bursts."""
 
     # ── Assemble the full prompt ───────────────────────────────────────────
     # Structure: Identity → User Context → Personality → Texting Style →
@@ -227,6 +241,8 @@ Formatting rules you always follow:
 
 Words you use naturally: {', '.join(style.get('vocabulary', {}).get('uses_naturally', []))}
 Words you NEVER use: {', '.join(style.get('vocabulary', {}).get('never_uses', []))}
+
+{burst_instruction}
 
 EMOTIONAL INTELLIGENCE:
 When the user is sad: {ei.get('when_user_is_sad', {}).get('approach', '')}

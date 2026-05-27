@@ -31,9 +31,11 @@
 
 import logging
 import sys
+import time
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from auth.firebase import initialize_firebase_auth
@@ -156,6 +158,11 @@ app = FastAPI(
     redoc_url="/redoc" if settings.DEBUG else None,
     lifespan=lifespan,
 )
+app.state.metrics = {
+    "requests_total": 0,
+    "requests_failed": 0,
+    "last_request_id": None,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +173,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],           # TODO: Restrict before launch
+    allow_origins=settings.CORS_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -178,8 +185,36 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 from api.chat import router as chat_router
+from api.ops import router as ops_router
+from api.profile import router as profile_router
+from api.proactive import router as proactive_router
 
 app.include_router(chat_router, prefix="/api", tags=["chat"])
+app.include_router(profile_router, prefix="/api", tags=["profile"])
+app.include_router(proactive_router, prefix="/api", tags=["proactive"])
+app.include_router(ops_router, prefix="/api", tags=["ops"])
+
+
+@app.middleware("http")
+async def request_metrics_middleware(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    started = time.perf_counter()
+    app.state.metrics["requests_total"] += 1
+    app.state.metrics["last_request_id"] = request_id
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        app.state.metrics["requests_failed"] += 1
+        raise
+
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    if response.status_code >= 500:
+        app.state.metrics["requests_failed"] += 1
+    response.headers["x-request-id"] = request_id
+    response.headers["x-response-time-ms"] = str(duration_ms)
+    logger.info("%s %s -> %s in %sms", request.method, request.url.path, response.status_code, duration_ms)
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +274,15 @@ async def health_check():
         health["status"] = "degraded"
 
     return health
+
+
+@app.get("/metrics", tags=["health"])
+async def metrics_snapshot():
+    return {
+        "requests": app.state.metrics,
+        "debug": settings.DEBUG,
+        "allowed_origins": settings.CORS_ALLOWED_ORIGINS,
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ import httpx
 from config import settings
 from memory.analysis import detect_behavioral_patterns, emotion_to_valence
 from memory.consolidator import maybe_consolidate_narrative
+from memory.relationship_engine import refresh_after_extraction
 from memory.store import db
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,11 @@ async def extract_and_save(user_id: str, pair_id: str, companion_id: str, conver
         if not pending_messages:
             return
 
+        preferences = db.get_or_create_user_preferences(user_id)
+        if not int(preferences.get("allow_memory_storage") or 0):
+            db.mark_messages_extracted([int(message["id"]) for message in pending_messages])
+            return
+
         message_ids = [int(message["id"]) for message in pending_messages]
         conversation_text = _format_messages_for_extraction(pending_messages)
         extracted = await _run_extraction_llm(conversation_text)
@@ -133,6 +139,7 @@ async def extract_and_save(user_id: str, pair_id: str, companion_id: str, conver
             )
 
         detect_behavioral_patterns(user_id, pair_id, companion_id)
+        refresh_after_extraction(pair_id, conversation_id=conversation_id)
         await maybe_consolidate_narrative(user_id, pair_id, companion_id)
         db.mark_messages_extracted(message_ids)
 

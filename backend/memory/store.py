@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _utcnow_iso() -> str:
-    return datetime.utcnow().isoformat(timespec="seconds")
+    return datetime.utcnow().isoformat(timespec="milliseconds")
 
 
 def _day_of_week(dt: datetime) -> int:
@@ -626,6 +626,12 @@ class Database:
                 "total_messages INTEGER DEFAULT 0",
                 "memory_count INTEGER DEFAULT 0",
                 "current_stage TEXT DEFAULT 'new'",
+                "proactive_enabled INTEGER DEFAULT 1",
+                "proactive_cadence TEXT DEFAULT 'balanced'",
+                "proactive_emotional_callbacks_enabled INTEGER DEFAULT 1",
+                "proactive_last_sent_at DATETIME",
+                "proactive_last_reason TEXT",
+                "proactive_cooldown_until DATETIME",
                 "created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
                 "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",
             ],
@@ -795,6 +801,73 @@ class Database:
             self.conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         )
 
+    def list_users(self, limit: int = 50) -> list[dict]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM users
+            ORDER BY last_seen DESC, created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_or_create_user_preferences(self, user_id: str) -> dict:
+        now = _utcnow_iso()
+        self.conn.execute(
+            """
+            INSERT INTO user_preferences
+                (user_id, quiet_hours_start, quiet_hours_end, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO NOTHING
+            """,
+            (
+                user_id,
+                settings.PROACTIVE_DEFAULT_QUIET_HOURS_START,
+                settings.PROACTIVE_DEFAULT_QUIET_HOURS_END,
+                now,
+                now,
+            ),
+        )
+        row = self.conn.execute(
+            "SELECT * FROM user_preferences WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        return dict(row)
+
+    def update_user_preferences(self, user_id: str, **updates) -> dict:
+        current = self.get_or_create_user_preferences(user_id)
+        allowed = {
+            "allow_memory_storage",
+            "show_memory_overview",
+            "allow_proactive_messages",
+            "allow_push_notifications",
+            "quiet_hours_start",
+            "quiet_hours_end",
+            "allow_sensitive_proactive",
+        }
+        assignments = []
+        values: list[Any] = []
+        for key, value in updates.items():
+            if key not in allowed or value is None:
+                continue
+            assignments.append(f"{key} = ?")
+            values.append(value)
+
+        if assignments:
+            values.extend([_utcnow_iso(), user_id])
+            self.conn.execute(
+                f"""
+                UPDATE user_preferences
+                SET {", ".join(assignments)},
+                    updated_at = ?
+                WHERE user_id = ?
+                """,
+                values,
+            )
+        return self.get_or_create_user_preferences(user_id)
+
     def increment_user_stats(self, user_id: str, messages: int = 1, sessions: int = 0):
         self.conn.execute(
             """
@@ -812,6 +885,46 @@ class Database:
             (user_id,),
         ).fetchone()
         return int(row["total_sessions"]) if row else 0
+
+    def register_device_token(self, user_id: str, platform: str, push_token: str) -> dict:
+        device_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{user_id}:{platform}:{push_token}"))
+        now = _utcnow_iso()
+        self.conn.execute(
+            """
+            INSERT INTO device_registrations
+                (id, user_id, platform, push_token, is_enabled, last_seen_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+            ON CONFLICT(user_id, push_token) DO UPDATE SET
+                platform = excluded.platform,
+                is_enabled = 1,
+                last_seen_at = excluded.last_seen_at,
+                updated_at = excluded.updated_at
+            """,
+            (device_id, user_id, platform, push_token, now, now, now),
+        )
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM device_registrations
+            WHERE user_id = ? AND push_token = ?
+            LIMIT 1
+            """,
+            (user_id, push_token),
+        ).fetchone()
+        return dict(row)
+
+    def list_device_tokens(self, user_id: str, enabled_only: bool = True) -> list[dict]:
+        query = """
+            SELECT *
+            FROM device_registrations
+            WHERE user_id = ?
+        """
+        params: list[Any] = [user_id]
+        if enabled_only:
+            query += " AND is_enabled = 1"
+        query += " ORDER BY updated_at DESC"
+        rows = self.conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
 
     # ------------------------------------------------------------------
     # Companion registry + relationship pairs
@@ -914,6 +1027,41 @@ class Database:
             (user_id,),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def update_pair_proactive_settings(
+        self,
+        pair_id: str,
+        *,
+        proactive_enabled: Optional[bool] = None,
+        proactive_cadence: Optional[str] = None,
+        proactive_emotional_callbacks_enabled: Optional[bool] = None,
+    ) -> Optional[dict]:
+        assignments = []
+        values: list[Any] = []
+        if proactive_enabled is not None:
+            assignments.append("proactive_enabled = ?")
+            values.append(1 if proactive_enabled else 0)
+        if proactive_cadence is not None:
+            assignments.append("proactive_cadence = ?")
+            values.append(proactive_cadence)
+        if proactive_emotional_callbacks_enabled is not None:
+            assignments.append("proactive_emotional_callbacks_enabled = ?")
+            values.append(1 if proactive_emotional_callbacks_enabled else 0)
+
+        if not assignments:
+            return self.get_pair_by_id(pair_id)
+
+        values.extend([_utcnow_iso(), pair_id])
+        self.conn.execute(
+            f"""
+            UPDATE relationship_pairs
+            SET {", ".join(assignments)},
+                updated_at = ?
+            WHERE id = ?
+            """,
+            values,
+        )
+        return self.get_pair_by_id(pair_id)
 
     def set_primary_pair(self, pair_id: str):
         pair = self.get_pair_by_id(pair_id)
@@ -1158,6 +1306,30 @@ class Database:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def get_fact_conflicts(self, pair_id: str, limit: int = 8) -> list[dict]:
+        rows = self.conn.execute(
+            """
+            SELECT prior.fact_key,
+                   active.fact_value AS current_value,
+                   active.updated_at AS current_updated_at,
+                   prior.fact_value AS previous_value,
+                   prior.updated_at AS previous_updated_at,
+                   active.confidence AS current_confidence,
+                   prior.confidence AS previous_confidence
+            FROM user_facts prior
+            JOIN user_facts active
+              ON active.id = prior.superseded_by_id
+            WHERE prior.pair_id = ?
+              AND prior.is_outdated = 1
+              AND active.pair_id = ?
+              AND active.is_outdated = 0
+            ORDER BY active.updated_at DESC
+            LIMIT ?
+            """,
+            (pair_id, pair_id, limit),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     def get_user_facts_by_category(
         self,
         user_id: str,
@@ -1292,6 +1464,30 @@ class Database:
             ),
         )
 
+    def get_recent_conversation_summaries(
+        self,
+        pair_id: str,
+        limit: int = 5,
+    ) -> list[dict]:
+        rows = self.conn.execute(
+            """
+            SELECT id, started_at, ended_at, emotional_arc, topics_discussed, session_summary
+            FROM conversations
+            WHERE pair_id = ?
+              AND session_summary IS NOT NULL
+              AND TRIM(session_summary) <> ''
+            ORDER BY started_at DESC
+            LIMIT ?
+            """,
+            (pair_id, limit),
+        ).fetchall()
+        summaries = []
+        for row in rows:
+            payload = dict(row)
+            payload["topics_discussed"] = self._deserialize_topics(payload.get("topics_discussed"))
+            summaries.append(payload)
+        return summaries
+
     # ------------------------------------------------------------------
     # Messages
     # ------------------------------------------------------------------
@@ -1323,7 +1519,7 @@ class Database:
                 companion_id,
                 role,
                 content,
-                now.isoformat(timespec="seconds"),
+                now.isoformat(timespec="milliseconds"),
                 emotional_tone,
                 emotional_intensity,
                 json.dumps(topics or []),
@@ -1338,7 +1534,7 @@ class Database:
                 last_message_at = ?
             WHERE id = ?
             """,
-            (now.isoformat(timespec="seconds"), conversation_id),
+            (now.isoformat(timespec="milliseconds"), conversation_id),
         )
         self.increment_user_stats(user_id, messages=1)
         self.increment_pair_stats(pair_id, messages=1, sessions=0)
@@ -1382,7 +1578,7 @@ class Database:
                 SELECT *
                 FROM messages
                 WHERE conversation_id = ?
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
                 (conversation_id, n),
@@ -1393,7 +1589,7 @@ class Database:
                 SELECT *
                 FROM messages
                 WHERE pair_id = ?
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
                 (pair_id, n),
@@ -1404,7 +1600,7 @@ class Database:
                 SELECT *
                 FROM messages
                 WHERE user_id = ?
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
                 (user_id, n),
@@ -1425,7 +1621,7 @@ class Database:
                 SELECT *
                 FROM messages
                 WHERE user_id = ? AND conversation_id = ? AND memory_extracted = 0
-                ORDER BY created_at ASC
+                ORDER BY created_at ASC, id ASC
                 LIMIT ?
                 """,
                 (user_id, conversation_id, limit),
@@ -1436,7 +1632,7 @@ class Database:
                 SELECT *
                 FROM messages
                 WHERE pair_id = ? AND memory_extracted = 0
-                ORDER BY created_at ASC
+                ORDER BY created_at ASC, id ASC
                 LIMIT ?
                 """,
                 (pair_id, limit),
@@ -1447,7 +1643,7 @@ class Database:
                 SELECT *
                 FROM messages
                 WHERE user_id = ? AND memory_extracted = 0
-                ORDER BY created_at ASC
+                ORDER BY created_at ASC, id ASC
                 LIMIT ?
                 """,
                 (user_id, limit),
@@ -1948,6 +2144,35 @@ class Database:
         ).fetchall()
         return {row["chroma_id"]: dict(row) for row in rows}
 
+    def list_pair_memories(self, pair_id: str, limit: int = 40) -> list[dict]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM memory_index
+            WHERE pair_id = ?
+            ORDER BY archived ASC, emotional_weight DESC, created_at DESC
+            LIMIT ?
+            """,
+            (pair_id, limit),
+        ).fetchall()
+        payload = []
+        for row in rows:
+            item = dict(row)
+            item["source_message_ids"] = self._deserialize_topics(item.get("source_message_ids"))
+            payload.append(item)
+        return payload
+
+    def delete_memory_record(self, pair_id: str, chroma_id: str) -> bool:
+        cursor = self.conn.execute(
+            """
+            DELETE FROM memory_index
+            WHERE pair_id = ? AND chroma_id = ?
+            """,
+            (pair_id, chroma_id),
+        )
+        self._refresh_pair_memory_counts()
+        return int(cursor.rowcount or 0) > 0
+
     def reinforce_memories(self, pair_id: str, chroma_ids: list[str]):
         if not chroma_ids:
             return
@@ -1962,6 +2187,263 @@ class Database:
             """,
             [_utcnow_iso(), pair_id, *chroma_ids],
         )
+
+    def apply_memory_decay(self, pair_id: str) -> int:
+        now = datetime.utcnow().isoformat(timespec="milliseconds")
+        cursor = self.conn.execute(
+            """
+            UPDATE memory_index
+            SET strength = MAX(
+                    0.18,
+                    strength - CASE
+                        WHEN retrieval_count >= 6 THEN 0.01
+                        WHEN retrieval_count >= 3 THEN 0.025
+                        WHEN last_retrieved_at IS NOT NULL THEN 0.045
+                        ELSE 0.065
+                    END
+                ),
+                archived = CASE
+                    WHEN archived = 1 THEN 1
+                    WHEN strength <= 0.24 AND retrieval_count = 0 THEN 1
+                    ELSE 0
+                END,
+                last_retrieved_at = COALESCE(last_retrieved_at, ?)
+            WHERE pair_id = ?
+              AND archived = 0
+              AND julianday('now') - julianday(created_at) >= 3
+            """,
+            (now, pair_id),
+        )
+        self._refresh_pair_memory_counts()
+        return int(cursor.rowcount or 0)
+
+    def get_relationship_state_snapshot(self, pair_id: str) -> Optional[dict]:
+        pair = self.get_pair_by_id(pair_id)
+        if not pair:
+            return None
+        return {
+            "closeness": round(float(pair.get("closeness_score") or 0.0), 3),
+            "trust": round(float(pair.get("trust_score") or 0.0), 3),
+            "openness": round(float(pair.get("openness_score") or 0.0), 3),
+            "comfort": round(float(pair.get("comfort_score") or 0.0), 3),
+            "rhythm": round(float(pair.get("rhythm_score") or 0.0), 3),
+            "topic_familiarity": round(float(pair.get("topic_familiarity_score") or 0.0), 3),
+            "stage": pair.get("current_stage") or "new",
+            "sessions": int(pair.get("total_sessions") or 0),
+            "messages": int(pair.get("total_messages") or 0),
+        }
+
+    def reset_pair_memory(self, pair_id: str) -> dict[str, int]:
+        counts = {}
+        for table_name in (
+            "user_facts",
+            "entities",
+            "entity_relationships",
+            "emotional_events",
+            "behavioral_patterns",
+            "narrative_summaries",
+            "memory_index",
+            "proactive_events",
+        ):
+            cursor = self.conn.execute(
+                f"DELETE FROM {table_name} WHERE pair_id = ?",
+                (pair_id,),
+            )
+            counts[table_name] = int(cursor.rowcount or 0)
+
+        self.conn.execute(
+            """
+            UPDATE relationship_pairs
+            SET closeness_score = 0.18,
+                trust_score = 0.18,
+                openness_score = 0.12,
+                comfort_score = 0.14,
+                rhythm_score = 0.10,
+                topic_familiarity_score = 0.05,
+                memory_count = 0,
+                current_stage = 'new',
+                proactive_last_sent_at = NULL,
+                proactive_last_reason = NULL,
+                proactive_cooldown_until = NULL,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (_utcnow_iso(), pair_id),
+        )
+        return counts
+
+    def delete_user_account(self, user_id: str) -> dict[str, int]:
+        rows = self.conn.execute(
+            "SELECT id FROM relationship_pairs WHERE user_id = ?",
+            (user_id,),
+        ).fetchall()
+        pair_ids = [row["id"] for row in rows]
+        for pair_id in pair_ids:
+            self.reset_pair_memory(pair_id)
+
+        counts = {}
+        for table_name in ("device_registrations", "user_preferences", "system_events"):
+            cursor = self.conn.execute(
+                f"DELETE FROM {table_name} WHERE user_id = ?",
+                (user_id,),
+            )
+            counts[table_name] = int(cursor.rowcount or 0)
+
+        cursor = self.conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        counts["users"] = int(cursor.rowcount or 0)
+        return counts
+
+    def log_proactive_event(
+        self,
+        *,
+        event_id: str,
+        user_id: str,
+        pair_id: str,
+        companion_id: str,
+        conversation_id: Optional[str],
+        reason: Optional[str],
+        message_text: str,
+        payload_json: str,
+        notification_status: str = "not_attempted",
+        status: str = "pending",
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO proactive_events
+                (id, user_id, pair_id, companion_id, conversation_id, reason, status,
+                 message_text, payload_json, notification_status, scheduled_for, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_id,
+                user_id,
+                pair_id,
+                companion_id,
+                conversation_id,
+                reason,
+                status,
+                message_text,
+                payload_json,
+                notification_status,
+                _utcnow_iso(),
+                _utcnow_iso(),
+            ),
+        )
+
+    def list_pending_proactive_events(self, user_id: str, pair_id: Optional[str] = None) -> list[dict]:
+        if pair_id:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM proactive_events
+                WHERE user_id = ? AND pair_id = ? AND status = 'pending'
+                ORDER BY created_at ASC
+                """,
+                (user_id, pair_id),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM proactive_events
+                WHERE user_id = ? AND status = 'pending'
+                ORDER BY created_at ASC
+                """,
+                (user_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def mark_proactive_events_delivered(self, event_ids: list[str]) -> None:
+        if not event_ids:
+            return
+        placeholders = ",".join("?" for _ in event_ids)
+        self.conn.execute(
+            f"""
+            UPDATE proactive_events
+            SET status = 'delivered',
+                delivered_at = COALESCE(delivered_at, ?)
+            WHERE id IN ({placeholders})
+            """,
+            [_utcnow_iso(), *event_ids],
+        )
+
+    def touch_pair_proactive(
+        self,
+        pair_id: str,
+        reason: Optional[str],
+        cooldown_until: Optional[str] = None,
+    ) -> None:
+        sent_at = _utcnow_iso()
+        self.conn.execute(
+            """
+            UPDATE relationship_pairs
+            SET proactive_last_sent_at = ?,
+                proactive_last_reason = ?,
+                proactive_cooldown_until = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (sent_at, reason, cooldown_until or sent_at, _utcnow_iso(), pair_id),
+        )
+
+    def log_system_event(
+        self,
+        kind: str,
+        severity: str = "info",
+        *,
+        user_id: Optional[str] = None,
+        pair_id: Optional[str] = None,
+        conversation_id: Optional[str] = None,
+        payload: Optional[dict] = None,
+    ) -> int:
+        cursor = self.conn.execute(
+            """
+            INSERT INTO system_events
+                (kind, severity, user_id, pair_id, conversation_id, payload_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                kind,
+                severity,
+                user_id,
+                pair_id,
+                conversation_id,
+                json.dumps(payload or {}),
+                _utcnow_iso(),
+            ),
+        )
+        return int(cursor.lastrowid)
+
+    def list_system_events(
+        self,
+        limit: int = 100,
+        kind: Optional[str] = None,
+        severity: Optional[str] = None,
+    ) -> list[dict]:
+        query = """
+            SELECT *
+            FROM system_events
+            WHERE 1 = 1
+        """
+        params: list[Any] = []
+        if kind:
+            query += " AND kind = ?"
+            params.append(kind)
+        if severity:
+            query += " AND severity = ?"
+            params.append(severity)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = self.conn.execute(query, params).fetchall()
+        payload = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["payload"] = json.loads(item.get("payload_json") or "{}")
+            except json.JSONDecodeError:
+                item["payload"] = {}
+            payload.append(item)
+        return payload
 
     def get_recent_memory_rows(
         self,

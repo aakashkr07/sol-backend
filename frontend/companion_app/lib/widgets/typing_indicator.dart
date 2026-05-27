@@ -1,7 +1,35 @@
 import 'package:flutter/material.dart';
 
+class TypingIndicatorSpec {
+  final int typingDurationMs;
+  final String pauseIntensity;
+  final bool isFollowUp;
+  final bool isNetworkPending;
+
+  const TypingIndicatorSpec({
+    required this.typingDurationMs,
+    required this.pauseIntensity,
+    required this.isFollowUp,
+    required this.isNetworkPending,
+  });
+
+  factory TypingIndicatorSpec.network() {
+    return const TypingIndicatorSpec(
+      typingDurationMs: 780,
+      pauseIntensity: 'medium',
+      isFollowUp: false,
+      isNetworkPending: true,
+    );
+  }
+}
+
 class TypingIndicator extends StatefulWidget {
-  const TypingIndicator({super.key});
+  final TypingIndicatorSpec spec;
+
+  const TypingIndicator({
+    super.key,
+    required this.spec,
+  });
 
   @override
   State<TypingIndicator> createState() => _TypingIndicatorState();
@@ -12,20 +40,45 @@ class _TypingIndicatorState extends State<TypingIndicator>
   late final List<AnimationController> _controllers;
   late final List<Animation<double>> _animations;
 
-  static const int _dotCount = 3;
-  static const Duration _duration = Duration(milliseconds: 600);
-  static const Duration _staggerDelay = Duration(milliseconds: 200);
+  int get _dotCount {
+    if (widget.spec.isNetworkPending || widget.spec.pauseIntensity == 'long') {
+      return 3;
+    }
+    return widget.spec.pauseIntensity == 'brief' ? 2 : 3;
+  }
+
+  Duration get _pulseDuration {
+    final base = widget.spec.typingDurationMs.clamp(360, 1600) as int;
+    final divisor = _dotCount == 2 ? 2 : 3;
+    return Duration(
+      milliseconds: ((base / divisor).round().clamp(260, 720)) as int,
+    );
+  }
+
+  Duration get _staggerDelay {
+    switch (widget.spec.pauseIntensity) {
+      case 'long':
+        return const Duration(milliseconds: 220);
+      case 'medium':
+        return const Duration(milliseconds: 170);
+      default:
+        return const Duration(milliseconds: 120);
+    }
+  }
+
+  double get _horizontalPadding => widget.spec.isFollowUp ? 14 : 16;
+  double get _verticalPadding => widget.spec.pauseIntensity == 'long' ? 15 : 14;
 
   @override
   void initState() {
     super.initState();
     _controllers = List.generate(
       _dotCount,
-      (_) => AnimationController(vsync: this, duration: _duration),
+      (_) => AnimationController(vsync: this, duration: _pulseDuration),
     );
     _animations = _controllers
         .map(
-          (controller) => Tween<double>(begin: 0.45, end: 1).animate(
+          (controller) => Tween<double>(begin: 0.38, end: 1.0).animate(
             CurvedAnimation(parent: controller, curve: Curves.easeInOut),
           ),
         )
@@ -33,7 +86,7 @@ class _TypingIndicatorState extends State<TypingIndicator>
     _startAnimations();
   }
 
-  void _startAnimations() async {
+  Future<void> _startAnimations() async {
     for (var i = 0; i < _dotCount; i++) {
       await Future.delayed(_staggerDelay * i);
       if (mounted) {
@@ -52,8 +105,14 @@ class _TypingIndicatorState extends State<TypingIndicator>
 
   @override
   Widget build(BuildContext context) {
+    final opacity = widget.spec.pauseIntensity == 'long' ? 0.5 : 0.62;
     return Padding(
-      padding: const EdgeInsets.only(left: 16, right: 72, top: 6, bottom: 2),
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 72,
+        top: widget.spec.isFollowUp ? 10 : 6,
+        bottom: 2,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -81,19 +140,26 @@ class _TypingIndicatorState extends State<TypingIndicator>
             ),
           ),
           const SizedBox(width: 6),
-          Container(
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
             decoration: BoxDecoration(
               color: const Color(0xFF1A2035),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(18),
-                topRight: Radius.circular(18),
-                bottomLeft: Radius.circular(4),
-                bottomRight: Radius.circular(18),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(widget.spec.isFollowUp ? 18 : 16),
+                topRight: const Radius.circular(18),
+                bottomLeft: Radius.circular(widget.spec.isFollowUp ? 10 : 4),
+                bottomRight: const Radius.circular(18),
               ),
-              border:
-                  Border.all(color: Colors.white.withValues(alpha: 0.06), width: 0.6),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.06),
+                width: 0.6,
+              ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: EdgeInsets.symmetric(
+              horizontal: _horizontalPadding,
+              vertical: _verticalPadding,
+            ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: List.generate(_dotCount, (i) {
@@ -102,16 +168,19 @@ class _TypingIndicatorState extends State<TypingIndicator>
                   child: AnimatedBuilder(
                     animation: _animations[i],
                     builder: (context, child) {
-                      return Transform.scale(
-                        scale: _animations[i].value,
-                        child: child,
+                      return Opacity(
+                        opacity: opacity + ((_animations[i].value - 0.38) * 0.28),
+                        child: Transform.scale(
+                          scale: _animations[i].value,
+                          child: child,
+                        ),
                       );
                     },
                     child: Container(
-                      width: 7,
-                      height: 7,
+                      width: widget.spec.pauseIntensity == 'long' ? 6 : 7,
+                      height: widget.spec.pauseIntensity == 'long' ? 6 : 7,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.58),
+                        color: Colors.white.withValues(alpha: 0.7),
                         shape: BoxShape.circle,
                       ),
                     ),

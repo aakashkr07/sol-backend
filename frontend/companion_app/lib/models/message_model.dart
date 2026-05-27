@@ -9,6 +9,7 @@ class Message {
   final DateTime timestamp;
   final bool isNew;
   final MessageStatus status;
+  final bool startsNewGroup;
 
   const Message({
     required this.id,
@@ -17,6 +18,7 @@ class Message {
     required this.timestamp,
     this.isNew = false,
     this.status = MessageStatus.read,
+    this.startsNewGroup = false,
   });
 
   bool get isUser => role == MessageRole.user;
@@ -29,7 +31,7 @@ class Message {
     return '$hour:$minute $suffix';
   }
 
-  factory Message.fromCompanion(String content) {
+  factory Message.fromCompanion(String content, {bool startsNewGroup = false}) {
     return Message(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       role: MessageRole.assistant,
@@ -37,6 +39,7 @@ class Message {
       timestamp: DateTime.now(),
       isNew: true,
       status: MessageStatus.read,
+      startsNewGroup: startsNewGroup,
     );
   }
 
@@ -50,6 +53,7 @@ class Message {
       timestamp: DateTime.now(),
       isNew: true,
       status: MessageStatus.sending,
+      startsNewGroup: false,
     );
   }
 
@@ -58,6 +62,7 @@ class Message {
     DateTime? timestamp,
     bool? isNew,
     MessageStatus? status,
+    bool? startsNewGroup,
   }) {
     return Message(
       id: id,
@@ -66,6 +71,7 @@ class Message {
       timestamp: timestamp ?? this.timestamp,
       isNew: isNew ?? this.isNew,
       status: status ?? this.status,
+      startsNewGroup: startsNewGroup ?? this.startsNewGroup,
     );
   }
 }

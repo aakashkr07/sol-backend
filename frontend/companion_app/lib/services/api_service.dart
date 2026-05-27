@@ -23,6 +23,15 @@ class ApiConfig {
   static String get chatUrl => '$baseUrl/api/chat';
   static String get sessionStartUrl => '$baseUrl/api/session/start';
   static String get myCompanionsUrl => '$baseUrl/api/companions/me';
+  static String get myProfileUrl => '$baseUrl/api/me/profile';
+  static String pairMemoriesUrl(String pairId) => '$baseUrl/api/me/pairs/$pairId/memories';
+  static String pairPreferencesUrl(String pairId) => '$baseUrl/api/me/pairs/$pairId/preferences';
+  static String pairResetUrl(String pairId) => '$baseUrl/api/me/pairs/$pairId/reset';
+  static String pairMemoryDeleteUrl(String pairId, String memoryId) =>
+      '$baseUrl/api/me/pairs/$pairId/memories/$memoryId';
+  static String get preferencesUrl => '$baseUrl/api/me/preferences';
+  static String get deviceTokenUrl => '$baseUrl/api/me/device-token';
+  static String get proactivePendingUrl => '$baseUrl/api/me/proactive/pending';
   static String get healthUrl => '$baseUrl/health';
 
   static const Duration requestTimeout = Duration(seconds: 30);
@@ -30,6 +39,7 @@ class ApiConfig {
 
 class ChatResponse {
   final String reply;
+  final List<ChatBurst> bursts;
   final String conversationId;
   final int memoryCount;
   final String pairId;
@@ -38,6 +48,7 @@ class ChatResponse {
 
   const ChatResponse({
     required this.reply,
+    required this.bursts,
     required this.conversationId,
     required this.memoryCount,
     required this.pairId,
@@ -46,8 +57,13 @@ class ChatResponse {
   });
 
   factory ChatResponse.fromJson(Map<String, dynamic> json) {
+    final replyText = json['reply'] as String? ?? '';
+    final bursts = _parseBursts(json['bursts']);
     return ChatResponse(
-      reply: json['reply'] as String,
+      reply: replyText.isNotEmpty ? replyText : _combinedBurstText(bursts),
+      bursts: bursts.isNotEmpty
+          ? bursts
+          : (replyText.trim().isEmpty ? const [] : [ChatBurst.single(replyText)]),
       conversationId: json['conversation_id'] as String,
       memoryCount: json['memory_count'] as int? ?? 0,
       pairId: json['pair_id'] as String? ?? '',
@@ -68,6 +84,7 @@ class SessionStartResponse {
   final String companionName;
   final String companionSummary;
   final String openingMessage;
+  final List<ChatBurst> openingBursts;
 
   const SessionStartResponse({
     required this.conversationId,
@@ -80,9 +97,12 @@ class SessionStartResponse {
     required this.companionName,
     required this.companionSummary,
     required this.openingMessage,
+    required this.openingBursts,
   });
 
   factory SessionStartResponse.fromJson(Map<String, dynamic> json) {
+    final openingBursts = _parseBursts(json['opening_bursts']);
+    final openingText = json['opening_message'] as String? ?? '';
     return SessionStartResponse(
       conversationId: json['conversation_id'] as String,
       userName: json['user_name'] as String?,
@@ -93,13 +113,53 @@ class SessionStartResponse {
       companionId: json['companion_id'] as String? ?? '',
       companionName: json['companion_name'] as String? ?? 'Companion',
       companionSummary: json['companion_summary'] as String? ?? '',
-      openingMessage: json['opening_message'] as String? ?? 'hey',
+      openingMessage: openingText.ifEmpty(_combinedBurstText(openingBursts).ifEmpty('hey')),
+      openingBursts: openingBursts.isNotEmpty
+          ? openingBursts
+          : [ChatBurst.single(openingText.ifEmpty('hey'))],
+    );
+  }
+}
+
+class ChatBurst {
+  final String text;
+  final int preBurstDelayMs;
+  final int typingDurationMs;
+  final String pauseIntensity;
+  final bool isFollowUp;
+
+  const ChatBurst({
+    required this.text,
+    required this.preBurstDelayMs,
+    required this.typingDurationMs,
+    required this.pauseIntensity,
+    required this.isFollowUp,
+  });
+
+  factory ChatBurst.fromJson(Map<String, dynamic> json) {
+    return ChatBurst(
+      text: json['text'] as String? ?? '',
+      preBurstDelayMs: json['pre_burst_delay_ms'] as int? ?? 320,
+      typingDurationMs: json['typing_duration_ms'] as int? ?? 620,
+      pauseIntensity: json['pause_intensity'] as String? ?? 'brief',
+      isFollowUp: json['is_follow_up'] as bool? ?? false,
+    );
+  }
+
+  factory ChatBurst.single(String text) {
+    return ChatBurst(
+      text: text,
+      preBurstDelayMs: 260,
+      typingDurationMs: 620,
+      pauseIntensity: 'brief',
+      isFollowUp: false,
     );
   }
 }
 
 class CompanionSummary {
   final String id;
+  final String pairId;
   final String name;
   final String summary;
   final bool isPrimary;
@@ -107,6 +167,7 @@ class CompanionSummary {
 
   const CompanionSummary({
     required this.id,
+    required this.pairId,
     required this.name,
     required this.summary,
     required this.isPrimary,
@@ -116,10 +177,232 @@ class CompanionSummary {
   factory CompanionSummary.fromJson(Map<String, dynamic> json) {
     return CompanionSummary(
       id: json['companion_id'] as String? ?? json['id'] as String? ?? '',
+      pairId: json['pair_id'] as String? ?? '',
       name: json['companion_name'] as String? ?? json['name'] as String? ?? 'Companion',
       summary: json['companion_summary'] as String? ?? json['summary'] as String? ?? '',
-      isPrimary: json['is_primary'] as bool? ?? false,
+      isPrimary: _asBool(json['is_primary'], false),
       totalSessions: json['total_sessions'] as int? ?? 0,
+    );
+  }
+}
+
+class RelationshipStateSnapshot {
+  final double closeness;
+  final double trust;
+  final double openness;
+  final double comfort;
+  final double rhythm;
+  final double topicFamiliarity;
+  final String stage;
+
+  const RelationshipStateSnapshot({
+    required this.closeness,
+    required this.trust,
+    required this.openness,
+    required this.comfort,
+    required this.rhythm,
+    required this.topicFamiliarity,
+    required this.stage,
+  });
+
+  factory RelationshipStateSnapshot.fromJson(Map<String, dynamic> json) {
+    return RelationshipStateSnapshot(
+      closeness: (json['closeness'] as num?)?.toDouble() ?? 0,
+      trust: (json['trust'] as num?)?.toDouble() ?? 0,
+      openness: (json['openness'] as num?)?.toDouble() ?? 0,
+      comfort: (json['comfort'] as num?)?.toDouble() ?? 0,
+      rhythm: (json['rhythm'] as num?)?.toDouble() ?? 0,
+      topicFamiliarity: (json['topic_familiarity'] as num?)?.toDouble() ?? 0,
+      stage: json['stage'] as String? ?? 'new',
+    );
+  }
+}
+
+class UserPreferences {
+  final bool allowMemoryStorage;
+  final bool showMemoryOverview;
+  final bool allowProactiveMessages;
+  final bool allowPushNotifications;
+  final int quietHoursStart;
+  final int quietHoursEnd;
+  final bool allowSensitiveProactive;
+
+  const UserPreferences({
+    required this.allowMemoryStorage,
+    required this.showMemoryOverview,
+    required this.allowProactiveMessages,
+    required this.allowPushNotifications,
+    required this.quietHoursStart,
+    required this.quietHoursEnd,
+    required this.allowSensitiveProactive,
+  });
+
+  factory UserPreferences.fromJson(Map<String, dynamic> json) {
+    return UserPreferences(
+      allowMemoryStorage: _asBool(json['allow_memory_storage'], true),
+      showMemoryOverview: _asBool(json['show_memory_overview'], true),
+      allowProactiveMessages: _asBool(json['allow_proactive_messages'], true),
+      allowPushNotifications: _asBool(json['allow_push_notifications'], true),
+      quietHoursStart: json['quiet_hours_start'] as int? ?? 23,
+      quietHoursEnd: json['quiet_hours_end'] as int? ?? 8,
+      allowSensitiveProactive: _asBool(json['allow_sensitive_proactive'], true),
+    );
+  }
+}
+
+class PairPreferences {
+  final bool proactiveEnabled;
+  final String proactiveCadence;
+  final bool proactiveEmotionalCallbacksEnabled;
+
+  const PairPreferences({
+    required this.proactiveEnabled,
+    required this.proactiveCadence,
+    required this.proactiveEmotionalCallbacksEnabled,
+  });
+
+  factory PairPreferences.fromPairJson(Map<String, dynamic> json) {
+    return PairPreferences(
+      proactiveEnabled: _asBool(json['proactive_enabled'], true),
+      proactiveCadence: json['proactive_cadence'] as String? ?? 'balanced',
+      proactiveEmotionalCallbacksEnabled: _asBool(
+        json['proactive_emotional_callbacks_enabled'],
+        true,
+      ),
+    );
+  }
+}
+
+class MemoryEntry {
+  final String id;
+  final String title;
+  final String content;
+  final String emotionTag;
+  final double emotionalWeight;
+  final double strength;
+  final bool archived;
+  final String createdAt;
+
+  const MemoryEntry({
+    required this.id,
+    required this.title,
+    required this.content,
+    required this.emotionTag,
+    required this.emotionalWeight,
+    required this.strength,
+    required this.archived,
+    required this.createdAt,
+  });
+
+  factory MemoryEntry.fromJson(Map<String, dynamic> json) {
+    return MemoryEntry(
+      id: json['chroma_id'] as String? ?? '',
+      title: json['title'] as String? ?? 'Untitled moment',
+      content: json['content'] as String? ?? '',
+      emotionTag: json['emotion_tag'] as String? ?? '',
+      emotionalWeight: (json['emotional_weight'] as num?)?.toDouble() ?? 0,
+      strength: (json['strength'] as num?)?.toDouble() ?? 0,
+      archived: json['archived'] == 1 || json['archived'] == true,
+      createdAt: json['created_at'] as String? ?? '',
+    );
+  }
+}
+
+class UserProfileResponse {
+  final Map<String, dynamic> user;
+  final UserPreferences preferences;
+  final CompanionSummary? selectedPair;
+  final PairPreferences? pairPreferences;
+  final RelationshipStateSnapshot? relationshipState;
+  final Map<String, String> whatSolKnows;
+  final List<Map<String, dynamic>> factRows;
+  final List<Map<String, dynamic>> factConflicts;
+  final List<MemoryEntry> memories;
+  final int memoryCount;
+  final String? currentNarrative;
+  final List<CompanionSummary> pairs;
+
+  const UserProfileResponse({
+    required this.user,
+    required this.preferences,
+    required this.selectedPair,
+    required this.pairPreferences,
+    required this.relationshipState,
+    required this.whatSolKnows,
+    required this.factRows,
+    required this.factConflicts,
+    required this.memories,
+    required this.memoryCount,
+    required this.currentNarrative,
+    required this.pairs,
+  });
+
+  factory UserProfileResponse.fromJson(Map<String, dynamic> json) {
+    final selectedPairJson = json['selected_pair'] as Map<String, dynamic>?;
+    final selectedPair =
+        selectedPairJson == null ? null : CompanionSummary.fromJson(selectedPairJson);
+    final relationshipJson = json['relationship_state'] as Map<String, dynamic>?;
+    return UserProfileResponse(
+      user: json['user'] as Map<String, dynamic>? ?? const {},
+      preferences: UserPreferences.fromJson(
+        json['preferences'] as Map<String, dynamic>? ?? const {},
+      ),
+      selectedPair: selectedPair,
+      pairPreferences:
+          selectedPairJson == null ? null : PairPreferences.fromPairJson(selectedPairJson),
+      relationshipState: relationshipJson == null
+          ? null
+          : RelationshipStateSnapshot.fromJson(relationshipJson),
+      whatSolKnows: (json['what_sol_knows'] as Map<String, dynamic>? ?? const {})
+          .map((key, value) => MapEntry(key, value.toString())),
+      factRows: (json['fact_rows'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList(),
+      factConflicts: (json['fact_conflicts'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList(),
+      memories: (json['memories'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(MemoryEntry.fromJson)
+          .toList(),
+      memoryCount: json['memory_count'] as int? ?? 0,
+      currentNarrative:
+          (json['current_narrative'] as Map<String, dynamic>?)?['summary'] as String?,
+      pairs: (json['pairs'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(CompanionSummary.fromJson)
+          .toList(),
+    );
+  }
+}
+
+class PendingProactiveEvent {
+  final String id;
+  final String pairId;
+  final String conversationId;
+  final String companionName;
+  final String reason;
+  final List<ChatBurst> bursts;
+
+  const PendingProactiveEvent({
+    required this.id,
+    required this.pairId,
+    required this.conversationId,
+    required this.companionName,
+    required this.reason,
+    required this.bursts,
+  });
+
+  factory PendingProactiveEvent.fromJson(Map<String, dynamic> json) {
+    final payload = json['payload'] as Map<String, dynamic>? ?? const {};
+    return PendingProactiveEvent(
+      id: json['id'] as String? ?? '',
+      pairId: json['pair_id'] as String? ?? '',
+      conversationId:
+          json['conversation_id'] as String? ?? payload['conversation_id'] as String? ?? '',
+      companionName: payload['companion_name'] as String? ?? 'Companion',
+      reason: json['reason'] as String? ?? payload['reason'] as String? ?? 'presence',
+      bursts: _parseBursts(payload['bursts']),
     );
   }
 }
@@ -262,6 +545,155 @@ class ApiService {
     }
   }
 
+  static Future<UserProfileResponse?> getMyProfile({String? pairId}) async {
+    try {
+      final uri = Uri.parse(ApiConfig.myProfileUrl).replace(
+        queryParameters: pairId == null ? null : {'pair_id': pairId},
+      );
+      final response = await _client
+          .get(uri, headers: await _defaultHeaders())
+          .timeout(ApiConfig.requestTimeout);
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        return UserProfileResponse.fromJson(json);
+      }
+      throw ChatException(_parseError(response), response.statusCode);
+    } on ChatException {
+      rethrow;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<List<MemoryEntry>> getPairMemories(String pairId) async {
+    final response = await _client
+        .get(
+          Uri.parse(ApiConfig.pairMemoriesUrl(pairId)),
+          headers: await _defaultHeaders(),
+        )
+        .timeout(ApiConfig.requestTimeout);
+    if (response.statusCode != 200) {
+      throw ChatException(_parseError(response), response.statusCode);
+    }
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    return (json['memories'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(MemoryEntry.fromJson)
+        .toList();
+  }
+
+  static Future<UserPreferences> updatePreferences(Map<String, dynamic> updates) async {
+    final response = await _client
+        .patch(
+          Uri.parse(ApiConfig.preferencesUrl),
+          headers: await _defaultHeaders(),
+          body: jsonEncode(updates),
+        )
+        .timeout(ApiConfig.requestTimeout);
+    if (response.statusCode != 200) {
+      throw ChatException(_parseError(response), response.statusCode);
+    }
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    return UserPreferences.fromJson(
+      json['preferences'] as Map<String, dynamic>? ?? const {},
+    );
+  }
+
+  static Future<PairPreferences> updatePairPreferences(
+    String pairId,
+    Map<String, dynamic> updates,
+  ) async {
+    final response = await _client
+        .patch(
+          Uri.parse(ApiConfig.pairPreferencesUrl(pairId)),
+          headers: await _defaultHeaders(),
+          body: jsonEncode(updates),
+        )
+        .timeout(ApiConfig.requestTimeout);
+    if (response.statusCode != 200) {
+      throw ChatException(_parseError(response), response.statusCode);
+    }
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    return PairPreferences.fromPairJson(
+      json['pair'] as Map<String, dynamic>? ?? const {},
+    );
+  }
+
+  static Future<void> deleteMemory(String pairId, String memoryId) async {
+    final response = await _client
+        .delete(
+          Uri.parse(ApiConfig.pairMemoryDeleteUrl(pairId, memoryId)),
+          headers: await _defaultHeaders(),
+        )
+        .timeout(ApiConfig.requestTimeout);
+    if (response.statusCode != 200) {
+      throw ChatException(_parseError(response), response.statusCode);
+    }
+  }
+
+  static Future<void> resetPairMemory(String pairId) async {
+    final response = await _client
+        .post(
+          Uri.parse(ApiConfig.pairResetUrl(pairId)),
+          headers: await _defaultHeaders(),
+        )
+        .timeout(ApiConfig.requestTimeout);
+    if (response.statusCode != 200) {
+      throw ChatException(_parseError(response), response.statusCode);
+    }
+  }
+
+  static Future<void> deleteAccount() async {
+    final response = await _client
+        .delete(
+          Uri.parse('${ApiConfig.baseUrl}/api/me/account'),
+          headers: await _defaultHeaders(),
+        )
+        .timeout(ApiConfig.requestTimeout);
+    if (response.statusCode != 200) {
+      throw ChatException(_parseError(response), response.statusCode);
+    }
+  }
+
+  static Future<void> registerDeviceToken({
+    required String platform,
+    required String pushToken,
+  }) async {
+    final response = await _client
+        .post(
+          Uri.parse(ApiConfig.deviceTokenUrl),
+          headers: await _defaultHeaders(),
+          body: jsonEncode({
+            'platform': platform,
+            'push_token': pushToken,
+          }),
+        )
+        .timeout(ApiConfig.requestTimeout);
+    if (response.statusCode != 200) {
+      throw ChatException(_parseError(response), response.statusCode);
+    }
+  }
+
+  static Future<List<PendingProactiveEvent>> getPendingProactiveEvents({
+    String? pairId,
+  }) async {
+    final uri = Uri.parse(ApiConfig.proactivePendingUrl).replace(
+      queryParameters: pairId == null ? null : {'pair_id': pairId},
+    );
+    final response = await _client
+        .get(uri, headers: await _defaultHeaders())
+        .timeout(ApiConfig.requestTimeout);
+    if (response.statusCode != 200) {
+      throw ChatException(_parseError(response), response.statusCode);
+    }
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    return (json['events'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(PendingProactiveEvent.fromJson)
+        .toList();
+  }
+
   static Future<Map<String, String>> _defaultHeaders() async {
     final token = await AuthService.getIdToken();
     return {
@@ -286,6 +718,35 @@ class ApiService {
       return 'Server error ${response.statusCode}';
     }
   }
+}
+
+List<ChatBurst> _parseBursts(dynamic payload) {
+  if (payload is! List) {
+    return const [];
+  }
+  return payload
+      .whereType<Map<String, dynamic>>()
+      .map(ChatBurst.fromJson)
+      .where((burst) => burst.text.trim().isNotEmpty)
+      .toList();
+}
+
+String _combinedBurstText(List<ChatBurst> bursts) {
+  return bursts.map((burst) => burst.text.trim()).where((text) => text.isNotEmpty).join('\n');
+}
+
+bool _asBool(dynamic value, bool fallback) {
+  if (value is bool) {
+    return value;
+  }
+  if (value is num) {
+    return value != 0;
+  }
+  return fallback;
+}
+
+extension on String {
+  String ifEmpty(String fallback) => trim().isEmpty ? fallback : this;
 }
 
 class ChatException implements Exception {

@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/message_model.dart';
+import '../services/notification_hooks_service.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/session_bootstrap_service.dart';
+import 'profile_screen.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/typing_indicator.dart';
 
@@ -26,16 +30,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   final FocusNode _inputFocusNode = FocusNode();
 
-  bool _isTyping = false;
   bool _isSending = false;
   bool _isInitializing = true;
   bool _isSwitchingCompanion = false;
+  bool _isAssistantDelivering = false;
   String? _errorMessage;
   String? _conversationId;
+  String? _pairId;
   String? _companionId;
   String _companionName = 'Companion';
   int _memoryCount = 0;
   List<CompanionSummary> _companions = const [];
+  TypingIndicatorSpec? _typingSpec;
+  int _assistantPlaybackGeneration = 0;
+
+  bool get _isTyping => _typingSpec != null;
 
   @override
   void initState() {
@@ -46,6 +55,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _cancelAssistantPlayback(clearTyping: false);
     WidgetsBinding.instance.removeObserver(this);
     _inputController.dispose();
     _scrollController.dispose();
@@ -58,20 +68,30 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadPendingProactiveEvents(silent: true);
+    }
+  }
+
   Future<void> _initialize() async {
+    List<ChatBurst> openingBursts = const [];
     try {
+      await NotificationHooksService.initialize();
       final session =
           SessionBootstrapService.consume() ?? await ApiService.startSession();
       if (session != null && mounted) {
         setState(() {
           _conversationId = session.conversationId;
+          _pairId = session.pairId;
           _companionId = session.companionId;
           _companionName = session.companionName;
           _memoryCount = session.memoryCount;
         });
-        if (_messages.isEmpty) {
-          _addCompanionMessage(session.openingMessage);
-        }
+        openingBursts = session.openingBursts.isNotEmpty
+            ? session.openingBursts
+            : [ChatBurst.single(session.openingMessage)];
       }
       await _loadCompanions();
     } catch (_) {
@@ -85,6 +105,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         setState(() => _isInitializing = false);
       }
     }
+    if (mounted && _messages.isEmpty && openingBursts.isNotEmpty) {
+      await _playCompanionBursts(openingBursts);
+    }
+    await _loadPendingProactiveEvents(silent: true);
   }
 
   Future<void> _loadCompanions() async {
@@ -126,6 +150,100 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
     setState(() => _messages.add(Message.fromCompanion(text)));
     _scrollToBottom();
+  }
+
+  void _cancelAssistantPlayback({bool clearTyping = true}) {
+    _assistantPlaybackGeneration += 1;
+    if (!clearTyping) {
+      _typingSpec = null;
+      _isAssistantDelivering = false;
+      return;
+    }
+    if (!mounted) {
+      _typingSpec = null;
+      _isAssistantDelivering = false;
+      return;
+    }
+    setState(() {
+      _typingSpec = null;
+      _isAssistantDelivering = false;
+    });
+  }
+
+  Future<void> _playCompanionBursts(
+    List<ChatBurst> bursts, {
+    int networkElapsedMs = 0,
+  }) async {
+    final playbackId = ++_assistantPlaybackGeneration;
+    final plannedBursts = bursts.isNotEmpty ? bursts : [ChatBurst.single('...')];
+
+    if (mounted) {
+      setState(() {
+        _typingSpec = null;
+        _isAssistantDelivering = true;
+      });
+    }
+
+    for (var i = 0; i < plannedBursts.length; i++) {
+      if (!mounted || playbackId != _assistantPlaybackGeneration) {
+        return;
+      }
+
+      final burst = plannedBursts[i];
+      final thinkDelayMs =
+          i == 0 ? _effectiveFirstBurstDelay(burst, networkElapsedMs) : burst.preBurstDelayMs;
+      if (thinkDelayMs > 0) {
+        if (mounted) {
+          setState(() => _typingSpec = null);
+        }
+        await Future.delayed(Duration(milliseconds: thinkDelayMs));
+      }
+      if (!mounted || playbackId != _assistantPlaybackGeneration) {
+        return;
+      }
+
+      if (mounted) {
+        setState(() {
+          _typingSpec = TypingIndicatorSpec(
+            typingDurationMs: burst.typingDurationMs,
+            pauseIntensity: burst.pauseIntensity,
+            isFollowUp: burst.isFollowUp,
+            isNetworkPending: false,
+          );
+          _isAssistantDelivering = true;
+        });
+      }
+      await Future.delayed(Duration(milliseconds: burst.typingDurationMs));
+      if (!mounted || playbackId != _assistantPlaybackGeneration) {
+        return;
+      }
+
+      setState(() {
+        _typingSpec = null;
+        _messages.add(
+          Message.fromCompanion(
+            burst.text,
+            startsNewGroup: burst.isFollowUp,
+          ),
+        );
+      });
+      _scrollToBottom();
+    }
+
+    if (mounted && playbackId == _assistantPlaybackGeneration) {
+      setState(() {
+        _typingSpec = null;
+        _isAssistantDelivering = false;
+      });
+    }
+  }
+
+  int _effectiveFirstBurstDelay(ChatBurst burst, int networkElapsedMs) {
+    final compensated = burst.preBurstDelayMs - networkElapsedMs;
+    if (compensated <= 80) {
+      return 80;
+    }
+    return compensated;
   }
 
   Future<void> _signOut() async {
@@ -274,6 +392,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _switchCompanion(String companionId) async {
+    _cancelAssistantPlayback();
     setState(() {
       _isSwitchingCompanion = true;
       _errorMessage = null;
@@ -288,13 +407,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       setState(() {
         _messages.clear();
         _conversationId = session.conversationId;
+        _pairId = session.pairId;
         _companionId = session.companionId;
         _companionName = session.companionName;
         _memoryCount = session.memoryCount;
-        _messages.add(Message.fromCompanion(session.openingMessage));
       });
       await _loadCompanions();
-      _scrollToBottom();
+      await _playCompanionBursts(
+        session.openingBursts.isNotEmpty
+            ? session.openingBursts
+            : [ChatBurst.single(session.openingMessage)],
+      );
     } on ChatException catch (e) {
       if (!mounted) {
         return;
@@ -309,7 +432,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<void> _sendMessage() async {
     final text = _inputController.text.trim();
-    if (text.isEmpty || _isSending) {
+    if (text.isEmpty || _isSending || _isAssistantDelivering) {
       return;
     }
 
@@ -320,12 +443,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     setState(() {
       _messages.add(userMessage);
-      _isTyping = true;
       _isSending = true;
+      _isAssistantDelivering = true;
+      _typingSpec = TypingIndicatorSpec.network();
       _errorMessage = null;
     });
 
     _scrollToBottom();
+    final requestStartedAt = DateTime.now();
 
     try {
       final response = await ApiService.sendMessage(
@@ -338,18 +463,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         return;
       }
 
+      final networkElapsedMs =
+          DateTime.now().difference(requestStartedAt).inMilliseconds;
       setState(() {
         _conversationId = response?.conversationId ?? _conversationId;
+        _pairId = response?.pairId ?? _pairId;
         _companionId = response?.companionId ?? _companionId;
         _companionName = response?.companionName ?? _companionName;
         _memoryCount = response?.memoryCount ?? _memoryCount;
-        _isTyping = false;
         _isSending = false;
         _replaceMessageStatus(userMessage.id, MessageStatus.read);
-        if (response != null) {
-          _messages.add(Message.fromCompanion(response.reply));
-        }
       });
+      if (response != null) {
+        await _playCompanionBursts(
+          response.bursts.isNotEmpty
+              ? response.bursts
+              : [ChatBurst.single(response.reply)],
+          networkElapsedMs: networkElapsedMs,
+        );
+      } else {
+        _cancelAssistantPlayback();
+      }
       await _loadCompanions();
       HapticFeedback.selectionClick();
       _scrollToBottom();
@@ -359,8 +493,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
 
       setState(() {
-        _isTyping = false;
         _isSending = false;
+        _typingSpec = null;
+        _isAssistantDelivering = false;
         _replaceMessageStatus(userMessage.id, MessageStatus.failed);
         if (e.statusCode == 503) {
           _errorMessage = "${_companionName.toLowerCase()}'s quiet right now. try again.";
@@ -378,12 +513,70 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
 
       setState(() {
-        _isTyping = false;
         _isSending = false;
+        _typingSpec = null;
+        _isAssistantDelivering = false;
         _replaceMessageStatus(userMessage.id, MessageStatus.failed);
         _errorMessage = 'connection lost. check your network.';
       });
     }
+  }
+
+  Future<void> _openProfile() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProfileScreen(initialPairId: _pairId),
+      ),
+    );
+    if (mounted) {
+      await _loadCompanions();
+      await _loadPendingProactiveEvents(silent: true);
+    }
+  }
+
+  Future<void> _loadPendingProactiveEvents({required bool silent}) async {
+    try {
+      final events = await ApiService.getPendingProactiveEvents();
+      if (!mounted || events.isEmpty) {
+        return;
+      }
+
+      final currentPairEvents = events
+          .where((event) => _pairId != null && event.pairId == _pairId)
+          .toList();
+      for (final event in currentPairEvents) {
+        if (event.conversationId.isNotEmpty) {
+          _conversationId = event.conversationId;
+        }
+        if (event.bursts.isNotEmpty) {
+          await _playCompanionBursts(event.bursts);
+        }
+      }
+
+      final otherEvents = events.where((event) => event.pairId != _pairId).toList();
+      if (otherEvents.isNotEmpty && !silent) {
+        _showNotice(
+          '${otherEvents.first.companionName} reached out while you were away.',
+        );
+      } else if (otherEvents.isNotEmpty && silent) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _showNotice(
+              '${otherEvents.first.companionName} reached out while you were away.',
+            );
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _showNotice(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFF141B2D),
+        content: Text(message),
+      ),
+    );
   }
 
   void _replaceMessageStatus(String id, MessageStatus status) {
@@ -411,14 +604,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (index == 0) {
       return true;
     }
-    return _messages[index].role != _messages[index - 1].role;
+    return _messages[index].role != _messages[index - 1].role ||
+        _messages[index].startsNewGroup;
   }
 
   bool _isLastInGroup(int index) {
     if (index == _messages.length - 1) {
       return true;
     }
-    return _messages[index].role != _messages[index + 1].role;
+    return _messages[index].role != _messages[index + 1].role ||
+        _messages[index + 1].startsNewGroup;
   }
 
   @override
@@ -508,6 +703,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
           ),
           if (_memoryCount > 0) _buildMemoryIndicator(),
+          const SizedBox(width: 8),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _openProfile,
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.05),
+                ),
+                child: Icon(
+                  Icons.tune_rounded,
+                  size: 17,
+                  color: Colors.white.withValues(alpha: 0.42),
+                ),
+              ),
+            ),
+          ),
           const SizedBox(width: 8),
           Material(
             color: Colors.transparent,
@@ -652,10 +868,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         controller: _scrollController,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.fromLTRB(0, 10, 0, 12),
-        itemCount: _messages.length + (_isTyping ? 1 : 0),
+        itemCount: _messages.length + (_typingSpec != null ? 1 : 0),
         itemBuilder: (context, index) {
-          if (_isTyping && index == _messages.length) {
-            return const TypingIndicator();
+          if (_typingSpec != null && index == _messages.length) {
+            return TypingIndicator(
+              key: ValueKey(
+                '${_typingSpec!.pauseIntensity}-${_typingSpec!.typingDurationMs}-${_typingSpec!.isFollowUp}-${_typingSpec!.isNetworkPending}-${_assistantPlaybackGeneration}',
+              ),
+              spec: _typingSpec!,
+            );
           }
 
           final message = _messages[index];
@@ -712,7 +933,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Widget _buildInputBar() {
     final hasText = _inputController.text.trim().isNotEmpty;
-    final canSend = hasText && !_isSending;
+    final canSend = hasText && !_isSending && !_isAssistantDelivering;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),

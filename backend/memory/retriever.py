@@ -1,5 +1,6 @@
 import hashlib
 import logging
+from datetime import datetime
 from typing import Optional
 
 import chromadb
@@ -79,10 +80,13 @@ def retrieve_relevant_memories(
                 continue
 
             stored_meta = metadata_map.get(chroma_id, {})
+            if int(stored_meta.get("archived") or 0) == 1:
+                continue
             strength = float(stored_meta.get("strength") or meta.get("strength") or 1.0)
             emotional_weight = float(
                 stored_meta.get("emotional_weight") or meta.get("emotional_weight") or meta.get("importance") or 0.5
             )
+            recency = _memory_recency_score(stored_meta)
 
             memories.append({
                 "id": chroma_id,
@@ -91,15 +95,17 @@ def retrieve_relevant_memories(
                 "emotion_tag": stored_meta.get("emotion_tag") or meta.get("emotion_tag") or "",
                 "emotional_weight": emotional_weight,
                 "strength": strength,
+                "recency": recency,
                 "similarity": round(similarity, 3),
             })
             retrieved_ids.append(chroma_id)
 
         memories.sort(
             key=lambda item: (
-                item["similarity"] * 0.55
-                + item["emotional_weight"] * 0.25
-                + min(item["strength"], 2.5) / 2.5 * 0.20
+                item["similarity"] * 0.48
+                + item["emotional_weight"] * 0.22
+                + min(item["strength"], 2.5) / 2.5 * 0.18
+                + item["recency"] * 0.12
             ),
             reverse=True,
         )
@@ -163,6 +169,27 @@ def _collection_name_for_pair(pair_id: str) -> str:
 
 def _legacy_collection_name_for_user(user_id: str) -> str:
     return f"user-{user_id.replace('_', '-').lower()[:58]}"
+
+
+def _memory_recency_score(stored_meta: dict) -> float:
+    anchor = stored_meta.get("last_retrieved_at") or stored_meta.get("created_at")
+    if not anchor:
+        return 0.2
+    try:
+        then = datetime.fromisoformat(str(anchor))
+    except ValueError:
+        return 0.2
+
+    age_days = max(0.0, (datetime.utcnow() - then).total_seconds() / 86400.0)
+    if age_days <= 2:
+        return 1.0
+    if age_days <= 7:
+        return 0.82
+    if age_days <= 21:
+        return 0.58
+    if age_days <= 60:
+        return 0.34
+    return 0.18
 
 
 def _migrate_legacy_user_collection(

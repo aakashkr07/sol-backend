@@ -114,6 +114,11 @@ def build_pair_payload(pair: dict) -> dict:
         "is_primary": bool(pair.get("is_primary")),
         "assignment_status": pair.get("assignment_status"),
         "current_stage": pair.get("current_stage"),
+        "proactive_enabled": bool(pair.get("proactive_enabled", 1)),
+        "proactive_cadence": pair.get("proactive_cadence") or "balanced",
+        "proactive_emotional_callbacks_enabled": bool(
+            pair.get("proactive_emotional_callbacks_enabled", 1)
+        ),
         "total_sessions": int(pair.get("total_sessions") or 0),
         "total_messages": int(pair.get("total_messages") or 0),
     }

@@ -79,9 +79,83 @@ CREATE TABLE IF NOT EXISTS relationship_pairs (
     total_messages        INTEGER DEFAULT 0,
     memory_count          INTEGER DEFAULT 0,
     current_stage         TEXT DEFAULT 'new',
+    proactive_enabled     INTEGER DEFAULT 1,
+    proactive_cadence     TEXT DEFAULT 'balanced',
+    proactive_emotional_callbacks_enabled INTEGER DEFAULT 1,
+    proactive_last_sent_at DATETIME,
+    proactive_last_reason TEXT,
+    proactive_cooldown_until DATETIME,
     created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, companion_id)
+);
+
+
+-- =============================================================================
+-- USER PREFERENCES
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id               TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    allow_memory_storage  INTEGER DEFAULT 1,
+    show_memory_overview  INTEGER DEFAULT 1,
+    allow_proactive_messages INTEGER DEFAULT 1,
+    allow_push_notifications INTEGER DEFAULT 1,
+    quiet_hours_start     INTEGER DEFAULT 23,
+    quiet_hours_end       INTEGER DEFAULT 8,
+    allow_sensitive_proactive INTEGER DEFAULT 1,
+    created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- =============================================================================
+-- DEVICE REGISTRATIONS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS device_registrations (
+    id                    TEXT PRIMARY KEY,
+    user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    platform              TEXT NOT NULL,
+    push_token            TEXT NOT NULL,
+    is_enabled            INTEGER DEFAULT 1,
+    last_seen_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, push_token)
+);
+
+
+-- =============================================================================
+-- PROACTIVE EVENTS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS proactive_events (
+    id                    TEXT PRIMARY KEY,
+    user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    pair_id               TEXT NOT NULL REFERENCES relationship_pairs(id) ON DELETE CASCADE,
+    companion_id          TEXT NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+    conversation_id       TEXT REFERENCES conversations(id),
+    reason                TEXT,
+    status                TEXT DEFAULT 'pending',
+    message_text          TEXT,
+    payload_json          TEXT,
+    notification_status   TEXT DEFAULT 'not_attempted',
+    scheduled_for         DATETIME DEFAULT CURRENT_TIMESTAMP,
+    delivered_at          DATETIME,
+    created_at            DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- =============================================================================
+-- SYSTEM EVENTS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS system_events (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind                  TEXT NOT NULL,
+    severity              TEXT DEFAULT 'info',
+    user_id               TEXT REFERENCES users(id) ON DELETE SET NULL,
+    pair_id               TEXT REFERENCES relationship_pairs(id) ON DELETE SET NULL,
+    conversation_id       TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+    payload_json          TEXT,
+    created_at            DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -285,6 +359,9 @@ CREATE INDEX IF NOT EXISTS idx_pairs_user_primary
 CREATE INDEX IF NOT EXISTS idx_pairs_companion
     ON relationship_pairs(companion_id, updated_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_pairs_proactive_due
+    ON relationship_pairs(proactive_enabled, proactive_cooldown_until, last_interaction_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_conversations_pair_started
     ON conversations(pair_id, started_at DESC);
 
@@ -333,3 +410,15 @@ CREATE INDEX IF NOT EXISTS idx_narrative_pair_created
 
 CREATE INDEX IF NOT EXISTS idx_memory_index_pair
     ON memory_index(pair_id, archived, strength DESC, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_device_registrations_user
+    ON device_registrations(user_id, is_enabled, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_proactive_events_user_status
+    ON proactive_events(user_id, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_proactive_events_pair_status
+    ON proactive_events(pair_id, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_system_events_kind_created
+    ON system_events(kind, created_at DESC);

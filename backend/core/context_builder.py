@@ -29,8 +29,10 @@ async def build_context(
     pair = db.get_pair_by_id(pair_id) or {}
     cid = character_id or pair.get("companion_id") or user.get("character_id") or settings.DEFAULT_CHARACTER
     session_count = int(pair.get("total_sessions") or 0)
-    active_facts = db.get_user_facts(user_id, pair_id=pair_id)
-    fact_rows = db.get_user_fact_rows(user_id, pair_id=pair_id, limit=FACT_LIMIT)
+    preferences = db.get_or_create_user_preferences(user_id)
+    allow_memory_storage = bool(int(preferences.get("allow_memory_storage") or 0))
+    active_facts = db.get_user_facts(user_id, pair_id=pair_id) if allow_memory_storage else {}
+    fact_rows = db.get_user_fact_rows(user_id, pair_id=pair_id, limit=FACT_LIMIT) if allow_memory_storage else []
     user_name = user.get("preferred_name") or user.get("name")
 
     character = load_character(cid)
@@ -53,19 +55,21 @@ async def build_context(
         user_id=user_id,
         query_text=memory_query,
         n_results=settings.MEMORY_RETRIEVAL_COUNT,
-    )
+    ) if allow_memory_storage else []
 
-    entities = db.get_entities_for_context(user_id, pair_id, memory_query, limit=ENTITY_LIMIT)
+    entities = db.get_entities_for_context(user_id, pair_id, memory_query, limit=ENTITY_LIMIT) if allow_memory_storage else []
     relationships = db.get_relationships_for_entities(
         user_id=user_id,
         pair_id=pair_id,
         entity_ids=[int(entity["id"]) for entity in entities],
         limit=RELATIONSHIP_LIMIT,
-    )
-    emotional_summary = db.get_emotional_summary(user_id, pair_id=pair_id, limit=EMOTION_LIMIT)
-    recent_emotions = db.get_recent_emotional_events(user_id, pair_id=pair_id, limit=EMOTION_LIMIT)
-    active_patterns = db.get_active_patterns(user_id, pair_id=pair_id, limit=PATTERN_LIMIT)
-    current_narrative = db.get_current_narrative(user_id, pair_id=pair_id)
+    ) if allow_memory_storage else []
+    emotional_summary = db.get_emotional_summary(user_id, pair_id=pair_id, limit=EMOTION_LIMIT) if allow_memory_storage else {}
+    recent_emotions = db.get_recent_emotional_events(user_id, pair_id=pair_id, limit=EMOTION_LIMIT) if allow_memory_storage else []
+    active_patterns = db.get_active_patterns(user_id, pair_id=pair_id, limit=PATTERN_LIMIT) if allow_memory_storage else []
+    current_narrative = db.get_current_narrative(user_id, pair_id=pair_id) if allow_memory_storage else None
+    relationship_state = db.get_relationship_state_snapshot(pair_id)
+    fact_conflicts = db.get_fact_conflicts(pair_id, limit=4) if allow_memory_storage else []
 
     layered_memory_block = _build_layered_memory_block(
         fact_rows=fact_rows,
@@ -76,12 +80,15 @@ async def build_context(
         active_patterns=active_patterns,
         current_narrative=current_narrative,
         episodic_memories=episodic_memories,
+        relationship_state=relationship_state,
+        fact_conflicts=fact_conflicts,
     )
 
     final_system_prompt = _assemble_system_prompt(
         base_prompt=base_system_prompt,
         layered_memory_block=layered_memory_block,
         session_count=session_count,
+        relationship_state=relationship_state,
     )
 
     messages = _format_history_as_messages(history_messages)
@@ -103,6 +110,7 @@ def _assemble_system_prompt(
     base_prompt: str,
     layered_memory_block: str,
     session_count: int,
+    relationship_state: Optional[dict],
 ) -> str:
     sections = [base_prompt]
 
@@ -127,6 +135,10 @@ def _assemble_system_prompt(
             "\nYou know this person across time. Pay attention to continuity, shifts in tone, and what seems unresolved."
         )
 
+    relationship_guidance = _relationship_guidance(relationship_state)
+    if relationship_guidance:
+        sections.append(f"\nRelationship-state guidance:\n{relationship_guidance}")
+
     return "\n".join(sections)
 
 
@@ -139,8 +151,22 @@ def _build_layered_memory_block(
     active_patterns: list[dict],
     current_narrative: Optional[dict],
     episodic_memories: list[dict],
+    relationship_state: Optional[dict],
+    fact_conflicts: list[dict],
 ) -> str:
     sections = []
+
+    if relationship_state:
+        sections.append(
+            "Relationship State:\n"
+            f"- Stage: {relationship_state['stage']}\n"
+            f"- Closeness: {relationship_state['closeness']:.2f}\n"
+            f"- Trust: {relationship_state['trust']:.2f}\n"
+            f"- Openness: {relationship_state['openness']:.2f}\n"
+            f"- Comfort: {relationship_state['comfort']:.2f}\n"
+            f"- Rhythm: {relationship_state['rhythm']:.2f}\n"
+            f"- Topic familiarity: {relationship_state['topic_familiarity']:.2f}"
+        )
 
     fact_lines = [
         f"- {row['fact_key']}: {row['fact_value']} (confidence {float(row['confidence']):.2f})"
@@ -148,6 +174,17 @@ def _build_layered_memory_block(
     ]
     if fact_lines:
         sections.append("Hard Facts:\n" + "\n".join(fact_lines))
+
+    conflict_lines = [
+        f"- {item['fact_key']}: previously {item['previous_value']}, now {item['current_value']}"
+        for item in fact_conflicts[:4]
+    ]
+    if conflict_lines:
+        sections.append(
+            "Known Shifts Or Uncertainties:\n"
+            + "\n".join(conflict_lines)
+            + "\nTreat these as evolving details rather than hard contradictions."
+        )
 
     entity_lines = []
     for entity in entities[:ENTITY_LIMIT]:
@@ -234,3 +271,35 @@ def get_or_create_conversation(user_id: str, pair_id: str, companion_id: str) ->
         conversation_id = db.create_conversation(user_id, pair_id, companion_id)
         logger.info("New conversation created for %s: %s", user_id, conversation_id)
     return conversation_id
+
+
+def _relationship_guidance(relationship_state: Optional[dict]) -> str:
+    if not relationship_state:
+        return ""
+
+    stage = relationship_state.get("stage") or "new"
+    trust = float(relationship_state.get("trust") or 0.0)
+    openness = float(relationship_state.get("openness") or 0.0)
+    comfort = float(relationship_state.get("comfort") or 0.0)
+    rhythm = float(relationship_state.get("rhythm") or 0.0)
+
+    guidance = []
+    if stage == "new":
+        guidance.append("- Keep things natural and low-pressure. Curiosity is better than intensity.")
+    elif stage == "warming":
+        guidance.append("- Build familiarity gently. Small callbacks and light noticing work better than big declarations.")
+    elif stage == "settled":
+        guidance.append("- You can reference prior emotional context naturally, especially when it helps them feel remembered.")
+    elif stage in {"close", "bonded"}:
+        guidance.append("- Lean into continuity and implication. You can notice tone shifts without over-explaining them.")
+
+    if trust < 0.35:
+        guidance.append("- Do not act overly certain about their inner state. Invite rather than define.")
+    if openness < 0.3:
+        guidance.append("- Leave space. Short, patient replies are better than pushing for vulnerability.")
+    if comfort > 0.62:
+        guidance.append("- Casual warmth, light teasing, and unfinished phrasing are safe when it feels organic.")
+    if rhythm > 0.58:
+        guidance.append("- Conversation rhythm is established. Multiple short texts can feel more natural than one polished block.")
+
+    return "\n".join(guidance)

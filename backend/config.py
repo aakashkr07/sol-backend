@@ -102,6 +102,12 @@ class Settings:
     APP_HOST: str = os.getenv("APP_HOST", "0.0.0.0")
     APP_PORT: int = int(os.getenv("APP_PORT", "8000"))
     DEBUG: bool = os.getenv("DEBUG", "true").lower() == "true"
+    PUBLIC_BASE_URL: str = os.getenv("PUBLIC_BASE_URL", "").strip()
+    CORS_ALLOWED_ORIGINS_RAW: str = os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:8080",
+    )
+    ADMIN_DEBUG_TOKEN: str = os.getenv("ADMIN_DEBUG_TOKEN", "").strip()
 
     # Secret key for signing tokens (future auth). Generate with: openssl rand -hex 32
     SECRET_KEY: str = os.getenv("SECRET_KEY", "changeme-generate-a-real-secret-before-launch")
@@ -114,6 +120,18 @@ class Settings:
     # ── Proactive messaging (future feature) ──────────────────────────────
     # Whether Nova can initiate messages. Disabled for MVP, enable post-launch.
     PROACTIVE_MESSAGES_ENABLED: bool = os.getenv("PROACTIVE_MESSAGES_ENABLED", "false").lower() == "true"
+    PROACTIVE_MAX_PER_RUN: int = int(os.getenv("PROACTIVE_MAX_PER_RUN", "4"))
+    PROACTIVE_DEFAULT_QUIET_HOURS_START: int = int(os.getenv("PROACTIVE_DEFAULT_QUIET_HOURS_START", "23"))
+    PROACTIVE_DEFAULT_QUIET_HOURS_END: int = int(os.getenv("PROACTIVE_DEFAULT_QUIET_HOURS_END", "8"))
+    PROACTIVE_INACTIVITY_HOURS_MIN: int = int(os.getenv("PROACTIVE_INACTIVITY_HOURS_MIN", "18"))
+    PROACTIVE_INACTIVITY_HOURS_MAX: int = int(os.getenv("PROACTIVE_INACTIVITY_HOURS_MAX", "96"))
+
+    @property
+    def CORS_ALLOWED_ORIGINS(self) -> list[str]:
+        raw = self.CORS_ALLOWED_ORIGINS_RAW.strip()
+        if not raw:
+            return []
+        return [item.strip() for item in raw.split(",") if item.strip()]
 
     def validate(self):
         """
@@ -128,6 +146,10 @@ class Settings:
         if not self.FIREBASE_PROJECT_ID:
             raise ValueError(
                 "FIREBASE_PROJECT_ID is missing. Add it to your .env file."
+            )
+        if not self.DEBUG and not self.CORS_ALLOWED_ORIGINS:
+            raise ValueError(
+                "CORS_ALLOWED_ORIGINS is required when DEBUG=false."
             )
         return self
 

@@ -6,9 +6,11 @@ from pydantic import BaseModel, Field
 
 from auth.firebase import AuthenticatedIdentity, get_authenticated_identity
 from config import settings
+from core.burst_engine import BurstSegment, plan_burst_response
 from core.context_builder import build_context, get_or_create_conversation
 from core.llm import LLMError, generate_reply
 from memory.extractor import extract_and_save
+from memory.relationship_engine import on_message_saved, on_session_started
 from memory.retriever import get_memory_count
 from memory.store import db
 from personality.loader import load_character
@@ -31,8 +33,17 @@ class ChatRequest(BaseModel):
     character_id: Optional[str] = None
 
 
+class BurstPayload(BaseModel):
+    text: str
+    pre_burst_delay_ms: int
+    typing_duration_ms: int
+    pause_intensity: str
+    is_follow_up: bool = False
+
+
 class ChatResponse(BaseModel):
     reply: str
+    bursts: list[BurstPayload]
     conversation_id: str
     memory_count: int = 0
     pair_id: str
@@ -56,6 +67,7 @@ class SessionStartResponse(BaseModel):
     companion_name: str
     companion_summary: str
     opening_message: str
+    opening_bursts: list[BurstPayload]
 
 
 def _ensure_request_matches_auth(request_user_id: Optional[str], identity: AuthenticatedIdentity) -> None:
@@ -79,6 +91,7 @@ async def chat(
     _ensure_request_matches_auth(request.user_id, identity)
 
     pair = _resolve_pair(identity, requested_character_id=request.character_id)
+    companion = load_character(pair["companion_id"])
     user = db.get_or_create_user(
         user_id=identity.uid,
         character_id=pair["companion_id"],
@@ -92,11 +105,14 @@ async def chat(
         if not conversation or conversation["user_id"] != identity.uid or conversation["pair_id"] != pair["id"]:
             raise HTTPException(status_code=404, detail="Conversation not found for this relationship")
     else:
+        existing_conversation_id = db.get_current_conversation(identity.uid, pair_id=pair["id"])
         conversation_id = get_or_create_conversation(
             user_id=identity.uid,
             pair_id=pair["id"],
             companion_id=pair["companion_id"],
         )
+        if not existing_conversation_id:
+            on_session_started(pair["id"])
         logger.info("New session started for pair %s: %s", pair["id"], conversation_id)
 
     db.save_message(
@@ -107,6 +123,7 @@ async def chat(
         role="user",
         content=request.message,
     )
+    on_message_saved(pair["id"], "user", request.message)
 
     try:
         system_prompt, messages = await build_context(
@@ -118,22 +135,45 @@ async def chat(
         )
     except Exception as exc:
         logger.error("Context building failed for pair %s: %s", pair["id"], exc, exc_info=True)
+        db.log_system_event(
+            "context_build_failed",
+            "error",
+            user_id=identity.uid,
+            pair_id=pair["id"],
+            conversation_id=conversation_id,
+            payload={"error": str(exc)},
+        )
         raise HTTPException(status_code=500, detail="Failed to build conversation context. Please try again.")
 
     try:
         reply = await generate_reply(messages=messages, system_prompt=system_prompt)
     except LLMError as exc:
         logger.error("LLM generation failed for pair %s: %s", pair["id"], exc)
+        db.log_system_event(
+            "llm_generation_failed",
+            "error",
+            user_id=identity.uid,
+            pair_id=pair["id"],
+            conversation_id=conversation_id,
+            payload={"error": str(exc)},
+        )
         raise HTTPException(status_code=503, detail="Your companion is having a moment. Try again in a few seconds.")
 
-    db.save_message(
-        conversation_id=conversation_id,
-        user_id=identity.uid,
-        pair_id=pair["id"],
-        companion_id=pair["companion_id"],
-        role="assistant",
-        content=reply,
+    burst_plan = plan_burst_response(
+        raw_text=reply,
+        character=companion,
+        user_message=request.message,
     )
+    for burst in burst_plan.bursts:
+        db.save_message(
+            conversation_id=conversation_id,
+            user_id=identity.uid,
+            pair_id=pair["id"],
+            companion_id=pair["companion_id"],
+            role="assistant",
+            content=burst.text,
+        )
+        on_message_saved(pair["id"], "assistant", burst.text)
 
     updated_pair = db.get_pair_by_id(pair["id"]) or pair
     total_messages = int(updated_pair.get("total_messages") or 0)
@@ -148,10 +188,10 @@ async def chat(
         )
 
     mem_count = get_memory_count(pair_id=pair["id"], user_id=identity.uid)
-    companion = load_character(pair["companion_id"])
 
     return ChatResponse(
-        reply=reply,
+        reply=burst_plan.combined_text,
+        bursts=[_burst_payload(burst) for burst in burst_plan.bursts],
         conversation_id=conversation_id,
         memory_count=mem_count,
         pair_id=pair["id"],
@@ -180,10 +220,26 @@ async def start_session(
         pair_id=pair["id"],
         companion_id=pair["companion_id"],
     )
+    on_session_started(pair["id"])
     pair = db.get_pair_by_id(pair["id"]) or pair
     character = load_character(pair["companion_id"])
     mem_count = get_memory_count(pair_id=pair["id"], user_id=identity.uid)
     opening_message = build_opening_line(character, session_count=int(pair.get("total_sessions") or 1))
+    opening_plan = plan_burst_response(
+        raw_text=opening_message,
+        character=character,
+        is_opening=True,
+    )
+    for burst in opening_plan.bursts:
+        db.save_message(
+            conversation_id=conversation_id,
+            user_id=identity.uid,
+            pair_id=pair["id"],
+            companion_id=pair["companion_id"],
+            role="assistant",
+            content=burst.text,
+        )
+        on_message_saved(pair["id"], "assistant", burst.text)
 
     return SessionStartResponse(
         conversation_id=conversation_id,
@@ -195,7 +251,8 @@ async def start_session(
         companion_id=character.id,
         companion_name=character.name,
         companion_summary=character.summary or character.core_identity.get("vibe", ""),
-        opening_message=opening_message,
+        opening_message=opening_plan.combined_text,
+        opening_bursts=[_burst_payload(burst) for burst in opening_plan.bursts],
     )
 
 
@@ -249,3 +306,13 @@ async def get_my_companions(identity: AuthenticatedIdentity = Depends(get_authen
         "primary_pair": build_pair_payload(primary_pair),
         "user_name": user.get("preferred_name") or user.get("name") or user.get("display_name"),
     }
+
+
+def _burst_payload(burst: BurstSegment) -> BurstPayload:
+    return BurstPayload(
+        text=burst.text,
+        pre_burst_delay_ms=burst.pre_burst_delay_ms,
+        typing_duration_ms=burst.typing_duration_ms,
+        pause_intensity=burst.pause_intensity,
+        is_follow_up=burst.is_follow_up,
+    )
