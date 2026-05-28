@@ -61,7 +61,6 @@ import '../services/auth_service.dart';
 const Color _bgDeep = Color(0xFF080A0E); // Sol _bgDeep
 const Color _surface = Color(0xFF10131A); // Sol _surface — used on button bg
 const Color _blue = Color(0xFF7DA2FF); // Presence Blue
-const Color _blueSoft = Color(0xFF8BA8FF);
 const Color _violet = Color(0xFFA78BFA); // Warm Violet
 const Color _amber =
     Color(0xFFF2B8A0); // Human Warmth (login uses this as primary bloom)
@@ -478,7 +477,7 @@ class _LoginScreenState extends State<LoginScreen>
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: _amberAcc.withOpacity(0.07 + p * 0.08),
+                          color: _violet.withOpacity(0.07 + p * 0.08),
                           blurRadius: 80 + p * 35,
                           spreadRadius: 4 + p * 10,
                         ),
@@ -757,7 +756,7 @@ class _LoginScreenState extends State<LoginScreen>
                                     mainAxisSize: MainAxisSize.max,
                                     children: [
                                       _googleLogo(),
-                                      const SizedBox(width: 10),
+                                      const SizedBox(width: 7),
                                       Text(
                                         'Continue with Google',
                                         style: GoogleFonts.plusJakartaSans(
