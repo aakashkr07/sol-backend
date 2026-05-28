@@ -9,6 +9,23 @@ import '../services/session_bootstrap_service.dart';
 import 'chat_screen.dart';
 import 'profile_screen.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Palette
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Color _bg = Color(0xFF050810);
+const Color _surface = Color(0xFF0C1018);
+const Color _surfaceUp = Color(0xFF101820);
+const Color _amber = Color(0xFFF0952A);
+const Color _amberSft = Color(0xFFF5B86A);
+const Color _cream = Color(0xFFE4D5BB);
+const Color _sand = Color(0xFF9A8C78);
+const Color _ink = Color(0xFF030508);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// InboxScreen
+// ─────────────────────────────────────────────────────────────────────────────
+
 class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
 
@@ -17,18 +34,13 @@ class InboxScreen extends StatefulWidget {
 }
 
 class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
-  static const Color _bg = Color(0xFF08101A);
-  static const Color _surface = Color(0xFF101927);
-  static const Color _surfaceSoft = Color(0xFF162233);
-  static const Color _amber = Color(0xFFF5A623);
-  static const Color _cream = Color(0xFFEEE8DF);
-  static const Color _muted = Color(0xFF9FA7B5);
-
+  // ── State (untouched) ─────────────────────────────────────────────────────
   MyCompanionsResponse? _roster;
   bool _isLoading = true;
   bool _isOpeningThread = false;
   String? _error;
 
+  // ── Lifecycle (untouched) ─────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
@@ -44,59 +56,47 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _load(silent: true);
-    }
+    if (state == AppLifecycleState.resumed) _load(silent: true);
   }
 
+  // ── Data (untouched) ──────────────────────────────────────────────────────
   Future<void> _load({bool silent = false}) async {
-    if (!silent) {
+    if (!silent)
       setState(() {
         _isLoading = true;
         _error = null;
       });
-    }
-
     try {
       await NotificationHooksService.initialize();
       final roster = await ApiService.getMyCompanions();
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _roster = roster;
         _isLoading = false;
         _error = null;
       });
     } on ChatException catch (e) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _error = e.message;
       });
     } catch (_) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _error = 'Your inbox did not load. Try again.';
+        _error = 'couldn\'t load. pull to try again.';
       });
     }
   }
 
+  // ── Navigation (untouched) ────────────────────────────────────────────────
   Future<void> _openEntry(InboxEntrySummary entry) async {
-    if (_isOpeningThread) {
-      return;
-    }
-
+    if (_isOpeningThread) return;
     setState(() {
       _isOpeningThread = true;
       _error = null;
     });
-
     try {
       final pending = SessionBootstrapService.peek();
       final session =
@@ -106,30 +106,17 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
                   characterId: entry.companionId,
                   resumeExisting: true,
                 );
-
-      if (!mounted || session == null) {
-        return;
-      }
-
+      if (!mounted || session == null) return;
       SessionBootstrapService.stash(session);
       await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => const ChatScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => const ChatScreen()),
       );
-
-      if (mounted) {
-        await _load(silent: true);
-      }
+      if (mounted) await _load(silent: true);
     } on ChatException catch (e) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() => _error = e.message);
     } finally {
-      if (mounted) {
-        setState(() => _isOpeningThread = false);
-      }
+      if (mounted) setState(() => _isOpeningThread = false);
     }
   }
 
@@ -140,310 +127,236 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
         builder: (_) => ProfileScreen(initialPairId: selectedPairId),
       ),
     );
-    if (mounted) {
-      await _load(silent: true);
-    }
+    if (mounted) await _load(silent: true);
   }
 
-  Future<void> _signOut() async {
-    await AuthService.signOut();
+  Future<void> _signOut() async => AuthService.signOut();
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  String? _firstName() {
+    final name = _roster?.userName ?? AuthService.currentUserName;
+    if (name == null || name.trim().isEmpty) return null;
+    return name.trim().split(' ').first;
   }
 
+  // Time-based greeting — more intimate than a static label
+  String _greeting() {
+    final name = _firstName();
+    final h = DateTime.now().hour;
+    String base;
+    if (h >= 5 && h < 12)
+      base = 'good morning';
+    else if (h >= 12 && h < 17)
+      base = 'good afternoon';
+    else if (h >= 17 && h < 22)
+      base = 'good evening';
+    else
+      base = 'still up?';
+    return name != null ? '$base, $name.' : 'your threads.';
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: _bg,
+      systemNavigationBarColor: _ink,
       systemNavigationBarIconBrightness: Brightness.light,
     ));
 
     return Scaffold(
       backgroundColor: _bg,
-      body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF111A2A), _bg],
-          ),
+      body: SafeArea(
+        child: _isLoading ? _buildLoader() : _buildBody(),
+      ),
+    );
+  }
+
+  Widget _buildLoader() {
+    return Center(
+      child: SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(
+          strokeWidth: 1.2,
+          valueColor:
+              AlwaysStoppedAnimation<Color>(_amberSft.withOpacity(0.60)),
         ),
-        child: SafeArea(
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    final all = _roster?.inboxEntries ?? const <InboxEntrySummary>[];
+
+    // Same partitioning logic — untouched
+    final active = all.where((e) => e.waitingOnUser && !e.isArrival).toList();
+    final arrivals = all.where((e) => e.isArrival).toList();
+    final quiet = all.where((e) => !e.isArrival && !e.waitingOnUser).toList();
+
+    // Flat priority-ordered list — active first, then arrivals, then quiet
+    final ordered = [...active, ...arrivals, ...quiet];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Pinned header — does not scroll ───────────────────────────────
+        _buildHeader(),
+
+        // ── Error bar ─────────────────────────────────────────────────────
+        if (_error != null) _buildErrorBar(),
+
+        // ── Scrollable area ───────────────────────────────────────────────
+        Expanded(
           child: RefreshIndicator(
             color: _amber,
+            backgroundColor: _surface,
+            displacement: 20,
             onRefresh: _load,
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(strokeWidth: 1.6))
+            child: all.isEmpty
+                ? _buildEmpty()
                 : ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.only(bottom: 48),
                     children: [
-                      _buildHeader(),
-                      const SizedBox(height: 18),
-                      _buildPresenceBanner(),
-                      const SizedBox(height: 16),
-                      _buildActiveStack(),
-                      const SizedBox(height: 16),
-                      if (_error != null) _buildError(),
-                      ..._buildInboxEntries(),
+                      // Stories-style presence strip — only rendered when
+                      // there are active (waitingOnUser) threads
+                      if (active.isNotEmpty) ...[
+                        _buildPresenceStrip(active),
+                        // Hairline between strip and thread list
+                        Container(
+                          height: 0.4,
+                          color: _cream.withOpacity(0.05),
+                        ),
+                      ],
+
+                      // Flat thread list
+                      for (var i = 0; i < ordered.length; i++)
+                        _InboxTile(
+                          entry: ordered[i],
+                          opening: _isOpeningThread,
+                          isLast: i == ordered.length - 1,
+                          onTap: () => _openEntry(ordered[i]),
+                        ),
                     ],
                   ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    final firstName = _firstName();
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                firstName == null ? 'Messages' : '$firstName\'s messages',
-                style: GoogleFonts.cormorantGaramond(
-                  color: _cream,
-                  fontSize: 34,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'threads that kept moving while you were away',
-                style: GoogleFonts.jost(
-                  color: _muted.withValues(alpha: 0.72),
-                  fontSize: 12.5,
-                  letterSpacing: 0.25,
-                ),
-              ),
-            ],
-          ),
-        ),
-        _iconButton(Icons.tune_rounded, _openProfile),
-        const SizedBox(width: 8),
-        _iconButton(Icons.logout_rounded, _signOut),
       ],
     );
   }
 
-  Widget _buildPresenceBanner() {
-    final entries = _roster?.inboxEntries ?? const <InboxEntrySummary>[];
-    final unread = entries.where((entry) => entry.hasUnread).length;
-    final arrivals = entries.where((entry) => entry.isArrival).length;
-    final activeNow = entries.where((entry) => entry.waitingOnUser).length;
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            _surfaceSoft.withValues(alpha: 0.95),
-            _surface.withValues(alpha: 0.95),
-          ],
-        ),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
+  // ── Header ────────────────────────────────────────────────────────────────
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 22, 16, 20),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _amber.withValues(alpha: 0.12),
-            ),
-            child: Icon(
-              arrivals > 0
-                  ? Icons.mark_chat_unread_rounded
-                  : Icons.forum_rounded,
-              color: _amber,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
           Expanded(
             child: Text(
-              arrivals > 0
-                  ? '$arrivals new thread${arrivals == 1 ? '' : 's'} surfaced naturally'
-                  : activeNow > 0
-                      ? '$activeNow thread${activeNow == 1 ? '' : 's'} feel socially active right now'
-                      : unread > 0
-                          ? '$unread active conversation${unread == 1 ? '' : 's'} waiting on you'
-                          : 'everything feels quiet right now',
-              style: GoogleFonts.jost(
-                color: _cream.withValues(alpha: 0.88),
-                fontSize: 13.5,
-                height: 1.45,
+              _greeting(),
+              style: GoogleFonts.cormorantGaramond(
+                color: _cream,
+                fontSize: 32,
+                fontWeight: FontWeight.w300,
+                letterSpacing: 0.2,
+                height: 1.1,
               ),
             ),
           ),
+          const SizedBox(width: 8),
+          _iconBtn(Icons.tune_rounded, _openProfile),
+          const SizedBox(width: 4),
+          _iconBtn(Icons.logout_rounded, _signOut),
         ],
       ),
     );
   }
 
-  Widget _buildError() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF521A1A).withValues(alpha: 0.68),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.22)),
-      ),
+  // ── Error bar ─────────────────────────────────────────────────────────────
+  Widget _buildErrorBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 0, 22, 10),
       child: Text(
         _error ?? '',
         style: GoogleFonts.jost(
-          color: const Color(0xFFFFA3A3),
-          fontSize: 12.5,
+          color: const Color(0xFFBB7070).withOpacity(0.70),
+          fontSize: 11.5,
+          fontWeight: FontWeight.w300,
+          letterSpacing: 0.2,
         ),
       ),
     );
   }
 
-  List<Widget> _buildInboxEntries() {
-    final entries = _roster?.inboxEntries ?? const <InboxEntrySummary>[];
-    if (entries.isEmpty) {
-      return [
-        Padding(
-          padding: const EdgeInsets.only(top: 40),
-          child: Center(
-            child: Text(
-              'No threads have come into focus yet.',
-              style: GoogleFonts.jost(
-                color: _muted.withValues(alpha: 0.78),
-                fontSize: 13,
-              ),
-            ),
-          ),
-        ),
-      ];
-    }
-
-    final active = entries
-        .where((entry) => entry.waitingOnUser && !entry.isArrival)
-        .toList();
-    final arrivals = entries.where((entry) => entry.isArrival).toList();
-    final quieter = entries
-        .where((entry) => !entry.isArrival && !entry.waitingOnUser)
-        .toList();
-
-    final widgets = <Widget>[];
-    if (active.isNotEmpty) {
-      widgets
-          .add(_buildSectionLabel('Waiting On You', '${active.length} active'));
-      widgets.addAll(_tilesFor(active));
-    }
-    if (arrivals.isNotEmpty) {
-      widgets.add(_buildSectionLabel('New Around You', 'ambient arrivals'));
-      widgets.addAll(_tilesFor(arrivals));
-    }
-    if (quieter.isNotEmpty) {
-      widgets.add(_buildSectionLabel('Quiet Threads', 'still inhabited'));
-      widgets.addAll(_tilesFor(quieter));
-    }
-    return widgets;
-  }
-
-  List<Widget> _tilesFor(List<InboxEntrySummary> entries) {
-    return entries
-        .map(
-          (entry) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _InboxTile(
-              entry: entry,
-              opening: _isOpeningThread,
-              onTap: () => _openEntry(entry),
-            ),
-          ),
-        )
-        .toList();
-  }
-
-  Widget _buildActiveStack() {
-    final entries = (_roster?.inboxEntries ?? const <InboxEntrySummary>[])
-        .where((entry) => entry.waitingOnUser)
-        .take(6)
-        .toList();
-    if (entries.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
+  // ── Presence strip — Stories-like row of active companions ────────────────
+  // Height budget: 6 top + 52 avatar + 7 gap + 14 name + 13 bottom = 92
+  Widget _buildPresenceStrip(List<InboxEntrySummary> active) {
     return SizedBox(
       height: 92,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: entries.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (context, index) {
-          final entry = entries[index];
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(22, 6, 22, 13),
+        itemCount: active.take(8).length,
+        separatorBuilder: (_, __) => const SizedBox(width: 18),
+        itemBuilder: (context, i) {
+          final entry = active[i];
           return GestureDetector(
             onTap: _isOpeningThread ? null : () => _openEntry(entry),
-            child: Column(
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    _PresenceAvatar(entry: entry),
-                    Positioned(
-                      right: -2,
-                      bottom: -2,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: _amber,
-                          borderRadius: BorderRadius.circular(999),
+            child: SizedBox(
+              width: 56,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Avatar — amber ring signals "active"
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _surface,
+                      border: Border.all(
+                        color: _amber.withOpacity(0.68),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _amber.withOpacity(0.16),
+                          blurRadius: 10,
+                          spreadRadius: 0,
                         ),
-                        child: Text(
-                          entry.unreadCount > 0
-                              ? '${entry.unreadCount}'
-                              : 'now',
-                          style: GoogleFonts.jost(
-                            color: const Color(0xFF0B0E16),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
+                      ],
+                    ),
+                    child: Center(
+                      child: Text(
+                        entry.companionName.isNotEmpty
+                            ? entry.companionName[0].toUpperCase()
+                            : '?',
+                        style: GoogleFonts.cormorantGaramond(
+                          color: _cream.withOpacity(0.88),
+                          fontSize: 24,
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: 72,
-                  child: Text(
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
                     entry.companionName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
                     style: GoogleFonts.jost(
-                      color: _cream,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  width: 72,
-                  child: Text(
-                    entry.socialPresence,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.jost(
-                      color: _muted.withValues(alpha: 0.72),
+                      color: _sand.withOpacity(0.60),
                       fontSize: 10.5,
+                      fontWeight: FontWeight.w300,
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
@@ -451,204 +364,251 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildSectionLabel(String title, String subtitle) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 6, 2, 10),
-      child: Row(
-        children: [
-          Text(
-            title,
-            style: GoogleFonts.jost(
-              color: _cream.withValues(alpha: 0.92),
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
+  // ── Empty state ───────────────────────────────────────────────────────────
+  Widget _buildEmpty() {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.32),
+        Center(
+          child: Text(
+            'nothing yet.',
+            style: GoogleFonts.cormorantGaramond(
+              color: _sand.withOpacity(0.28),
+              fontSize: 26,
+              fontWeight: FontWeight.w300,
+              letterSpacing: 0.5,
             ),
           ),
-          const SizedBox(width: 8),
-          Text(
-            subtitle,
-            style: GoogleFonts.jost(
-              color: _muted.withValues(alpha: 0.7),
-              fontSize: 11,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _iconButton(IconData icon, VoidCallback onTap) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: 0.05),
+  // ── Icon button ───────────────────────────────────────────────────────────
+  Widget _iconBtn(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: _surface.withOpacity(0.80),
+          border: Border.all(
+            color: _cream.withOpacity(0.05),
+            width: 0.5,
           ),
-          child: Icon(
-            icon,
-            size: 18,
-            color: Colors.white.withValues(alpha: 0.58),
-          ),
+        ),
+        child: Icon(
+          icon,
+          size: 15,
+          color: _sand.withOpacity(0.55),
         ),
       ),
     );
   }
-
-  String? _firstName() {
-    final name = _roster?.userName ?? AuthService.currentUserName;
-    if (name == null || name.trim().isEmpty) {
-      return null;
-    }
-    return name.trim().split(' ').first;
-  }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _InboxTile — a single thread row
+//
+// Design: iMessage-like flat row. No card border. Left amber accent bar for
+// unread. Hairline separator aligned with text content (not avatar edge).
+// The warmth is in the Cormorant name, amber timing, and amber glow on avatar.
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _InboxTile extends StatelessWidget {
   final InboxEntrySummary entry;
   final bool opening;
+  final bool isLast;
   final VoidCallback onTap;
 
   const _InboxTile({
     required this.entry,
     required this.opening,
+    required this.isLast,
     required this.onTap,
   });
-
-  static const Color _surface = Color(0xFF101927);
-  static const Color _amber = Color(0xFFF5A623);
-  static const Color _cream = Color(0xFFEEE8DF);
-  static const Color _muted = Color(0xFF98A4B6);
 
   @override
   Widget build(BuildContext context) {
     final unread = entry.hasUnread;
+    final arrival = entry.isArrival;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: opening ? null : onTap,
-        borderRadius: BorderRadius.circular(24),
-        child: Ink(
-          decoration: BoxDecoration(
-            color: unread
-                ? _surface.withValues(alpha: 0.98)
-                : _surface.withValues(alpha: 0.88),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: unread
-                  ? _amber.withValues(alpha: 0.18)
-                  : Colors.white.withValues(alpha: 0.05),
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildAvatar(),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              entry.companionName,
-                              style: GoogleFonts.jost(
-                                color: _cream,
-                                fontSize: 15,
-                                fontWeight:
-                                    unread ? FontWeight.w600 : FontWeight.w500,
+        splashColor: _amber.withOpacity(0.03),
+        highlightColor: _cream.withOpacity(0.015),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Row: accent bar + content ─────────────────────────────────
+            Container(
+              // Very subtle lifted background for unread threads
+              color: unread ? _surfaceUp.withOpacity(0.50) : Colors.transparent,
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Left accent bar — appears for unread, invisible when read
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      width: 2.5,
+                      color: unread
+                          ? _amber.withOpacity(0.65)
+                          : Colors.transparent,
+                    ),
+
+                    // Content
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 15, 18, 15),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Avatar
+                            _buildAvatar(unread, arrival),
+                            const SizedBox(width: 13),
+
+                            // Text content
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // Name + timestamp on same baseline
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.baseline,
+                                    textBaseline: TextBaseline.alphabetic,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          entry.companionName,
+                                          style: GoogleFonts.cormorantGaramond(
+                                            color: _cream.withOpacity(
+                                              unread ? 1.0 : 0.62,
+                                            ),
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w400,
+                                            letterSpacing: 0.15,
+                                            height: 1.1,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _timeLabel(),
+                                        style: GoogleFonts.jost(
+                                          color: unread
+                                              ? _amber.withOpacity(0.60)
+                                              : _sand.withOpacity(0.34),
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w300,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+
+                                  // Social presence / status — subtle mood line
+                                  if (entry.socialPresence.isNotEmpty ||
+                                      entry.statusText.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      entry.socialPresence.isNotEmpty
+                                          ? entry.socialPresence
+                                          : entry.statusText,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.jost(
+                                        color: (unread || arrival)
+                                            ? _amberSft.withOpacity(0.58)
+                                            : _sand.withOpacity(0.34),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w300,
+                                        letterSpacing: 0.1,
+                                      ),
+                                    ),
+                                  ],
+
+                                  const SizedBox(height: 5),
+
+                                  // Preview — one line, trails off
+                                  Text(
+                                    entry.previewText,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.jost(
+                                      color: _cream.withOpacity(
+                                        unread ? 0.62 : 0.32,
+                                      ),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w300,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-                          Text(
-                            _timeLabel(entry),
-                            style: GoogleFonts.jost(
-                              color: unread
-                                  ? _amber.withValues(alpha: 0.86)
-                                  : _muted.withValues(alpha: 0.7),
-                              fontSize: 11.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        entry.socialPresence.isNotEmpty
-                            ? entry.socialPresence
-                            : entry.statusText,
-                        style: GoogleFonts.jost(
-                          color: unread
-                              ? _amber.withValues(alpha: 0.9)
-                              : _muted.withValues(alpha: 0.74),
-                          fontSize: 11.5,
-                          fontWeight:
-                              unread ? FontWeight.w600 : FontWeight.w400,
+
+                            // Unread count — small amber pill on right
+                            if (entry.unreadCount > 0) ...[
+                              const SizedBox(width: 10),
+                              _buildBadge(entry.unreadCount),
+                            ],
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        entry.previewText,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.jost(
-                          color: _cream.withValues(alpha: unread ? 0.9 : 0.7),
-                          fontSize: 13.3,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                if (entry.unreadCount > 0) ...[
-                  const SizedBox(width: 10),
-                  Container(
-                    height: 22,
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    decoration: BoxDecoration(
-                      color: _amber,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      '${entry.unreadCount}',
-                      style: GoogleFonts.jost(
-                        color: const Color(0xFF0B0E16),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
+              ),
             ),
-          ),
+
+            // ── Hairline separator — aligns with text, not avatar edge ─────
+            // Left margin: 2.5 (bar) + 18 (pad) + 50 (avatar) + 13 (gap) = 83.5
+            if (!isLast)
+              Container(
+                height: 0.4,
+                margin: const EdgeInsets.only(left: 84),
+                color: _cream.withOpacity(0.045),
+              ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildAvatar() {
+  Widget _buildAvatar(bool unread, bool arrival) {
     return Container(
-      width: 52,
-      height: 52,
+      width: 50,
+      height: 50,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [
-            _amber.withValues(alpha: entry.isArrival ? 0.82 : 0.7),
-            const Color(0xFF3D2A00).withValues(alpha: 0.44),
-          ],
+        color: _surface,
+        border: Border.all(
+          color: _amber.withOpacity(
+            arrival
+                ? 0.55
+                : unread
+                    ? 0.28
+                    : 0.09,
+          ),
+          width: (arrival || unread) ? 1.2 : 0.5,
         ),
+        boxShadow: (unread || arrival)
+            ? [
+                BoxShadow(
+                  color: _amber.withOpacity(0.10),
+                  blurRadius: 12,
+                  spreadRadius: 0,
+                ),
+              ]
+            : null,
       ),
       child: Center(
         child: Text(
@@ -656,77 +616,54 @@ class _InboxTile extends StatelessWidget {
               ? entry.companionName[0].toUpperCase()
               : '?',
           style: GoogleFonts.cormorantGaramond(
-            color: _cream,
-            fontSize: 24,
-            fontWeight: FontWeight.w500,
+            color: _cream.withOpacity(0.78),
+            fontSize: 22,
+            fontWeight: FontWeight.w400,
           ),
         ),
       ),
     );
   }
 
-  String _timeLabel(InboxEntrySummary entry) {
+  Widget _buildBadge(int count) {
+    final label = count > 99 ? '99+' : '$count';
+    final wide = count > 9;
+    return Container(
+      width: wide ? null : 20,
+      height: 20,
+      padding:
+          wide ? const EdgeInsets.symmetric(horizontal: 6) : EdgeInsets.zero,
+      decoration: BoxDecoration(
+        color: _amber,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        label,
+        style: GoogleFonts.jost(
+          color: _ink,
+          fontSize: 10,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  String _timeLabel() {
     final stamp = entry.previewDateTime;
-    if (stamp == null) {
-      return entry.isArrival ? 'new' : '';
-    }
+    if (stamp == null) return entry.isArrival ? 'new' : '';
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final thatDay = DateTime(stamp.year, stamp.month, stamp.day);
-    if (thatDay == today) {
-      final hour = stamp.hour % 12 == 0 ? 12 : stamp.hour % 12;
-      final minute = stamp.minute.toString().padLeft(2, '0');
-      final suffix = stamp.hour >= 12 ? 'PM' : 'AM';
-      return '$hour:$minute $suffix';
+    final that = DateTime(stamp.year, stamp.month, stamp.day);
+    if (that == today) {
+      final h = stamp.hour % 12 == 0 ? 12 : stamp.hour % 12;
+      final m = stamp.minute.toString().padLeft(2, '0');
+      return '$h:$m ${stamp.hour >= 12 ? 'pm' : 'am'}';
     }
-    if (today.difference(thatDay).inDays < 7) {
-      const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      return labels[stamp.weekday - 1];
+    if (today.difference(that).inDays < 7) {
+      const d = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+      return d[stamp.weekday - 1];
     }
     return '${stamp.month}/${stamp.day}';
-  }
-}
-
-class _PresenceAvatar extends StatelessWidget {
-  final InboxEntrySummary entry;
-
-  const _PresenceAvatar({
-    required this.entry,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 58,
-      height: 58,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [
-            const Color(0xFFF5A623)
-                .withValues(alpha: entry.isArrival ? 0.82 : 0.72),
-            const Color(0xFF3D2A00).withValues(alpha: 0.42),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFF5A623).withValues(alpha: 0.18),
-            blurRadius: 16,
-          ),
-        ],
-      ),
-      child: Center(
-        child: Text(
-          entry.companionName.isNotEmpty
-              ? entry.companionName[0].toUpperCase()
-              : '?',
-          style: GoogleFonts.cormorantGaramond(
-            color: const Color(0xFFEEE8DF),
-            fontSize: 26,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
-    );
   }
 }

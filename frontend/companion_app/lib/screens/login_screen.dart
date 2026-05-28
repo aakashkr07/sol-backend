@@ -10,7 +10,7 @@
 //
 // ASSETS (pubspec.yaml):
 //   assets:
-//     - assets/images/sol_logo.png   ← export your SVG as PNG @3x
+//     - assets/images/sol_logo.png
 //     - assets/images/google_logo.png
 //
 // =============================================================================
@@ -20,7 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../painters/fragment_painter.dart'; // FragmentPainter, FragmentParticle, kAllFragments, kMotes
+import '../painters/fragment_painter.dart';
 import '../services/auth_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,6 +33,7 @@ const Color _amber = Color(0xFFF0952A);
 const Color _amberSft = Color(0xFFF5B86A);
 const Color _sand = Color(0xFF9A8C78);
 const Color _ink = Color(0xFF030508);
+const Color _dustRose = Color(0xFFBB7070); // error
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Taglines
@@ -95,7 +96,6 @@ class _LoginScreenState extends State<LoginScreen>
   int _lastSpawn = -999;
   static const int _spawnEvery = 52;
 
-  // Logo center for fragment spawn — resolved after first layout
   Offset _logoCenter = const Offset(187.5, 212.0);
   final GlobalKey _logoKey = GlobalKey();
 
@@ -136,45 +136,49 @@ class _LoginScreenState extends State<LoginScreen>
 
     _entranceCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1800),
+      // Slowed slightly — the entrance should feel like surfacing, not loading
+      duration: const Duration(milliseconds: 2100),
     );
 
     _tagCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      // Softer fade — 700ms feels more like a thought drifting in
+      duration: const Duration(milliseconds: 700),
     );
 
     _shimmerCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 1050),
     );
 
     _burstCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 550),
+      duration: const Duration(milliseconds: 600),
     );
   }
 
   void _setupAnimations() {
     _logoIn = CurvedAnimation(
       parent: _entranceCtrl,
-      curve: const Interval(0.00, 0.55, curve: Curves.easeOutCubic),
+      curve: const Interval(0.00, 0.50, curve: Curves.easeOutCubic),
     );
     _wordIn = CurvedAnimation(
       parent: _entranceCtrl,
-      curve: const Interval(0.25, 0.65, curve: Curves.easeOutCubic),
+      // Starts a hair later so wordmark trails the logo
+      curve: const Interval(0.28, 0.62, curve: Curves.easeOutCubic),
     );
     _tagIn = CurvedAnimation(
       parent: _entranceCtrl,
-      curve: const Interval(0.40, 0.75, curve: Curves.easeOut),
+      curve: const Interval(0.42, 0.72, curve: Curves.easeOut),
     );
     _btnIn = CurvedAnimation(
       parent: _entranceCtrl,
-      curve: const Interval(0.55, 0.88, curve: Curves.easeOutCubic),
+      // Button arrives last with a gentle ease
+      curve: const Interval(0.58, 0.90, curve: Curves.easeOutCubic),
     );
     _privacyIn = CurvedAnimation(
       parent: _entranceCtrl,
-      curve: const Interval(0.70, 1.00, curve: Curves.easeOut),
+      curve: const Interval(0.74, 1.00, curve: Curves.easeOut),
     );
     _tagFade = CurvedAnimation(parent: _tagCtrl, curve: Curves.easeInOut);
     _shimmer = CurvedAnimation(parent: _shimmerCtrl, curve: Curves.easeInOut);
@@ -186,11 +190,11 @@ class _LoginScreenState extends State<LoginScreen>
 
   // ── Sequencing ────────────────────────────────────────────────────────────
   Future<void> _startEntrance() async {
-    await Future.delayed(const Duration(milliseconds: 80));
+    await Future.delayed(const Duration(milliseconds: 120));
     if (!mounted) return;
     _entranceCtrl.forward();
 
-    await Future.delayed(const Duration(milliseconds: 2800));
+    await Future.delayed(const Duration(milliseconds: 3200));
     if (!mounted) return;
     _loopShimmer();
   }
@@ -198,7 +202,7 @@ class _LoginScreenState extends State<LoginScreen>
   Future<void> _loopShimmer() async {
     while (mounted && !_isLoading) {
       await Future.delayed(Duration(
-        milliseconds: 5800 + math.Random().nextInt(2200),
+        milliseconds: 6500 + math.Random().nextInt(3000),
       ));
       if (!mounted || _isLoading) return;
       _shimmerCtrl.forward(from: 0);
@@ -207,7 +211,8 @@ class _LoginScreenState extends State<LoginScreen>
 
   Future<void> _cycleTags() async {
     while (mounted) {
-      await Future.delayed(const Duration(seconds: 4));
+      // Longer hold — let each tagline breathe before cycling
+      await Future.delayed(const Duration(milliseconds: 5200));
       if (!mounted) return;
       await _tagCtrl.forward();
       if (!mounted) return;
@@ -216,19 +221,16 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
-  // ── Ticker callback — drives background ───────────────────────────────────
+  // ── Ticker ────────────────────────────────────────────────────────────────
   void _onTick() {
     if (!mounted) return;
 
-    // Resolve logo center from layout key after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final box = _logoKey.currentContext?.findRenderObject() as RenderBox?;
       if (box != null) {
         final pos = box.localToGlobal(Offset.zero);
         final center = pos + Offset(box.size.width / 2, box.size.height / 2);
-        if (center != _logoCenter) {
-          _logoCenter = center;
-        }
+        if (center != _logoCenter) _logoCenter = center;
       }
     });
 
@@ -286,14 +288,11 @@ class _LoginScreenState extends State<LoginScreen>
     try {
       final user = await AuthService.signInWithGoogle();
       if (!mounted) return;
-      if (user != null) {
-        HapticFeedback.heavyImpact();
-        // The root gate will route into onboarding or chat automatically.
-      } else {
-        if (!mounted) return;
+      if (user == null) {
         setState(() => _isLoading = false);
         _loopShimmer();
       }
+      // Success: root gate routes automatically
     } catch (e) {
       if (!mounted) return;
       HapticFeedback.lightImpact();
@@ -322,7 +321,7 @@ class _LoginScreenState extends State<LoginScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // ── Background canvas (fragments + motes) ──────────────────────
+          // ── Background canvas ──────────────────────────────────────────
           AnimatedBuilder(
             animation: _ticker,
             builder: (_, __) => CustomPaint(
@@ -334,11 +333,11 @@ class _LoginScreenState extends State<LoginScreen>
             ),
           ),
 
-          // ── Grain texture ──────────────────────────────────────────────
+          // ── Grain ──────────────────────────────────────────────────────
           Positioned.fill(
             child: IgnorePointer(
               child: Opacity(
-                opacity: 0.028,
+                opacity: 0.032,
                 child: Image.network(
                   'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="4" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter><rect width="200" height="200" filter="url(%23n)"/></svg>',
                   fit: BoxFit.cover,
@@ -348,20 +347,20 @@ class _LoginScreenState extends State<LoginScreen>
             ),
           ),
 
-          // ── Radial depth vignette ──────────────────────────────────────
+          // ── Radial vignette ────────────────────────────────────────────
           Positioned.fill(
             child: IgnorePointer(
               child: DecoratedBox(
                 decoration: const BoxDecoration(
                   gradient: RadialGradient(
-                    center: Alignment(0, -0.3),
-                    radius: 1.1,
+                    center: Alignment(0, -0.25),
+                    radius: 1.15,
                     colors: [
                       Colors.transparent,
-                      Color(0x8C050810),
-                      Color(0xEB050810),
+                      Color(0x7A050810),
+                      Color(0xEE050810),
                     ],
-                    stops: [0.0, 0.55, 1.0],
+                    stops: [0.0, 0.52, 1.0],
                   ),
                 ),
               ),
@@ -370,7 +369,7 @@ class _LoginScreenState extends State<LoginScreen>
 
           // ── Amber bloom ────────────────────────────────────────────────
           Positioned(
-            top: 44,
+            top: 48,
             left: 0,
             right: 0,
             child: IgnorePointer(
@@ -380,17 +379,17 @@ class _LoginScreenState extends State<LoginScreen>
                   final p = (math.sin(_t * 0.6) + 1) / 2;
                   return Center(
                     child: Container(
-                      width: 360,
-                      height: 360,
+                      width: 380,
+                      height: 380,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: RadialGradient(
                           colors: [
-                            _amber.withOpacity(0.065 + p * 0.025),
-                            _amber.withOpacity(0.02),
+                            _amber.withOpacity(0.07 + p * 0.028),
+                            _amber.withOpacity(0.022),
                             Colors.transparent,
                           ],
-                          stops: const [0.0, 0.4, 0.7],
+                          stops: const [0.0, 0.42, 0.72],
                         ),
                       ),
                     ),
@@ -400,7 +399,7 @@ class _LoginScreenState extends State<LoginScreen>
             ),
           ),
 
-          // ── Main scrollable content ────────────────────────────────────
+          // ── Main content ───────────────────────────────────────────────
           SafeArea(
             child: SizedBox.expand(
               child: Column(
@@ -410,19 +409,20 @@ class _LoginScreenState extends State<LoginScreen>
                   _buildLogo(),
                   const Spacer(flex: 2),
                   _buildWordmark(),
-                  const SizedBox(height: 10),
-                  _buildRule(),
-                  const SizedBox(height: 18),
-                  _buildTagPrimary(),
-                  const SizedBox(height: 10),
-                  _buildTagSecondary(),
-                  const SizedBox(height: 20),
-                  _buildButton(),
-                  const SizedBox(height: 14),
-                  if (_error != null) _buildError(),
                   const SizedBox(height: 12),
+                  _buildRule(),
+                  const SizedBox(height: 20),
+                  _buildTagPrimary(),
+                  const SizedBox(height: 11),
+                  _buildTagSecondary(),
+                  const SizedBox(height: 48),
+                  _buildButton(),
+                  const SizedBox(height: 16),
+                  if (_error != null) _buildError(),
+                  if (_error != null) const SizedBox(height: 8),
+                  const Spacer(flex: 1),
                   _buildPrivacy(),
-                  const SizedBox(height: 44),
+                  const SizedBox(height: 40),
                 ],
               ),
             ),
@@ -437,7 +437,7 @@ class _LoginScreenState extends State<LoginScreen>
     return FadeTransition(
       opacity: _logoIn,
       child: ScaleTransition(
-        scale: Tween<double>(begin: 0.78, end: 1.0).animate(_logoIn),
+        scale: Tween<double>(begin: 0.82, end: 1.0).animate(_logoIn),
         child: SizedBox(
           key: _logoKey,
           width: 220,
@@ -445,21 +445,21 @@ class _LoginScreenState extends State<LoginScreen>
           child: Stack(
             alignment: Alignment.center,
             children: [
-              // Outer halo
+              // Outer halo — slow, deep pulse
               AnimatedBuilder(
                 animation: _ticker,
                 builder: (_, __) {
-                  final p = (math.sin(_t * 0.45) + 1) / 2;
+                  final p = (math.sin(_t * 0.42) + 1) / 2;
                   return Container(
-                    width: 280,
-                    height: 280,
+                    width: 290,
+                    height: 290,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: _amber.withOpacity(0.08 + p * 0.07),
-                          blurRadius: 70 + p * 30,
-                          spreadRadius: 5 + p * 8,
+                          color: _amber.withOpacity(0.07 + p * 0.08),
+                          blurRadius: 80 + p * 35,
+                          spreadRadius: 4 + p * 10,
                         ),
                       ],
                     ),
@@ -467,11 +467,11 @@ class _LoginScreenState extends State<LoginScreen>
                 },
               ),
 
-              // Inner orb glow
+              // Inner orb glow — slightly offset, breathing on a different cycle
               AnimatedBuilder(
                 animation: _ticker,
                 builder: (_, __) {
-                  final p = (math.sin(_t * 0.9) + 1) / 2;
+                  final p = (math.sin(_t * 0.88 + 0.5) + 1) / 2;
                   return Transform.translate(
                     offset: const Offset(14, -10),
                     child: Container(
@@ -481,8 +481,8 @@ class _LoginScreenState extends State<LoginScreen>
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: _amberSft.withOpacity(0.15 + p * 0.18),
-                            blurRadius: 30 + p * 25,
+                            color: _amberSft.withOpacity(0.13 + p * 0.20),
+                            blurRadius: 28 + p * 28,
                           ),
                         ],
                       ),
@@ -491,13 +491,13 @@ class _LoginScreenState extends State<LoginScreen>
                 },
               ),
 
-              // Logo image — breathes
+              // Logo — breathes with the outer halo cycle
               AnimatedBuilder(
                 animation: _ticker,
                 builder: (_, child) {
-                  final p = (math.sin(_t * 0.63) + 1) / 2;
+                  final p = (math.sin(_t * 0.42) + 1) / 2;
                   return Transform.scale(
-                    scale: 1.0 + p * 0.022,
+                    scale: 1.0 + p * 0.020,
                     child: child,
                   );
                 },
@@ -520,15 +520,18 @@ class _LoginScreenState extends State<LoginScreen>
     return FadeTransition(
       opacity: _wordIn,
       child: SlideTransition(
-        position: Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero)
-            .animate(_wordIn),
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.18),
+          end: Offset.zero,
+        ).animate(_wordIn),
         child: Text(
           'Sol',
           style: GoogleFonts.cormorantGaramond(
             fontWeight: FontWeight.w300,
-            fontSize: 64,
+            fontSize: 68,
             color: _cream,
-            letterSpacing: 8,
+            // Pulled in from 8 — more intimate, less display-logotype
+            letterSpacing: 6,
             height: 1.0,
           ),
         ),
@@ -536,13 +539,20 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  // ── Rule ──────────────────────────────────────────────────────────────────
   Widget _buildRule() {
     return FadeTransition(
       opacity: _wordIn,
-      child: Container(width: 28, height: 0.5, color: _sand.withOpacity(0.2)),
+      child: Container(
+        width: 36,
+        height: 0.5,
+        // Warmer rule — amber tint instead of cool sand
+        color: _amber.withOpacity(0.18),
+      ),
     );
   }
 
+  // ── Primary tagline ───────────────────────────────────────────────────────
   Widget _buildTagPrimary() {
     return FadeTransition(
       opacity: _tagIn,
@@ -550,19 +560,21 @@ class _LoginScreenState extends State<LoginScreen>
         'You are the U.',
         style: GoogleFonts.cormorantGaramond(
           fontWeight: FontWeight.w300,
-          fontSize: 17.5,
+          // Bumped slightly — this is the positioning statement, deserves presence
+          fontSize: 18.5,
           color: _sand,
-          letterSpacing: 3.8,
+          letterSpacing: 3.6,
         ),
       ),
     );
   }
 
+  // ── Secondary tagline (cycling) ────────────────────────────────────────────
   Widget _buildTagSecondary() {
     return FadeTransition(
       opacity: _tagIn,
       child: SizedBox(
-        height: 16,
+        height: 18,
         child: AnimatedBuilder(
           animation: _tagFade,
           builder: (_, __) => Opacity(
@@ -571,9 +583,10 @@ class _LoginScreenState extends State<LoginScreen>
               _taglines[_tagIdx],
               style: GoogleFonts.jost(
                 fontWeight: FontWeight.w300,
-                fontSize: 10,
-                color: _sand.withOpacity(0.42),
-                letterSpacing: 2.8,
+                // Bumped from 10 → 11.5 — 10px is too small to read on device
+                fontSize: 11.5,
+                color: _sand.withOpacity(0.38),
+                letterSpacing: 2.6,
               ),
             ),
           ),
@@ -587,10 +600,12 @@ class _LoginScreenState extends State<LoginScreen>
     return FadeTransition(
       opacity: _btnIn,
       child: SlideTransition(
-        position: Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero)
-            .animate(_btnIn),
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.18),
+          end: Offset.zero,
+        ).animate(_btnIn),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 36),
+          padding: const EdgeInsets.symmetric(horizontal: 32),
           child: AnimatedBuilder(
             animation: Listenable.merge([_shimmerCtrl, _burstCtrl]),
             builder: (_, __) {
@@ -602,26 +617,32 @@ class _LoginScreenState extends State<LoginScreen>
                 },
                 onTapCancel: () => setState(() => _btnPressed = false),
                 child: AnimatedScale(
-                  scale: _btnPressed ? 0.965 : 1.0,
-                  duration: const Duration(milliseconds: 80),
+                  scale: _btnPressed ? 0.970 : 1.0,
+                  duration: const Duration(milliseconds: 90),
+                  curve: Curves.easeOut,
                   child: Container(
-                    height: 54,
+                    height: 56,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
+                      // 14px radius — softer than 16, less SaaS-y
+                      borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: _cream.withOpacity(_isLoading ? 0.06 : 0.11),
-                        width: 0.7,
+                        color: _cream.withOpacity(_isLoading ? 0.05 : 0.10),
+                        width: 0.6,
                       ),
-                      color: const Color(0x800B1018),
+                      // Very slightly lifted from pure black — gives depth
+                      color: const Color(0x8C0D1420),
                       boxShadow: [
+                        // Burst glow on tap
                         BoxShadow(
-                          color: _amber.withOpacity(_burstGlow.value * 0.22),
-                          blurRadius: 30,
-                          spreadRadius: 1,
+                          color: _amber.withOpacity(_burstGlow.value * 0.26),
+                          blurRadius: 36,
+                          spreadRadius: 0,
                         ),
+                        // Ambient warmth — always present, subtle
                         BoxShadow(
-                          color: _amber.withOpacity(0.04),
-                          blurRadius: 16,
+                          color: _amber.withOpacity(0.045),
+                          blurRadius: 20,
+                          spreadRadius: 0,
                         ),
                       ],
                     ),
@@ -640,9 +661,9 @@ class _LoginScreenState extends State<LoginScreen>
                                   gradient: LinearGradient(
                                     colors: [
                                       Colors.transparent,
-                                      _cream.withOpacity(0.04),
-                                      _cream.withOpacity(0.08),
-                                      _cream.withOpacity(0.04),
+                                      _cream.withOpacity(0.03),
+                                      _cream.withOpacity(0.07),
+                                      _cream.withOpacity(0.03),
                                       Colors.transparent,
                                     ],
                                     stops: const [0.0, 0.3, 0.5, 0.7, 1.0],
@@ -656,12 +677,13 @@ class _LoginScreenState extends State<LoginScreen>
                         // Content
                         _isLoading
                             ? SizedBox(
-                                width: 20,
-                                height: 20,
+                                width: 18,
+                                height: 18,
                                 child: CircularProgressIndicator(
-                                  strokeWidth: 1.4,
+                                  strokeWidth: 1.2,
                                   valueColor: AlwaysStoppedAnimation<Color>(
-                                    _amber.withOpacity(0.6),
+                                    // Warmer amber for loading state
+                                    _amberSft.withOpacity(0.65),
                                   ),
                                 ),
                               )
@@ -672,14 +694,14 @@ class _LoginScreenState extends State<LoginScreen>
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     _googleLogo(),
-                                    const SizedBox(width: 14),
+                                    const SizedBox(width: 12),
                                     Text(
                                       'Continue with Google',
                                       style: GoogleFonts.jost(
                                         fontWeight: FontWeight.w300,
                                         fontSize: 13.5,
-                                        color: _cream.withOpacity(0.68),
-                                        letterSpacing: 0.5,
+                                        color: _cream.withOpacity(0.72),
+                                        letterSpacing: 0.4,
                                       ),
                                     ),
                                   ],
@@ -700,14 +722,15 @@ class _LoginScreenState extends State<LoginScreen>
   // ── Error ─────────────────────────────────────────────────────────────────
   Widget _buildError() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 36),
+      padding: const EdgeInsets.symmetric(horizontal: 40),
       child: Text(
         _error ?? '',
         style: GoogleFonts.jost(
           fontSize: 11.5,
-          color: const Color(0xFFBB7070),
+          fontWeight: FontWeight.w300,
+          color: _dustRose.withOpacity(0.75),
           letterSpacing: 0.3,
-          height: 1.5,
+          height: 1.6,
         ),
         textAlign: TextAlign.center,
       ),
@@ -718,16 +741,21 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildPrivacy() {
     return FadeTransition(
       opacity: _privacyIn,
-      child: Text(
-        'Your conversations and memories are encrypted,\nprivate, and always under your control.',
-        style: GoogleFonts.jost(
-          fontSize: 9.5,
-          fontWeight: FontWeight.w300,
-          color: const Color(0xFF3D3428).withOpacity(0.9),
-          letterSpacing: 0.4,
-          height: 1.7,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 44),
+        child: Text(
+          'Your conversations and memories are encrypted,\nprivate, and always under your control.',
+          style: GoogleFonts.jost(
+            fontSize: 10,
+            fontWeight: FontWeight.w300,
+            // Fixed: was Color(0xFF3D3428) at 0.9 which rendered near-invisible
+            // Now: warm sand at low opacity — readable but receding
+            color: _sand.withOpacity(0.30),
+            letterSpacing: 0.35,
+            height: 1.8,
+          ),
+          textAlign: TextAlign.center,
         ),
-        textAlign: TextAlign.center,
       ),
     );
   }
@@ -735,8 +763,8 @@ class _LoginScreenState extends State<LoginScreen>
   // ── Google logo ────────────────────────────────────────────────────────────
   Widget _googleLogo() {
     return SizedBox(
-      width: 17,
-      height: 17,
+      width: 16,
+      height: 16,
       child: Image.asset(
         'assets/images/google_logo.png',
         fit: BoxFit.contain,
