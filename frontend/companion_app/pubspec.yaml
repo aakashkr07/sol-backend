@@ -30,6 +30,7 @@ dependencies:
   firebase_messaging: ^16.0.0
   google_sign_in: ^6.2.1
   firebase_storage: ^13.0.0
+  flutter_native_splash: ^2.4.7
 
 dev_dependencies:
   flutter_test:
@@ -62,3 +63,12 @@ flutter:
           weight: 300
         - asset: assets/fonts/CormorantGaramond-Regular.ttf
           weight: 400  
+
+flutter_native_splash:
+  color: "#000000"                  # This sets your full background to true black
+  image: assets/icon/app_icon.png # Path to your logo asset
+
+  # This section explicitly overrides the Android 12+ circular donut bug
+  android_12:
+    color: "#000000"
+    image: assets/icon/app_icon.png          

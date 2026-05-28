@@ -544,11 +544,14 @@ class _LoginScreenState extends State<LoginScreen>
                     child: child,
                   );
                 },
-                child: Image.asset(
-                  'assets/images/sol_logo.png',
-                  width: 200,
-                  height: 200,
-                  fit: BoxFit.contain,
+                child: Opacity(
+                  opacity: 0.85,
+                  child: Image.asset(
+                    'assets/images/sol_logo.png',
+                    width: 200,
+                    height: 200,
+                    fit: BoxFit.contain,
+                  ),
                 ),
               ),
             ],
@@ -572,7 +575,7 @@ class _LoginScreenState extends State<LoginScreen>
           style: GoogleFonts.jost(
             fontWeight: FontWeight.w200,
             fontSize: 64,
-            color: _cream.withOpacity(0.92),
+            color: _amber.withOpacity(0.92),
             letterSpacing: 22,
             height: 1.0,
           ),
@@ -607,7 +610,7 @@ class _LoginScreenState extends State<LoginScreen>
                 style: GoogleFonts.plusJakartaSans(
                   fontWeight: FontWeight.w500,
                   fontSize: 14,
-                  color: _cream.withOpacity(0.88),
+                  color: _violet.withOpacity(0.88),
                   letterSpacing: 0.4,
                 ),
               ),
@@ -675,6 +678,7 @@ class _LoginScreenState extends State<LoginScreen>
                       filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                       child: Container(
                         height: 54,
+                        width: 280,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
