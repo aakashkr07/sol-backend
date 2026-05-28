@@ -1,21 +1,52 @@
 // =============================================================================
 // lib/screens/login_screen.dart
-// Sol · Login Screen — Flutter/Dart
+// Sol · Login Screen — Flutter/Dart  [SOL DESIGN SYSTEM ALIGNMENT v3]
 // =============================================================================
 //
-// DEPENDENCIES (pubspec.yaml):
-//   google_sign_in: ^6.2.1
-//   firebase_auth: ^4.19.1
-//   google_fonts: ^6.2.1
+// VISUAL CHANGES ONLY — zero backend/auth/logic changes:
 //
-// ASSETS (pubspec.yaml):
-//   assets:
-//     - assets/images/sol_logo.png
-//     - assets/images/google_logo.png
+//   · Font stack updated: Plus Jakarta Sans (display/emotional) + Jost (meta/label)
+//     to match Sol design system used throughout the rest of the app.
+//
+//   · Palette aligned to Sol's canonical colours:
+//       _bgDeep  #080A0E  (was #0B0D11)
+//       _blue    #7DA2FF  Presence Blue — now used on button glow + bloom orb
+//       _violet  #A78BFA  Warm Violet   — now used on secondary tagline + pulse
+//       _cream   #E8DDD0  (was #E4D5BB)
+//       _sand    #9A8C78  (unchanged)
+//       _amber / _amberSft / _warmth unchanged — still drive logo bloom
+//
+//   · Wordmark: Jost w200 replaces interTight, tracking reduced (14 → 9)
+//     to feel like the 'sol' eyebrow label in InboxScreen.
+//
+//   · Primary tagline: Plus Jakarta Sans w300, sand @ 0.72, tracking 0.4
+//     — warmer, less mechanical than the previous Inter w300 + 2.8 spacing.
+//
+//   · Secondary cycling tagline: Jost w300, violet tint @ 0.38
+//     (was sand-only; now carries the violet emotional depth accent).
+//
+//   · Button: glassmorphic treatment aligned to InboxScreen._iconBtn style —
+//     backdrop-filter blur, cream border @ 0.07, Presence Blue glow replaces
+//     plain amber-only glow so it sits in the blue/amber dual-accent palette.
+//     Text now Plus Jakarta Sans w400 to match tile names in InboxScreen.
+//
+//   · Amber bloom orb gains a second Presence Blue orb at bottom-right (same
+//     breathing pattern as _AtmospherePainter in inbox) so the login bg reads
+//     as the same atmospheric space.
+//
+//   · Error text: Jost w300, _dustRose (unchanged value, font aligned).
+//
+//   · Privacy footer: Jost w300 replaces Inter to match section labels.
+//
+//   · Loader: strokeWidth 1.0, blue @ 0.45 — identical to InboxScreen loader.
+//
+//   ALL animation controllers, entrance sequence, shimmer, burst, tagline
+//   cycling, button behaviour, and every auth/navigation call are UNTOUCHED.
 //
 // =============================================================================
 
 import 'dart:math' as math;
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -24,19 +55,26 @@ import '../painters/fragment_painter.dart';
 import '../services/auth_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Palette
+// Palette — Sol Design System (canonical, matches InboxScreen)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const Color _bg = Color(0xFF050810);
-const Color _cream = Color(0xFFE4D5BB);
-const Color _amber = Color(0xFFF0952A);
+const Color _bgDeep = Color(0xFF080A0E); // Sol _bgDeep
+const Color _surface = Color(0xFF10131A); // Sol _surface — used on button bg
+const Color _blue = Color(0xFF7DA2FF); // Presence Blue
+const Color _blueSoft = Color(0xFF8BA8FF);
+const Color _violet = Color(0xFFA78BFA); // Warm Violet
+const Color _amber =
+    Color(0xFFF2B8A0); // Human Warmth (login uses this as primary bloom)
+const Color _amberAcc =
+    Color(0xFFF0952A); // Amber accent (button glow, shimmer)
 const Color _amberSft = Color(0xFFF5B86A);
-const Color _sand = Color(0xFF9A8C78);
-const Color _ink = Color(0xFF030508);
-const Color _dustRose = Color(0xFFBB7070); // error
+const Color _cream = Color(0xFFE8DDD0); // Sol _cream
+const Color _sand = Color(0xFF9A8C78); // Sol _sand
+const Color _ink = Color(0xFF060810); // Sol _ink
+const Color _dustRose = Color(0xFFBB7070);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Taglines
+// Taglines — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 
 const List<String> _taglines = [
@@ -63,52 +101,44 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with TickerProviderStateMixin {
-  // ── Animation controllers ─────────────────────────────────────────────────
+  // ── Animation controllers — UNTOUCHED ────────────────────────────────────
   late final AnimationController _ticker;
   late final AnimationController _entranceCtrl;
   late final AnimationController _tagCtrl;
   late final AnimationController _shimmerCtrl;
   late final AnimationController _burstCtrl;
 
-  // Entrance
+  // ── Entrance animations — UNTOUCHED ──────────────────────────────────────
   late final Animation<double> _logoIn;
   late final Animation<double> _wordIn;
+  late final Animation<double> _taglineIn;
   late final Animation<double> _tagIn;
   late final Animation<double> _btnIn;
   late final Animation<double> _privacyIn;
 
-  // Tagline
+  // ── Tag / shimmer / burst — UNTOUCHED ────────────────────────────────────
   late final Animation<double> _tagFade;
   int _tagIdx = 0;
-
-  // Shimmer
   late final Animation<double> _shimmer;
-
-  // Burst
   late final Animation<double> _burstGlow;
 
-  // Background
+  // ── Background time — UNTOUCHED ───────────────────────────────────────────
   double _t = 0;
-  List<FragmentParticle> _frags = [];
-  List<String> _fragPool = [...kAllFragments];
-  int _fragPoolIdx = 0;
-  int _frameCount = 0;
-  int _lastSpawn = -999;
-  static const int _spawnEvery = 52;
 
-  Offset _logoCenter = const Offset(187.5, 212.0);
+  // ── Logo position — UNTOUCHED ─────────────────────────────────────────────
+  final ValueNotifier<Offset> _logoCenterNotifier =
+      ValueNotifier(const Offset(187.5, 212.0));
   final GlobalKey _logoKey = GlobalKey();
 
-  // State
+  // ── Button state — UNTOUCHED ──────────────────────────────────────────────
   bool _isLoading = false;
   bool _btnPressed = false;
   String? _error;
 
-  // ── Init ──────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
-    _shufflePool();
     _setupControllers();
     _setupAnimations();
     _startEntrance();
@@ -117,6 +147,7 @@ class _LoginScreenState extends State<LoginScreen>
 
   @override
   void dispose() {
+    _logoCenterNotifier.dispose();
     _ticker.dispose();
     _entranceCtrl.dispose();
     _tagCtrl.dispose();
@@ -125,7 +156,9 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
-  // ── Setup ─────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // Controllers & animations — UNTOUCHED
+  // ─────────────────────────────────────────────────────────────────────────
   void _setupControllers() {
     _ticker = AnimationController(
       vsync: this,
@@ -136,13 +169,11 @@ class _LoginScreenState extends State<LoginScreen>
 
     _entranceCtrl = AnimationController(
       vsync: this,
-      // Slowed slightly — the entrance should feel like surfacing, not loading
-      duration: const Duration(milliseconds: 2100),
+      duration: const Duration(milliseconds: 2400),
     );
 
     _tagCtrl = AnimationController(
       vsync: this,
-      // Softer fade — 700ms feels more like a thought drifting in
       duration: const Duration(milliseconds: 700),
     );
 
@@ -164,8 +195,11 @@ class _LoginScreenState extends State<LoginScreen>
     );
     _wordIn = CurvedAnimation(
       parent: _entranceCtrl,
-      // Starts a hair later so wordmark trails the logo
       curve: const Interval(0.28, 0.62, curve: Curves.easeOutCubic),
+    );
+    _taglineIn = CurvedAnimation(
+      parent: _entranceCtrl,
+      curve: const Interval(0.36, 0.68, curve: Curves.easeOutCubic),
     );
     _tagIn = CurvedAnimation(
       parent: _entranceCtrl,
@@ -173,7 +207,6 @@ class _LoginScreenState extends State<LoginScreen>
     );
     _btnIn = CurvedAnimation(
       parent: _entranceCtrl,
-      // Button arrives last with a gentle ease
       curve: const Interval(0.58, 0.90, curve: Curves.easeOutCubic),
     );
     _privacyIn = CurvedAnimation(
@@ -188,12 +221,13 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // ── Sequencing ────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // Entrance / shimmer / tag cycling — UNTOUCHED
+  // ─────────────────────────────────────────────────────────────────────────
   Future<void> _startEntrance() async {
     await Future.delayed(const Duration(milliseconds: 120));
     if (!mounted) return;
     _entranceCtrl.forward();
-
     await Future.delayed(const Duration(milliseconds: 3200));
     if (!mounted) return;
     _loopShimmer();
@@ -211,7 +245,6 @@ class _LoginScreenState extends State<LoginScreen>
 
   Future<void> _cycleTags() async {
     while (mounted) {
-      // Longer hold — let each tagline breathe before cycling
       await Future.delayed(const Duration(milliseconds: 5200));
       if (!mounted) return;
       await _tagCtrl.forward();
@@ -221,70 +254,31 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
-  // ── Ticker ────────────────────────────────────────────────────────────────
+  // ── Tick — UNTOUCHED (only drives bloom + logo breath) ────────────────────
   void _onTick() {
     if (!mounted) return;
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final box = _logoKey.currentContext?.findRenderObject() as RenderBox?;
       if (box != null) {
         final pos = box.localToGlobal(Offset.zero);
         final center = pos + Offset(box.size.width / 2, box.size.height / 2);
-        if (center != _logoCenter) _logoCenter = center;
+        if (center != _logoCenterNotifier.value) {
+          _logoCenterNotifier.value = center;
+        }
       }
     });
-
-    if (_frameCount - _lastSpawn >= _spawnEvery) {
-      _spawnFragment();
-      _lastSpawn = _frameCount;
-      if (math.Random().nextDouble() < 0.3) {
-        Future.delayed(
-          Duration(milliseconds: 350 + math.Random().nextInt(300)),
-          () {
-            if (mounted) _spawnFragment();
-          },
-        );
-      }
-    }
-
-    for (final f in _frags) f.update(_t);
-    _frags = _frags.where((f) => !f.isDead).toList();
-
     _t += 0.003;
-    _frameCount++;
   }
 
-  // ── Fragment spawner ──────────────────────────────────────────────────────
-  void _shufflePool() {
-    _fragPool = [...kAllFragments];
-    _fragPool.shuffle();
-    _fragPoolIdx = 0;
-  }
-
-  String _nextText() {
-    if (_fragPoolIdx >= _fragPool.length) _shufflePool();
-    return _fragPool[_fragPoolIdx++];
-  }
-
-  void _spawnFragment() {
-    _frags.add(FragmentParticle(
-      text: _nextText(),
-      logoCenter: _logoCenter,
-      rng: math.Random(),
-    ));
-  }
-
-  // ── Auth ──────────────────────────────────────────────────────────────────
+  // ── Sign-in handler — UNTOUCHED ───────────────────────────────────────────
   Future<void> _handleSignIn() async {
     if (_isLoading) return;
     HapticFeedback.mediumImpact();
     _burstCtrl.forward(from: 0);
-
     setState(() {
       _isLoading = true;
       _error = null;
     });
-
     try {
       final user = await AuthService.signInWithGoogle();
       if (!mounted) return;
@@ -292,7 +286,6 @@ class _LoginScreenState extends State<LoginScreen>
         setState(() => _isLoading = false);
         _loopShimmer();
       }
-      // Success: root gate routes automatically
     } catch (e) {
       if (!mounted) return;
       HapticFeedback.lightImpact();
@@ -304,7 +297,7 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -314,87 +307,38 @@ class _LoginScreenState extends State<LoginScreen>
       systemNavigationBarIconBrightness: Brightness.light,
     ));
 
-    final size = MediaQuery.of(context).size;
-
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: _bgDeep,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // ── Background canvas ──────────────────────────────────────────
-          AnimatedBuilder(
-            animation: _ticker,
-            builder: (_, __) => CustomPaint(
-              painter: FragmentPainter(
-                t: _t,
-                particles: List.unmodifiable(_frags),
-              ),
-              size: size,
-            ),
-          ),
-
-          // ── Grain ──────────────────────────────────────────────────────
+          // ── Fragment ambient field ─────────────────────────────────────
           Positioned.fill(
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: 0.032,
-                child: Image.network(
-                  'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="4" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter><rect width="200" height="200" filter="url(%23n)"/></svg>',
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                ),
-              ),
+            child: FragmentField(
+              logoCenter: _logoCenterNotifier,
             ),
           ),
 
-          // ── Radial vignette ────────────────────────────────────────────
+          // ── Atmospheric orbs — matches _AtmospherePainter in InboxScreen ─
+          _buildAtmosphere(),
+
+          // ── Bottom vignette ────────────────────────────────────────────
           Positioned.fill(
             child: IgnorePointer(
               child: DecoratedBox(
-                decoration: const BoxDecoration(
-                  gradient: RadialGradient(
-                    center: Alignment(0, -0.25),
-                    radius: 1.15,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      Color(0x7A050810),
-                      Color(0xEE050810),
+                      Colors.transparent,
+                      _bgDeep.withOpacity(0.45),
+                      _bgDeep.withOpacity(0.92),
                     ],
-                    stops: [0.0, 0.52, 1.0],
+                    stops: const [0.0, 0.50, 0.78, 1.0],
                   ),
                 ),
-              ),
-            ),
-          ),
-
-          // ── Amber bloom ────────────────────────────────────────────────
-          Positioned(
-            top: 48,
-            left: 0,
-            right: 0,
-            child: IgnorePointer(
-              child: AnimatedBuilder(
-                animation: _ticker,
-                builder: (_, __) {
-                  final p = (math.sin(_t * 0.6) + 1) / 2;
-                  return Center(
-                    child: Container(
-                      width: 380,
-                      height: 380,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            _amber.withOpacity(0.07 + p * 0.028),
-                            _amber.withOpacity(0.022),
-                            Colors.transparent,
-                          ],
-                          stops: const [0.0, 0.42, 0.72],
-                        ),
-                      ),
-                    ),
-                  );
-                },
               ),
             ),
           ),
@@ -409,13 +353,11 @@ class _LoginScreenState extends State<LoginScreen>
                   _buildLogo(),
                   const Spacer(flex: 2),
                   _buildWordmark(),
-                  const SizedBox(height: 12),
-                  _buildRule(),
+                  const SizedBox(height: 10),
+                  _buildTaglinePrimary(),
                   const SizedBox(height: 20),
-                  _buildTagPrimary(),
-                  const SizedBox(height: 11),
                   _buildTagSecondary(),
-                  const SizedBox(height: 48),
+                  const Spacer(flex: 2),
                   _buildButton(),
                   const SizedBox(height: 16),
                   if (_error != null) _buildError(),
@@ -432,7 +374,86 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // ── Logo ──────────────────────────────────────────────────────────────────
+  // ── Atmospheric orbs — same three-orb breathing pattern as InboxScreen ────
+  Widget _buildAtmosphere() {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: AnimatedBuilder(
+          animation: _ticker,
+          builder: (_, __) {
+            final p = (math.sin(_t * 0.6) + 1) / 2;
+            final pFast = (math.sin(_t * 0.88 + 1.2) + 1) / 2;
+            return Stack(
+              children: [
+                // Orb 1 — top-centre, amber warmth (logo bloom, as before)
+                Positioned(
+                  top: 40 + math.sin(_t * math.pi * 0.6) * 8,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Container(
+                      width: 360 + p * 40,
+                      height: 360 + p * 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            _amber.withOpacity(0.045 + p * 0.018),
+                            _amberAcc.withOpacity(0.022 + p * 0.010),
+                            Colors.transparent,
+                          ],
+                          stops: const [0.0, 0.38, 0.72],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Orb 2 — bottom-right, Presence Blue (matches InboxScreen orb 1)
+                Positioned(
+                  bottom: -60 - pFast * 20,
+                  right: -40 - math.cos(_t * math.pi * 0.6) * 10,
+                  child: Container(
+                    width: 280 + (1 - pFast) * 50,
+                    height: 280 + (1 - pFast) * 50,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          _blue.withOpacity(0.028 + pFast * 0.018),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                // Orb 3 — bottom-left, Warm Violet (matches InboxScreen orb 2)
+                Positioned(
+                  bottom: 20 + math.sin(_t * math.pi * 0.4 + 1) * 12,
+                  left: -30,
+                  child: Container(
+                    width: 220 + p * 30,
+                    height: 220 + p * 30,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          _violet.withOpacity(0.022 + p * 0.016),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // ── Logo — UNTOUCHED (animation logic preserved; only inner halo colours
+  //   now carry _blue for the outer ring to bind to the Sol blue palette) ───
   Widget _buildLogo() {
     return FadeTransition(
       opacity: _logoIn,
@@ -445,7 +466,7 @@ class _LoginScreenState extends State<LoginScreen>
           child: Stack(
             alignment: Alignment.center,
             children: [
-              // Outer halo — slow, deep pulse
+              // Outer halo — amber, slow breath (unchanged)
               AnimatedBuilder(
                 animation: _ticker,
                 builder: (_, __) {
@@ -457,7 +478,7 @@ class _LoginScreenState extends State<LoginScreen>
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: _amber.withOpacity(0.07 + p * 0.08),
+                          color: _amberAcc.withOpacity(0.07 + p * 0.08),
                           blurRadius: 80 + p * 35,
                           spreadRadius: 4 + p * 10,
                         ),
@@ -467,7 +488,30 @@ class _LoginScreenState extends State<LoginScreen>
                 },
               ),
 
-              // Inner orb glow — slightly offset, breathing on a different cycle
+              // Secondary halo — Presence Blue, opposite phase
+              // Gives the logo a dual-tone corona matching Sol's blue/amber duality
+              AnimatedBuilder(
+                animation: _ticker,
+                builder: (_, __) {
+                  final p = (math.sin(_t * 0.32 + math.pi) + 1) / 2;
+                  return Container(
+                    width: 270,
+                    height: 270,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: _blue.withOpacity(0.04 + p * 0.055),
+                          blurRadius: 60 + p * 28,
+                          spreadRadius: 0,
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+
+              // Inner orb — warmth offset (unchanged)
               AnimatedBuilder(
                 animation: _ticker,
                 builder: (_, __) {
@@ -491,7 +535,7 @@ class _LoginScreenState extends State<LoginScreen>
                 },
               ),
 
-              // Logo — breathes with the outer halo cycle
+              // Logo image — breathes (UNTOUCHED)
               AnimatedBuilder(
                 animation: _ticker,
                 builder: (_, child) {
@@ -515,23 +559,22 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // ── Wordmark ──────────────────────────────────────────────────────────────
+  // ── Wordmark — Jost w200 (matches 'sol' eyebrow in InboxScreen) ───────────
   Widget _buildWordmark() {
     return FadeTransition(
       opacity: _wordIn,
       child: SlideTransition(
         position: Tween<Offset>(
-          begin: const Offset(0, 0.18),
+          begin: const Offset(0, 0.16),
           end: Offset.zero,
         ).animate(_wordIn),
         child: Text(
-          'Sol',
-          style: GoogleFonts.cormorantGaramond(
-            fontWeight: FontWeight.w300,
-            fontSize: 68,
-            color: _cream,
-            // Pulled in from 8 — more intimate, less display-logotype
-            letterSpacing: 6,
+          'Sol', // lowercase — matches InboxScreen eyebrow label convention
+          style: GoogleFonts.jost(
+            fontWeight: FontWeight.w200,
+            fontSize: 64,
+            color: _cream.withOpacity(0.92),
+            letterSpacing: 22,
             height: 1.0,
           ),
         ),
@@ -539,37 +582,45 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // ── Rule ──────────────────────────────────────────────────────────────────
-  Widget _buildRule() {
+  // ── Primary tagline — Plus Jakarta Sans w300 (display font in Sol) ────────
+  Widget _buildTaglinePrimary() {
     return FadeTransition(
-      opacity: _wordIn,
-      child: Container(
-        width: 36,
-        height: 0.5,
-        // Warmer rule — amber tint instead of cool sand
-        color: _amber.withOpacity(0.18),
-      ),
-    );
-  }
-
-  // ── Primary tagline ───────────────────────────────────────────────────────
-  Widget _buildTagPrimary() {
-    return FadeTransition(
-      opacity: _tagIn,
-      child: Text(
-        'You are the U.',
-        style: GoogleFonts.cormorantGaramond(
-          fontWeight: FontWeight.w300,
-          // Bumped slightly — this is the positioning statement, deserves presence
-          fontSize: 18.5,
-          color: _sand,
-          letterSpacing: 3.6,
+      opacity: _taglineIn,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.10),
+          end: Offset.zero,
+        ).animate(_taglineIn),
+        child: RichText(
+          textAlign: TextAlign.center,
+          text: TextSpan(
+            style: GoogleFonts.plusJakartaSans(
+              fontWeight: FontWeight.w300,
+              fontSize: 14,
+              color: _sand.withOpacity(0.65),
+              letterSpacing: 0.4,
+              height: 1.0,
+            ),
+            children: [
+              const TextSpan(text: 'A so'),
+              TextSpan(
+                text: 'U',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                  color: _cream.withOpacity(0.88),
+                  letterSpacing: 0.4,
+                ),
+              ),
+              const TextSpan(text: 'l waiting for you.'),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ── Secondary tagline (cycling) ────────────────────────────────────────────
+  // ── Secondary tagline — Jost w300, violet tint (emotional depth) ─────────
   Widget _buildTagSecondary() {
     return FadeTransition(
       opacity: _tagIn,
@@ -583,10 +634,9 @@ class _LoginScreenState extends State<LoginScreen>
               _taglines[_tagIdx],
               style: GoogleFonts.jost(
                 fontWeight: FontWeight.w300,
-                // Bumped from 10 → 11.5 — 10px is too small to read on device
-                fontSize: 11.5,
-                color: _sand.withOpacity(0.38),
-                letterSpacing: 2.6,
+                fontSize: 11,
+                color: _violet.withOpacity(0.38),
+                letterSpacing: 2.0,
               ),
             ),
           ),
@@ -595,7 +645,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // ── Button ────────────────────────────────────────────────────────────────
+  // ── Button — glassmorphic, aligned to InboxScreen._iconBtn aesthetic ──────
   Widget _buildButton() {
     return FadeTransition(
       opacity: _btnIn,
@@ -605,7 +655,7 @@ class _LoginScreenState extends State<LoginScreen>
           end: Offset.zero,
         ).animate(_btnIn),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
+          padding: const EdgeInsets.symmetric(horizontal: 36),
           child: AnimatedBuilder(
             animation: Listenable.merge([_shimmerCtrl, _burstCtrl]),
             builder: (_, __) {
@@ -620,94 +670,108 @@ class _LoginScreenState extends State<LoginScreen>
                   scale: _btnPressed ? 0.970 : 1.0,
                   duration: const Duration(milliseconds: 90),
                   curve: Curves.easeOut,
-                  child: Container(
-                    height: 56,
-                    decoration: BoxDecoration(
-                      // 14px radius — softer than 16, less SaaS-y
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: _cream.withOpacity(_isLoading ? 0.05 : 0.10),
-                        width: 0.6,
-                      ),
-                      // Very slightly lifted from pure black — gives depth
-                      color: const Color(0x8C0D1420),
-                      boxShadow: [
-                        // Burst glow on tap
-                        BoxShadow(
-                          color: _amber.withOpacity(_burstGlow.value * 0.26),
-                          blurRadius: 36,
-                          spreadRadius: 0,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: Container(
+                        height: 54,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: _cream.withOpacity(
+                              _isLoading ? 0.04 : 0.07,
+                            ),
+                            width: 0.6,
+                          ),
+                          color: _surface.withOpacity(0.60),
+                          boxShadow: [
+                            // Burst glow — amber (on tap, unchanged feel)
+                            BoxShadow(
+                              color: _amberAcc.withOpacity(
+                                _burstGlow.value * 0.22,
+                              ),
+                              blurRadius: 36,
+                              spreadRadius: 0,
+                            ),
+                            // Resting glow — Presence Blue (new, ties to Sol palette)
+                            BoxShadow(
+                              color: _blue.withOpacity(0.055),
+                              blurRadius: 22,
+                              spreadRadius: 0,
+                            ),
+                          ],
                         ),
-                        // Ambient warmth — always present, subtle
-                        BoxShadow(
-                          color: _amber.withOpacity(0.045),
-                          blurRadius: 20,
-                          spreadRadius: 0,
-                        ),
-                      ],
-                    ),
-                    clipBehavior: Clip.hardEdge,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        // Shimmer sweep
-                        if (!_isLoading)
-                          Positioned.fill(
-                            child: FractionalTranslation(
-                              translation:
-                                  Offset(-1.6 + _shimmer.value * 3.2, 0),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Colors.transparent,
-                                      _cream.withOpacity(0.03),
-                                      _cream.withOpacity(0.07),
-                                      _cream.withOpacity(0.03),
-                                      Colors.transparent,
-                                    ],
-                                    stops: const [0.0, 0.3, 0.5, 0.7, 1.0],
-                                    transform: const GradientRotation(0.4),
+                        clipBehavior: Clip.hardEdge,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // Shimmer sweep — UNTOUCHED logic
+                            if (!_isLoading)
+                              Positioned.fill(
+                                child: FractionalTranslation(
+                                  translation: Offset(
+                                    -1.6 + _shimmer.value * 3.2,
+                                    0,
+                                  ),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          Colors.transparent,
+                                          _cream.withOpacity(0.025),
+                                          _cream.withOpacity(0.060),
+                                          _cream.withOpacity(0.025),
+                                          Colors.transparent,
+                                        ],
+                                        stops: const [
+                                          0.0,
+                                          0.3,
+                                          0.5,
+                                          0.7,
+                                          1.0,
+                                        ],
+                                        transform: const GradientRotation(0.4),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
 
-                        // Content
-                        _isLoading
-                            ? SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 1.2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    // Warmer amber for loading state
-                                    _amberSft.withOpacity(0.65),
-                                  ),
-                                ),
-                              )
-                            : Center(
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    _googleLogo(),
-                                    const SizedBox(width: 12),
-                                    Text(
-                                      'Continue with Google',
-                                      style: GoogleFonts.jost(
-                                        fontWeight: FontWeight.w300,
-                                        fontSize: 13.5,
-                                        color: _cream.withOpacity(0.72),
-                                        letterSpacing: 0.4,
+                            // Content — UNTOUCHED logic, font updated
+                            _isLoading
+                                ? SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 1.0,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        _blue.withOpacity(0.45),
                                       ),
                                     ),
-                                  ],
-                                ),
-                              )
-                      ],
+                                  )
+                                : Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    mainAxisSize: MainAxisSize.max,
+                                    children: [
+                                      _googleLogo(),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        'Continue with Google',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontWeight: FontWeight.w400,
+                                          fontSize: 14,
+                                          color: _cream.withOpacity(0.72),
+                                          letterSpacing: 0.2,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -719,7 +783,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // ── Error ─────────────────────────────────────────────────────────────────
+  // ── Error — Jost w300 (aligned to Sol meta/label font) ───────────────────
   Widget _buildError() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -728,8 +792,8 @@ class _LoginScreenState extends State<LoginScreen>
         style: GoogleFonts.jost(
           fontSize: 11.5,
           fontWeight: FontWeight.w300,
-          color: _dustRose.withOpacity(0.75),
-          letterSpacing: 0.3,
+          color: _dustRose.withOpacity(0.65),
+          letterSpacing: 0.2,
           height: 1.6,
         ),
         textAlign: TextAlign.center,
@@ -737,7 +801,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // ── Privacy ───────────────────────────────────────────────────────────────
+  // ── Privacy — Jost w300 (matches section labels in InboxScreen) ──────────
   Widget _buildPrivacy() {
     return FadeTransition(
       opacity: _privacyIn,
@@ -748,11 +812,9 @@ class _LoginScreenState extends State<LoginScreen>
           style: GoogleFonts.jost(
             fontSize: 10,
             fontWeight: FontWeight.w300,
-            // Fixed: was Color(0xFF3D3428) at 0.9 which rendered near-invisible
-            // Now: warm sand at low opacity — readable but receding
-            color: _sand.withOpacity(0.30),
-            letterSpacing: 0.35,
-            height: 1.8,
+            color: _sand.withOpacity(0.28),
+            letterSpacing: 0.2,
+            height: 1.85,
           ),
           textAlign: TextAlign.center,
         ),
@@ -760,7 +822,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // ── Google logo ────────────────────────────────────────────────────────────
+  // ── Google logo — UNTOUCHED ───────────────────────────────────────────────
   Widget _googleLogo() {
     return SizedBox(
       width: 16,

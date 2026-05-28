@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -10,17 +12,30 @@ import 'chat_screen.dart';
 import 'profile_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Palette
+// Palette — Sol Design System
 // ─────────────────────────────────────────────────────────────────────────────
 
-const Color _bg = Color(0xFF050810);
-const Color _surface = Color(0xFF0C1018);
-const Color _surfaceUp = Color(0xFF101820);
-const Color _amber = Color(0xFFF0952A);
-const Color _amberSft = Color(0xFFF5B86A);
-const Color _cream = Color(0xFFE4D5BB);
+// Base backgrounds — breathable deep darks, never pure black
+const Color _bgDeep = Color(0xFF080A0E);
+const Color _surface = Color(0xFF10131A);
+const Color _surfaceUp = Color(0xFF141720);
+
+// Presence Blue — emotional core, used sparingly
+const Color _blue = Color(0xFF7DA2FF);
+const Color _blueSoft = Color(0xFF8BA8FF);
+
+// Warm Violet — vulnerability and emotional depth
+const Color _violet = Color(0xFFA78BFA);
+const Color _violetSoft = Color(0xFFB69CFF);
+
+// Human Warmth — amber/peach, used very subtly
+const Color _amber = Color(0xFFF2B8A0);
+
+// Typography
+const Color _cream = Color(0xFFE8DDD0);
 const Color _sand = Color(0xFF9A8C78);
-const Color _ink = Color(0xFF030508);
+const Color _dusty = Color(0xFF5A5568);
+const Color _ink = Color(0xFF060810);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // InboxScreen
@@ -33,24 +48,52 @@ class InboxScreen extends StatefulWidget {
   State<InboxScreen> createState() => _InboxScreenState();
 }
 
-class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
+class _InboxScreenState extends State<InboxScreen>
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   // ── State (untouched) ─────────────────────────────────────────────────────
   MyCompanionsResponse? _roster;
   bool _isLoading = true;
   bool _isOpeningThread = false;
   String? _error;
 
+  // ── Animation controllers ─────────────────────────────────────────────────
+  late AnimationController _breatheCtrl;
+  late AnimationController _fadeInCtrl;
+  late Animation<double> _breatheAnim;
+  late Animation<double> _fadeInAnim;
+
   // ── Lifecycle (untouched) ─────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    _breatheCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 6),
+    )..repeat(reverse: true);
+    _breatheAnim = CurvedAnimation(
+      parent: _breatheCtrl,
+      curve: Curves.easeInOut,
+    );
+
+    _fadeInCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _fadeInAnim = CurvedAnimation(
+      parent: _fadeInCtrl,
+      curve: Curves.easeOut,
+    );
+
     _load();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _breatheCtrl.dispose();
+    _fadeInCtrl.dispose();
     super.dispose();
   }
 
@@ -75,6 +118,7 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
         _isLoading = false;
         _error = null;
       });
+      _fadeInCtrl.forward(from: 0);
     } on ChatException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -139,7 +183,6 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
     return name.trim().split(' ').first;
   }
 
-  // Time-based greeting — more intimate than a static label
   String _greeting() {
     final name = _firstName();
     final h = DateTime.now().hour;
@@ -166,109 +209,179 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
     ));
 
     return Scaffold(
-      backgroundColor: _bg,
-      body: SafeArea(
-        child: _isLoading ? _buildLoader() : _buildBody(),
+      backgroundColor: _bgDeep,
+      body: Stack(
+        children: [
+          // ── Atmospheric breathing background ──────────────────────────
+          _buildAtmosphere(),
+
+          // ── Main content ──────────────────────────────────────────────
+          SafeArea(
+            child: _isLoading ? _buildLoader() : _buildBody(),
+          ),
+        ],
       ),
     );
   }
 
+  // ── Atmospheric background — subtle breathing gradient orbs ───────────────
+  Widget _buildAtmosphere() {
+    return AnimatedBuilder(
+      animation: _breatheAnim,
+      builder: (context, _) {
+        final t = _breatheAnim.value;
+        return SizedBox.expand(
+          child: CustomPaint(
+            painter: _AtmospherePainter(t: t),
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Loader ────────────────────────────────────────────────────────────────
   Widget _buildLoader() {
     return Center(
-      child: SizedBox(
-        width: 18,
-        height: 18,
-        child: CircularProgressIndicator(
-          strokeWidth: 1.2,
-          valueColor:
-              AlwaysStoppedAnimation<Color>(_amberSft.withOpacity(0.60)),
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.0,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                _blue.withOpacity(0.45),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'gathering presence…',
+            style: GoogleFonts.plusJakartaSans(
+              color: _sand.withOpacity(0.38),
+              fontSize: 12,
+              fontWeight: FontWeight.w300,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
       ),
     );
   }
 
+  // ── Body ──────────────────────────────────────────────────────────────────
   Widget _buildBody() {
     final all = _roster?.inboxEntries ?? const <InboxEntrySummary>[];
 
-    // Same partitioning logic — untouched
     final active = all.where((e) => e.waitingOnUser && !e.isArrival).toList();
     final arrivals = all.where((e) => e.isArrival).toList();
     final quiet = all.where((e) => !e.isArrival && !e.waitingOnUser).toList();
-
-    // Flat priority-ordered list — active first, then arrivals, then quiet
     final ordered = [...active, ...arrivals, ...quiet];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // ── Pinned header — does not scroll ───────────────────────────────
-        _buildHeader(),
-
-        // ── Error bar ─────────────────────────────────────────────────────
-        if (_error != null) _buildErrorBar(),
-
-        // ── Scrollable area ───────────────────────────────────────────────
-        Expanded(
-          child: RefreshIndicator(
-            color: _amber,
-            backgroundColor: _surface,
-            displacement: 20,
-            onRefresh: _load,
-            child: all.isEmpty
-                ? _buildEmpty()
-                : ListView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.only(bottom: 48),
-                    children: [
-                      // Stories-style presence strip — only rendered when
-                      // there are active (waitingOnUser) threads
-                      if (active.isNotEmpty) ...[
-                        _buildPresenceStrip(active),
-                        // Hairline between strip and thread list
-                        Container(
-                          height: 0.4,
-                          color: _cream.withOpacity(0.05),
-                        ),
+    return FadeTransition(
+      opacity: _fadeInAnim,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(),
+          if (_error != null) _buildErrorBar(),
+          Expanded(
+            child: RefreshIndicator(
+              color: _amber,
+              backgroundColor: _surface,
+              displacement: 20,
+              onRefresh: _load,
+              child: all.isEmpty
+                  ? _buildEmpty()
+                  : ListView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.only(bottom: 60),
+                      children: [
+                        if (active.isNotEmpty) ...[
+                          _buildPresenceStrip(active),
+                          _buildSectionDivider(),
+                        ],
+                        if (arrivals.isNotEmpty) ...[
+                          _buildSectionLabel('new arrivals'),
+                        ],
+                        for (var i = 0; i < ordered.length; i++)
+                          _InboxTile(
+                            entry: ordered[i],
+                            opening: _isOpeningThread,
+                            isLast: i == ordered.length - 1,
+                            index: i,
+                            onTap: () => _openEntry(ordered[i]),
+                          ),
                       ],
-
-                      // Flat thread list
-                      for (var i = 0; i < ordered.length; i++)
-                        _InboxTile(
-                          entry: ordered[i],
-                          opening: _isOpeningThread,
-                          isLast: i == ordered.length - 1,
-                          onTap: () => _openEntry(ordered[i]),
-                        ),
-                    ],
-                  ),
+                    ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   // ── Header ────────────────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 22, 16, 20),
+      padding: const EdgeInsets.fromLTRB(24, 24, 18, 22),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Expanded(
-            child: Text(
-              _greeting(),
-              style: GoogleFonts.cormorantGaramond(
-                color: _cream,
-                fontSize: 32,
-                fontWeight: FontWeight.w300,
-                letterSpacing: 0.2,
-                height: 1.1,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Tiny Sol wordmark / eyebrow label
+                Row(
+                  children: [
+                    Container(
+                      width: 5,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _blue.withOpacity(0.70),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _blue.withOpacity(0.45),
+                            blurRadius: 6,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      'sol',
+                      style: GoogleFonts.jost(
+                        color: _sand.withOpacity(0.40),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w400,
+                        letterSpacing: 2.5,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Greeting
+                Text(
+                  _greeting(),
+                  style: GoogleFonts.plusJakartaSans(
+                    color: _cream.withOpacity(0.92),
+                    fontSize: 26,
+                    fontWeight: FontWeight.w300,
+                    letterSpacing: -0.3,
+                    height: 1.12,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
+          // Icon buttons — glass morphism style
           _iconBtn(Icons.tune_rounded, _openProfile),
-          const SizedBox(width: 4),
+          const SizedBox(width: 8),
           _iconBtn(Icons.logout_rounded, _signOut),
         ],
       ),
@@ -278,81 +391,108 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
   // ── Error bar ─────────────────────────────────────────────────────────────
   Widget _buildErrorBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 0, 22, 10),
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 3,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFFE07070).withOpacity(0.60),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _error ?? '',
+            style: GoogleFonts.jost(
+              color: const Color(0xFFBB7070).withOpacity(0.65),
+              fontSize: 11.5,
+              fontWeight: FontWeight.w300,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Section divider ───────────────────────────────────────────────────────
+  Widget _buildSectionDivider() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              height: 0.4,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.transparent,
+                    _cream.withOpacity(0.07),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Section label ─────────────────────────────────────────────────────────
+  Widget _buildSectionLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 6, 24, 10),
       child: Text(
-        _error ?? '',
+        label,
         style: GoogleFonts.jost(
-          color: const Color(0xFFBB7070).withOpacity(0.70),
-          fontSize: 11.5,
-          fontWeight: FontWeight.w300,
-          letterSpacing: 0.2,
+          color: _violet.withOpacity(0.45),
+          fontSize: 10,
+          fontWeight: FontWeight.w400,
+          letterSpacing: 2.0,
         ),
       ),
     );
   }
 
-  // ── Presence strip — Stories-like row of active companions ────────────────
-  // Height budget: 6 top + 52 avatar + 7 gap + 14 name + 13 bottom = 92
+  // ── Presence strip — Stories-style horizontal scroll ─────────────────────
   Widget _buildPresenceStrip(List<InboxEntrySummary> active) {
     return SizedBox(
-      height: 92,
+      height: 104,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(22, 6, 22, 13),
+        padding: const EdgeInsets.fromLTRB(24, 6, 24, 14),
         itemCount: active.take(8).length,
-        separatorBuilder: (_, __) => const SizedBox(width: 18),
+        separatorBuilder: (_, __) => const SizedBox(width: 20),
         itemBuilder: (context, i) {
           final entry = active[i];
           return GestureDetector(
             onTap: _isOpeningThread ? null : () => _openEntry(entry),
             child: SizedBox(
-              width: 56,
+              width: 58,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Avatar — amber ring signals "active"
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _surface,
-                      border: Border.all(
-                        color: _amber.withOpacity(0.68),
-                        width: 1.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _amber.withOpacity(0.16),
-                          blurRadius: 10,
-                          spreadRadius: 0,
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Text(
-                        entry.companionName.isNotEmpty
-                            ? entry.companionName[0].toUpperCase()
-                            : '?',
-                        style: GoogleFonts.cormorantGaramond(
-                          color: _cream.withOpacity(0.88),
-                          fontSize: 24,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                    ),
+                  // Avatar with animated presence ring
+                  _PresenceAvatar(
+                    name: entry.companionName,
+                    isActive: true,
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 7),
                   Text(
                     entry.companionName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
                     style: GoogleFonts.jost(
-                      color: _sand.withOpacity(0.60),
-                      fontSize: 10.5,
+                      color: _sand.withOpacity(0.55),
+                      fontSize: 10,
                       fontWeight: FontWeight.w300,
+                      letterSpacing: 0.2,
                     ),
                   ),
                 ],
@@ -369,42 +509,81 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
-        SizedBox(height: MediaQuery.of(context).size.height * 0.32),
+        SizedBox(height: MediaQuery.of(context).size.height * 0.30),
         Center(
-          child: Text(
-            'nothing yet.',
-            style: GoogleFonts.cormorantGaramond(
-              color: _sand.withOpacity(0.28),
-              fontSize: 26,
-              fontWeight: FontWeight.w300,
-              letterSpacing: 0.5,
-            ),
+          child: Column(
+            children: [
+              // Soft orb
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      _blue.withOpacity(0.12),
+                      Colors.transparent,
+                    ],
+                  ),
+                  border: Border.all(
+                    color: _blue.withOpacity(0.10),
+                    width: 0.8,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'nothing yet.',
+                style: GoogleFonts.plusJakartaSans(
+                  color: _sand.withOpacity(0.25),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w300,
+                  letterSpacing: -0.2,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'your connections will appear here.',
+                style: GoogleFonts.jost(
+                  color: _dusty.withOpacity(0.50),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w300,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
           ),
         ),
       ],
     );
   }
 
-  // ── Icon button ───────────────────────────────────────────────────────────
+  // ── Icon button — glassmorphic ─────────────────────────────────────────────
   Widget _iconBtn(IconData icon, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: _surface.withOpacity(0.80),
-          border: Border.all(
-            color: _cream.withOpacity(0.05),
-            width: 0.5,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _surface.withOpacity(0.60),
+              border: Border.all(
+                color: _cream.withOpacity(0.07),
+                width: 0.6,
+              ),
+            ),
+            child: Icon(
+              icon,
+              size: 15,
+              color: _sand.withOpacity(0.50),
+            ),
           ),
-        ),
-        child: Icon(
-          icon,
-          size: 15,
-          color: _sand.withOpacity(0.55),
         ),
       ),
     );
@@ -412,199 +591,354 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _InboxTile — a single thread row
-//
-// Design: iMessage-like flat row. No card border. Left amber accent bar for
-// unread. Hairline separator aligned with text content (not avatar edge).
-// The warmth is in the Cormorant name, amber timing, and amber glow on avatar.
+// _PresenceAvatar — pulsing ring for active companions
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _InboxTile extends StatelessWidget {
+class _PresenceAvatar extends StatefulWidget {
+  final String name;
+  final bool isActive;
+
+  const _PresenceAvatar({required this.name, required this.isActive});
+
+  @override
+  State<_PresenceAvatar> createState() => _PresenceAvatarState();
+}
+
+class _PresenceAvatarState extends State<_PresenceAvatar>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    )..repeat(reverse: true);
+    _pulse = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, _) {
+        final glow = _pulse.value;
+        return Container(
+          width: 54,
+          height: 54,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            // Outer glow ring — presence blue, breathing
+            boxShadow: [
+              BoxShadow(
+                color: _blue.withOpacity(0.08 + glow * 0.18),
+                blurRadius: 14 + glow * 8,
+                spreadRadius: 0,
+              ),
+            ],
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _surface,
+              border: Border.all(
+                color: _blue.withOpacity(0.35 + glow * 0.30),
+                width: 1.5,
+              ),
+            ),
+            child: Center(
+              child: Text(
+                widget.name.isNotEmpty ? widget.name[0].toUpperCase() : '?',
+                style: GoogleFonts.plusJakartaSans(
+                  color: _cream.withOpacity(0.82),
+                  fontSize: 17,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _InboxTile — a single thread row
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _InboxTile extends StatefulWidget {
   final InboxEntrySummary entry;
   final bool opening;
   final bool isLast;
+  final int index;
   final VoidCallback onTap;
 
   const _InboxTile({
     required this.entry,
     required this.opening,
     required this.isLast,
+    required this.index,
     required this.onTap,
   });
 
   @override
+  State<_InboxTile> createState() => _InboxTileState();
+}
+
+class _InboxTileState extends State<_InboxTile>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _entryCtrl;
+  late Animation<double> _entryFade;
+  late Animation<Offset> _entrySlide;
+  bool _pressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _entryCtrl = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: 500 + widget.index * 40),
+    );
+    _entryFade = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut);
+    _entrySlide = Tween<Offset>(
+      begin: const Offset(0, 0.04),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut));
+
+    // Staggered entrance
+    Future.delayed(Duration(milliseconds: widget.index * 55), () {
+      if (mounted) _entryCtrl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _entryCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final unread = entry.hasUnread;
-    final arrival = entry.isArrival;
+    final unread = widget.entry.hasUnread;
+    final arrival = widget.entry.isArrival;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: opening ? null : onTap,
-        splashColor: _amber.withOpacity(0.03),
-        highlightColor: _cream.withOpacity(0.015),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // ── Row: accent bar + content ─────────────────────────────────
-            Container(
-              // Very subtle lifted background for unread threads
-              color: unread ? _surfaceUp.withOpacity(0.50) : Colors.transparent,
-              child: IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Left accent bar — appears for unread, invisible when read
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 250),
-                      width: 2.5,
-                      color: unread
-                          ? _amber.withOpacity(0.65)
-                          : Colors.transparent,
-                    ),
+    return FadeTransition(
+      opacity: _entryFade,
+      child: SlideTransition(
+        position: _entrySlide,
+        child: GestureDetector(
+          onTapDown: (_) => setState(() => _pressed = true),
+          onTapUp: (_) {
+            setState(() => _pressed = false);
+            if (!widget.opening) widget.onTap();
+          },
+          onTapCancel: () => setState(() => _pressed = false),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            color: _pressed
+                ? _cream.withOpacity(0.018)
+                : unread
+                    ? _surfaceUp.withOpacity(0.38)
+                    : Colors.transparent,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // ── Left accent bar ──────────────────────────────
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: 2.0,
+                        decoration: BoxDecoration(
+                          gradient: unread
+                              ? LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    arrival
+                                        ? _violet.withOpacity(0.80)
+                                        : _blue.withOpacity(0.70),
+                                    arrival
+                                        ? _violet.withOpacity(0.20)
+                                        : _blue.withOpacity(0.20),
+                                  ],
+                                )
+                              : null,
+                          color: unread ? null : Colors.transparent,
+                        ),
+                      ),
 
-                    // Content
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 15, 18, 15),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            // Avatar
-                            _buildAvatar(unread, arrival),
-                            const SizedBox(width: 13),
-
-                            // Text content
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  // Name + timestamp on same baseline
-                                  Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.baseline,
-                                    textBaseline: TextBaseline.alphabetic,
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          entry.companionName,
-                                          style: GoogleFonts.cormorantGaramond(
-                                            color: _cream.withOpacity(
-                                              unread ? 1.0 : 0.62,
+                      // ── Content ──────────────────────────────────────
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 16, 18, 16),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              _buildAvatar(unread, arrival),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // Name + timestamp
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.baseline,
+                                      textBaseline: TextBaseline.alphabetic,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            widget.entry.companionName,
+                                            style: GoogleFonts.plusJakartaSans(
+                                              color: _cream.withOpacity(
+                                                unread ? 0.96 : 0.58,
+                                              ),
+                                              fontSize: 15,
+                                              fontWeight: unread
+                                                  ? FontWeight.w600
+                                                  : FontWeight.w400,
+                                              letterSpacing: -0.1,
+                                              height: 1.15,
                                             ),
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w400,
-                                            letterSpacing: 0.15,
-                                            height: 1.1,
                                           ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 8),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          _timeLabel(),
+                                          style: GoogleFonts.jost(
+                                            color: unread
+                                                ? (arrival
+                                                    ? _violet.withOpacity(0.65)
+                                                    : _blue.withOpacity(0.60))
+                                                : _sand.withOpacity(0.30),
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w300,
+                                            letterSpacing: 0.1,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+
+                                    // Social presence / mood line
+                                    if (widget
+                                            .entry.socialPresence.isNotEmpty ||
+                                        widget.entry.statusText.isNotEmpty) ...[
+                                      const SizedBox(height: 3),
                                       Text(
-                                        _timeLabel(),
+                                        widget.entry.socialPresence.isNotEmpty
+                                            ? widget.entry.socialPresence
+                                            : widget.entry.statusText,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                         style: GoogleFonts.jost(
-                                          color: unread
-                                              ? _amber.withOpacity(0.60)
-                                              : _sand.withOpacity(0.34),
-                                          fontSize: 10.5,
+                                          color: (unread || arrival)
+                                              ? (arrival
+                                                  ? _violetSoft
+                                                      .withOpacity(0.52)
+                                                  : _amber.withOpacity(0.52))
+                                              : _sand.withOpacity(0.28),
+                                          fontSize: 11,
                                           fontWeight: FontWeight.w300,
+                                          letterSpacing: 0.15,
+                                          fontStyle: FontStyle.italic,
                                         ),
                                       ),
                                     ],
-                                  ),
 
-                                  // Social presence / status — subtle mood line
-                                  if (entry.socialPresence.isNotEmpty ||
-                                      entry.statusText.isNotEmpty) ...[
-                                    const SizedBox(height: 2),
+                                    const SizedBox(height: 5),
+
+                                    // Preview text
                                     Text(
-                                      entry.socialPresence.isNotEmpty
-                                          ? entry.socialPresence
-                                          : entry.statusText,
+                                      widget.entry.previewText,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: GoogleFonts.jost(
-                                        color: (unread || arrival)
-                                            ? _amberSft.withOpacity(0.58)
-                                            : _sand.withOpacity(0.34),
-                                        fontSize: 11,
+                                        color: _cream.withOpacity(
+                                          unread ? 0.58 : 0.28,
+                                        ),
+                                        fontSize: 13,
                                         fontWeight: FontWeight.w300,
+                                        height: 1.4,
                                         letterSpacing: 0.1,
                                       ),
                                     ),
                                   ],
-
-                                  const SizedBox(height: 5),
-
-                                  // Preview — one line, trails off
-                                  Text(
-                                    entry.previewText,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.jost(
-                                      color: _cream.withOpacity(
-                                        unread ? 0.62 : 0.32,
-                                      ),
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w300,
-                                      height: 1.4,
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
 
-                            // Unread count — small amber pill on right
-                            if (entry.unreadCount > 0) ...[
-                              const SizedBox(width: 10),
-                              _buildBadge(entry.unreadCount),
+                              // Unread badge
+                              if (widget.entry.unreadCount > 0) ...[
+                                const SizedBox(width: 10),
+                                _buildBadge(widget.entry.unreadCount, arrival),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ),
 
-            // ── Hairline separator — aligns with text, not avatar edge ─────
-            // Left margin: 2.5 (bar) + 18 (pad) + 50 (avatar) + 13 (gap) = 83.5
-            if (!isLast)
-              Container(
-                height: 0.4,
-                margin: const EdgeInsets.only(left: 84),
-                color: _cream.withOpacity(0.045),
-              ),
-          ],
+                // Hairline separator
+                if (!widget.isLast)
+                  Container(
+                    height: 0.4,
+                    margin: const EdgeInsets.only(left: 86),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          _cream.withOpacity(0.055),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildAvatar(bool unread, bool arrival) {
+    // Avatar color — blue ring for unread, violet for arrival, dim when read
+    final ringColor = arrival
+        ? _violet.withOpacity(unread ? 0.65 : 0.22)
+        : unread
+            ? _blue.withOpacity(0.55)
+            : _cream.withOpacity(0.07);
+
+    final ringWidth = (arrival || unread) ? 1.3 : 0.6;
+
     return Container(
       width: 50,
       height: 50,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: _surface,
-        border: Border.all(
-          color: _amber.withOpacity(
-            arrival
-                ? 0.55
-                : unread
-                    ? 0.28
-                    : 0.09,
-          ),
-          width: (arrival || unread) ? 1.2 : 0.5,
-        ),
+        border: Border.all(color: ringColor, width: ringWidth),
         boxShadow: (unread || arrival)
             ? [
                 BoxShadow(
-                  color: _amber.withOpacity(0.10),
-                  blurRadius: 12,
+                  color: arrival
+                      ? _violet.withOpacity(0.12)
+                      : _blue.withOpacity(0.14),
+                  blurRadius: 14,
                   spreadRadius: 0,
                 ),
               ]
@@ -612,46 +946,58 @@ class _InboxTile extends StatelessWidget {
       ),
       child: Center(
         child: Text(
-          entry.companionName.isNotEmpty
-              ? entry.companionName[0].toUpperCase()
+          widget.entry.companionName.isNotEmpty
+              ? widget.entry.companionName[0].toUpperCase()
               : '?',
-          style: GoogleFonts.cormorantGaramond(
-            color: _cream.withOpacity(0.78),
-            fontSize: 22,
-            fontWeight: FontWeight.w400,
+          style: GoogleFonts.plusJakartaSans(
+            color: _cream.withOpacity(unread ? 0.85 : 0.48),
+            fontSize: 17,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ),
     );
   }
 
-  Widget _buildBadge(int count) {
+  Widget _buildBadge(int count, bool arrival) {
     final label = count > 99 ? '99+' : '$count';
     final wide = count > 9;
+
     return Container(
       width: wide ? null : 20,
       height: 20,
       padding:
           wide ? const EdgeInsets.symmetric(horizontal: 6) : EdgeInsets.zero,
       decoration: BoxDecoration(
-        color: _amber,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: arrival ? [_violet, _violetSoft] : [_blue, _blueSoft],
+        ),
         borderRadius: BorderRadius.circular(999),
+        boxShadow: [
+          BoxShadow(
+            color: (arrival ? _violet : _blue).withOpacity(0.30),
+            blurRadius: 8,
+            spreadRadius: 0,
+          ),
+        ],
       ),
       alignment: Alignment.center,
       child: Text(
         label,
         style: GoogleFonts.jost(
-          color: _ink,
-          fontSize: 10,
-          fontWeight: FontWeight.w500,
+          color: _ink.withOpacity(0.85),
+          fontSize: 9.5,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
   }
 
   String _timeLabel() {
-    final stamp = entry.previewDateTime;
-    if (stamp == null) return entry.isArrival ? 'new' : '';
+    final stamp = widget.entry.previewDateTime;
+    if (stamp == null) return widget.entry.isArrival ? 'new' : '';
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final that = DateTime(stamp.year, stamp.month, stamp.day);
@@ -666,4 +1012,79 @@ class _InboxTile extends StatelessWidget {
     }
     return '${stamp.month}/${stamp.day}';
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _AtmospherePainter — subtle breathing gradient orbs in the background
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AtmospherePainter extends CustomPainter {
+  final double t; // 0.0 → 1.0, breathing oscillation
+
+  const _AtmospherePainter({required this.t});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Base fill
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = const Color(0xFF080A0E),
+    );
+
+    // Orb 1 — top-left, presence blue
+    _drawOrb(
+      canvas,
+      center: Offset(
+        size.width * 0.15 + math.sin(t * math.pi) * 12,
+        size.height * 0.12 + math.cos(t * math.pi) * 8,
+      ),
+      radius: 220 + t * 40,
+      color: const Color(0xFF7DA2FF),
+      opacity: 0.028 + t * 0.018,
+    );
+
+    // Orb 2 — bottom-right, warm violet
+    _drawOrb(
+      canvas,
+      center: Offset(
+        size.width * 0.88 - math.cos(t * math.pi) * 10,
+        size.height * 0.72 + math.sin(t * math.pi) * 14,
+      ),
+      radius: 260 + (1 - t) * 50,
+      color: const Color(0xFFA78BFA),
+      opacity: 0.022 + (1 - t) * 0.016,
+    );
+
+    // Orb 3 — center-bottom, human warmth
+    _drawOrb(
+      canvas,
+      center: Offset(
+        size.width * 0.50,
+        size.height * 0.95,
+      ),
+      radius: 180 + t * 30,
+      color: const Color(0xFFF2B8A0),
+      opacity: 0.014 + t * 0.010,
+    );
+  }
+
+  void _drawOrb(
+    Canvas canvas, {
+    required Offset center,
+    required double radius,
+    required Color color,
+    required double opacity,
+  }) {
+    final paint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          color.withOpacity(opacity),
+          color.withOpacity(0),
+        ],
+      ).createShader(Rect.fromCircle(center: center, radius: radius));
+    canvas.drawCircle(center, radius, paint);
+  }
+
+  @override
+  bool shouldRepaint(_AtmospherePainter old) => old.t != t;
 }

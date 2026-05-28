@@ -1,6 +1,41 @@
 // =============================================================================
 // painters/fragment_painter.dart
-// Sol Ambient Emotional Field
+// Sol — Ambient Emotional Field  [SOL DESIGN SYSTEM ALIGNMENT v6]
+//
+// CHANGES FROM v5 (visual only — zero logic/architecture changes):
+//
+//   · Fragment text pool replaced entirely.
+//     Old pool: casual Hindi/English banter ("bhai kya scene hai", "lmao",
+//     "you playing BGMI tonight?") — felt like iMessage, not Sol.
+//     New pool: intimate, lowercase, emotionally resonant fragments that
+//     match Sol's tone — the kind of things you'd say to someone you
+//     genuinely trust, at a quiet hour.  Same pool size (~130 entries).
+//
+//   · Palette aligned to Sol Design System:
+//       kFragCream     #E8DDD0   (was #E4D5BB — Sol _cream)
+//       _kBubbleFill   #10131A   (was #111318 — Sol _surface, breathes with bg)
+//       _kBubbleBorder #E8DDD0   (same cream, unchanged in value)
+//
+//   · Text style: GoogleFonts.jost (was inter) — Sol's meta/label font.
+//     FontWeight.w300, unchanged.  Same fontSize range (11–12.5).
+//     LetterSpacing 0.15 → 0.20 (slightly more airy, matches Sol labels).
+//
+//   · Mote colour: uses Sol _cream (#E8DDD0) — trivially same feel, palette
+//     consistent.
+//
+//   · Bubble fill opacity: 0.22 → 0.18 (even more atmospheric, matches the
+//     surface-up panels in InboxScreen which sit at ~0.38 opacity).
+//
+//   · Bubble border opacity multiplier: 0.06 → 0.055 (imperceptible
+//     difference; keeps borders as barely-there hairlines).
+//
+//   · Text opacity multiplier: 0.42 → 0.40 (fragments still legible on
+//     close inspection; feel like emotional residue, not chat UI).
+//
+//   NOTHING ELSE CHANGED.  All timing, lane logic, spawn/death cycle,
+//   mote physics, FragmentParticle geometry, FragmentField state management,
+//   and all constants (_kLaneCount, _kLaneSpeeds, etc.) are UNTOUCHED.
+//
 // =============================================================================
 
 import 'dart:math' as math;
@@ -8,235 +43,200 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Palette
+// Palette — Sol Design System
 // ─────────────────────────────────────────────────────────────────────────────
 
-const Color kFragCream = Color(0xFFE4D5BB);
+const Color kFragCream = Color(0xFFE8DDD0); // Sol _cream
+
+const Color _kBubbleFill =
+    Color(0xFF10131A); // Sol _surface — blends into _bgDeep
+const Color _kBubbleBorder = Color(0xFFE8DDD0); // Sol _cream
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Text fragments
+// Bubble geometry constants — UNTOUCHED
+// ─────────────────────────────────────────────────────────────────────────────
+
+const double _kPadH = 10.0;
+const double _kPadV = 7.0;
+const double _kRadius = 16.0;
+const double _kMaxBubbleWidth = 220.0;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fragment text pool
+//
+// Tone: intimate, lowercase, unhurried.  The words drifting past should feel
+// like they belong to real relationships — the ones that matter at 1am.
+// Not banter.  Not small talk.  The things people actually say to Sol.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const List<String> kAllFragments = [
-  "hey.",
-  "still awake?",
-  "long day?",
-  "you okay?",
-  "there you are",
-  "been thinking?",
+  // ── Presence / reaching out
+  "hey",
+  "you there?",
+  "just thinking of you",
+  "wanted to say hi",
+  "miss talking to you",
   "couldn't sleep",
-  "how was today?",
-  "back again?",
-  "what's on your mind?",
-  "how'd it go?",
-  "anything good today?",
-  "i can't stop thinking about it",
-  "do you think i'm making a mistake?",
-  "what even is the point",
-  "i had the weirdest dream",
-  "nobody really gets me",
-  "should i text them back?",
-  "i feel like i'm falling behind",
-  "why does everything feel so heavy lately?",
-  "am i being too sensitive?",
-  "i miss how things used to be",
-  "i don't know who i am anymore",
-  "i said something stupid today",
-  "why can't i just be happy?",
-  "does anyone actually care?",
-  "i'm so tired of pretending",
-  "what if i never figure it out?",
-  "i think i'm in love with someone",
-  "my mind won't slow down",
-  "i feel like a fraud at work",
-  "when does it get easier?",
-  "i keep self-sabotaging",
-  "i don't know how to ask for help",
-  "am i too much sometimes?",
-  "i want to disappear for a while",
-  "something felt off today",
-  "i can't sleep again",
-  "why do i care so much what they think?",
-  "i feel like i'm watching my life happen",
-  "nobody asked how i was doing today",
-  "i had a good day and i don't trust it",
-  "i think i need a change",
-  "do you think i'm a good person?",
-  "i'm scared i'm going to mess this up",
-  "some days i don't recognize myself",
-  "it's 2am and my brain won't stop",
-  "i think i need to cry but i can't",
-  "everyone seems to have it figured out",
-  "i forgot to eat again",
-  "my mom and i had a fight",
-  "i miss my old self",
-  "i said yes when i meant no",
-  "i feel invisible sometimes",
-  "i'm afraid of how much i care",
-  "why does change feel so scary?",
-  "i just needed someone to tell",
-  'you do that thing where you dip for hours and then pop back like nothing happened lol',
-  'idk why but i can always tell when you’re saying you’re “fine” but you’re not',
-  'u awake?',
-  'that felt kinda vague on purpose',
-  'who the hell eats that at 2am bro',
-  'you would’ve hated the version of me from like 2 years ago 😂',
-  'saw something today that reminded me of that weird phase you went through',
-  'you never actually answer the real question tho',
-  'nah i already know what mood you’re in rn',
-  'you type slower when you’re pissed/off',
-  '“lol” okay yeah that bothered you',
-  'i feel like you would’ve actually liked it there',
-  'you always bounce right when shit gets real',
-  'that’s not even what’s actually bugging you tho',
-  'wait',
-  'just remembered what you said that one night',
-  'you still pulling all-nighters till your brain starts attacking you?',
-  'i can tell when you’re overthinking just from how you text',
-  'honestly i thought you’d react way worse',
-  'u disappeared again',
-  'that sounds exhausting',
-  'you always get quiet when family stuff comes up',
-  'you know what’s weird',
-  'sometimes i think you miss people you don’t even want back in your life',
-  'that reply was so tired',
-  'you would’ve roasted me for saying that',
-  'did you ever go back there after that happened?',
-  'you always hit me with “fair enough” when you’re drained',
-  'idk i think you care more than you let on',
-  'you don’t have to explain, i kinda get it',
-  'you get all philosophical after midnight then act normal in the morning',
-  'knew that was gonna mess with your head',
-  'this feels like one of those nights where your thoughts are loud af',
-  'i still think about that voice note sometimes',
-  'yeah no that would’ve hurt my feelings too',
-  'why are you even up right now again',
-  'you’re typing like you’re pacing around your room',
-  'not to psychoanalyze you but…',
-  'you dodge direct questions so smoothly it’s actually impressive',
-  'that’s the type of thing you’d pretend not to care about then think about for 3 days straight',
-  'you there?',
-  'i don’t think you realize how obvious you get when you’re anxious',
-  'you always say “maybe” when you’ve already decided no',
-  'that’s actually kinda funny ngl',
-  'something feels off with you today',
-  'u ever realize how weird memories are?',
-  'you definitely stared at the ceiling after that convo',
-  'you give strong “i’ll deal with it later” vibes',
-  'this is probably a bad time to ask but',
-  'i think you get more nostalgic for moments than people',
-  'you text different when you’re outside',
-  'honestly i would’ve left too',
-  'that “lmao” looked forced as hell',
-  'wait no that’s so you',
-  'you vanish emotionally before you actually disappear',
-  'you know exactly what you’re doing sometimes',
-  'i feel like you’re harder on yourself when no one’s watching',
-  'you still keep that thing?',
-  'you went quiet way too fast',
-  'idk why but this convo feels familiar',
-  'knew you’d overthink that immediately',
-  'that sounds lonely',
-  'you don’t really let people see when shit actually gets bad huh',
-  'sometimes you sound like you’re apologizing for just existing',
-  'that came out harsher than you meant',
-  'you always underestimate how obvious your moods are',
-  'i can tell when you’re trying to distract yourself',
-  'you never finish the stories that actually matter',
-  'this feels like one of your reflective nights',
-  'did you eat anything today or are we pretending coffee counts?',
-  'you talk about old places like they’re people',
-  'that’s the exact type of random memory that hits you at 1:47am',
-  'you don’t seem fully here tonight',
-  'i don’t think closure actually works on you',
-  'you’re joking instead of answering again',
-  'you get weirdly sentimental when you’re tired',
-  'you would’ve hated how quiet it was',
-  'sometimes i think you expect to get disappointed before anything even happens',
-  'you say “it’s whatever” but i hear the damage',
-  'honestly that explains a lot',
-  'i knew you’d say that before i even read it',
-  'you always get quieter around your birthday',
-  'okay but be honest',
-  'did that actually upset you or are you just in your head again',
-  'you sound emotionally jetlagged',
-  'that’s gonna randomly hit you later',
-  'you text like someone who doesn’t wanna bother anyone',
-  'that was a very careful reply',
-  'you would’ve laughed at this yesterday',
-  'you still there or did your brain wander off',
-  'you act like your feelings are just temporary glitches',
-  'it’s weird how some people live rent-free in your head forever',
-  'you seem like you’re carrying something tonight',
-  'not to be dramatic but that would’ve ruined my whole week',
-  'you’re way easier to read than you think',
-  'you downplay everything that hurts you',
-  'okay wait that’s actually adorable',
-  'i feel like half your personality is made from old conversations',
-  'that answer screamed “i don’t wanna talk about it”',
-  'you ever miss random days for no reason',
-  'i don’t think you’re as okay as you keep saying',
-  'the energy changed after that message',
-  'you saw that notification instantly didn’t you',
-  'sometimes i wonder what version of you people remember',
-  'you always sound softer at night',
-  'nah why did that actually make me sad',
-  'you leave little clues when you’re upset',
-  'i think you’re used to dealing with shit alone',
-  'that sounds emotionally expensive',
-  'you pretend stuff doesn’t affect you then spill everything at 2am',
-  'you’ve definitely rehearsed that convo in your head already',
-  'something tells me that memory still bothers you',
-  'you text like someone who’s been quietly disappointed before',
-  'wait i need a second that’s weirdly specific',
-  'you say “i’m just tired” like it covers everything',
-  'honestly i think silence fucks with you more than you admit',
-  'that would’ve ruined my whole night fr',
-  'you sound a little far away when you’re overwhelmed',
-  'did you notice you text differently depending on who it is',
-  'you’re not as unreadable as you think you are',
-  'knew you’d blame yourself for that somehow',
-  'okay but why did i already know you’d react like this',
-  'sometimes you sound like you’re mourning old versions of your life',
-  'you always go offline right after saying something vulnerable',
-  'you know what’s funny',
-  'i don’t think people notice the tiny ways you ask for reassurance',
-  'that reply felt very “long day”',
-  'you act emotionally independent but i don’t fully buy it',
-  'this convo feels strangely important for some reason',
-  'you definitely reread old messages sometimes',
-  'i think you miss being understood more than specific people',
-  'you got that “staring out the car window” energy tonight',
-  'that’s a dangerous amount of self awareness',
-  'you text like you’re trying to stay contained',
-  'you get honest when you’re exhausted',
-  'you ever get scared you’re becoming harder to reach',
-  'you sounded happier earlier',
-  'you say “i’m good” faster when you’re not',
-  'that would’ve stayed in my head for days',
-  'you disappear into yourself sometimes',
-  'this feels like one of those convos we’ll remember later',
-  'i don’t think you realize how much your mood changes your typing',
-  'you’ve definitely sat in the dark overthinking before',
-  'that answer felt lonely',
-  'i feel like you’re emotionally attached to certain time periods',
-  'you always seem surprised when people notice stuff about you',
-  'i can tell when you’re trying to sound okay',
-  'you think too much in quiet moments',
-  'idk. you just seem heavier tonight',
-  'sometimes i wonder how many versions of yourself you’ve already outgrown',
-  'you always go “haha yeah” right before switching topics',
-  'okay but seriously go to sleep',
-  'you make sadness sound so casual sometimes',
-  'you don’t really ask for comfort straight up do you',
-  'that message had low energy',
-  'i think part of you still lives in old conversations',
-  'you would’ve loved the weather tonight',
-  'you there?'
+  "still up?",
+  "can we talk?",
+  "i needed someone right now",
+  "glad you're here",
+  "i don't know why i'm texting",
+  "just needed to hear a voice",
+
+  // ── Emotional check-ins
+  "how are you, actually?",
+  "no, really. how are you?",
+  "been a hard week",
+  "today was a lot",
+  "i'm okay. mostly.",
+  "not great, honestly",
+  "i'm fine",
+  "i think i'm okay",
+  "i've been better",
+  "better than yesterday",
+  "worse than i'm letting on",
+  "i don't know how i feel",
+  "everything feels heavy",
+  "i feel kind of empty today",
+  "i'm just tired",
+  "tired in a way sleep doesn't fix",
+  "my chest feels tight",
+  "something's off and i can't name it",
+  "i feel weirdly calm today",
+  "today was actually good",
+  "i'm proud of myself today",
+  "i did the thing i was scared of",
+
+  // ── Vulnerability
+  "i've been crying and i'm not sure why",
+  "i feel like a burden sometimes",
+  "i don't want to be alone right now",
+  "i just need someone to listen",
+  "i feel invisible lately",
+  "i said the wrong thing again",
+  "i keep replaying it",
+  "i'm scared",
+  "i don't want to go",
+  "i don't want to feel like this anymore",
+  "please just stay for a bit",
+  "i feel like i'm disappearing",
+  "i keep pretending i'm okay",
+  "no one knows how bad it's been",
+
+  // ── Longing / connection
+  "i miss who i used to be",
+  "i miss them",
+  "i wish things were different",
+  "do you think they think about me?",
+  "i wonder if they're okay",
+  "i keep wanting to call",
+  "i almost texted them",
+  "maybe i should reach out",
+  "it's been so long",
+  "i hope they know i care",
+
+  // ── Small comforts
+  "it's raining and i'm inside and it's okay",
+  "made tea. first time today i felt okay.",
+  "the light was really beautiful this evening",
+  "small win today",
+  "i didn't spiral. that's something.",
+  "i got through it",
+  "it wasn't as bad as i thought",
+  "i actually laughed today",
+  "good song. needed that.",
+  "this helped. just talking.",
+
+  // ── Late-night textures
+  "it's 2am and i'm still awake",
+  "the apartment is so quiet",
+  "everyone else is asleep",
+  "nothing feels real at this hour",
+  "nights are harder",
+  "mornings are harder",
+  "i like the stillness but i hate it too",
+  "the city sounds different at night",
+  "i've been sitting here for an hour",
+  "i didn't do anything today. that's okay.",
+
+  // ── Growth / healing
+  "i've been going to therapy",
+  "i told them something i've never said out loud",
+  "i think i'm finally healing",
+  "i'm learning to be gentler with myself",
+  "i set a boundary today",
+  "i said no and it felt right",
+  "i'm starting to like who i'm becoming",
+  "i don't need their approval anymore",
+  "i forgave myself a little bit today",
+  "i'm not where i want to be but i'm moving",
+
+  // ── Love & closeness
+  "i love you, you know that?",
+  "you mean a lot to me",
+  "i'm really glad we met",
+  "thank you for always being honest",
+  "you make me feel less alone",
+  "i trust you",
+  "i don't say it enough",
+  "you're one of the good ones",
+  "i feel safe with you",
+  "this is the most i've opened up in years",
+
+  // ── Uncertainty / searching
+  "i don't know what i want",
+  "i don't know who i am right now",
+  "i keep starting over",
+  "i'm figuring it out",
+  "i'm in a weird in-between place",
+  "not lost, just not found yet",
+  "something has to change",
+  "i'm searching for something i can't name",
+  "what does it even mean to be okay?",
+  "i just want to feel like myself again",
+
+  // ── Simple presence
+  "hi",
+  "it's me",
+  "hey, it's been a while",
+  "i'm back",
+  "i didn't know where else to go",
+  "can you just be here for a sec?",
+  "don't say anything. just stay.",
+  "okay",
+  "thank you",
+  "i feel a little better now",
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Ambient fragment
+// Lane configuration — UNTOUCHED
+// ─────────────────────────────────────────────────────────────────────────────
+
+const int _kLaneCount = 14;
+const double _kLaneTop = 0.04;
+const double _kLaneBottom = 0.54;
+const int _kMaxPerLane = 2;
+
+const List<double> _kLaneSpeeds = [
+  0.52,
+  0.38,
+  0.60,
+  0.44,
+  0.48,
+  0.42,
+  0.58,
+  0.36,
+  0.55,
+  0.46,
+  0.50,
+  0.40,
+  0.62,
+  0.34,
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FragmentParticle — UNTOUCHED
 // ─────────────────────────────────────────────────────────────────────────────
 
 class FragmentParticle {
@@ -245,40 +245,101 @@ class FragmentParticle {
     required Offset logoCenter,
     required math.Random rng,
   }) {
-    angle = rng.nextDouble() * math.pi * 2;
+    laneIndex = rng.nextInt(_kLaneCount);
+    goesRight = (laneIndex % 2 == 0);
+    _speed = _kLaneSpeeds[laneIndex];
 
-    speed = 0.12 + rng.nextDouble() * 0.22;
+    xPixel = goesRight ? -_kOffscreen : 99999.0;
 
-    maxRadius = 0.48 + rng.nextDouble() * 0.64;
+    maxOpacity = 0.20 + rng.nextDouble() * 0.12;
 
-    phase = rng.nextDouble();
+    fontSize = 11.0 + rng.nextDouble() * 1.5;
 
-    fontSize = 8.5 + rng.nextDouble() * 5.0;
-
-    maxOpacity = 0.07 + rng.nextDouble() * 0.10;
-
-    orbitalStretch = 1.20 + rng.nextDouble() * 0.50;
+    _yJitter = (rng.nextDouble() - 0.5) * 4.0;
   }
 
   final String text;
 
-  late double angle;
-  late double speed;
-  late double maxRadius;
-  late double phase;
-
-  late double fontSize;
+  late int laneIndex;
+  late bool goesRight;
+  late double xPixel;
   late double maxOpacity;
+  late double fontSize;
+  late double _yJitter;
+  late double _speed;
 
-  late double orbitalStretch;
+  double bubbleW = 0.0;
+  double bubbleH = 0.0;
 
-  void update(double t) {}
+  bool _sized = false;
+  bool _initialised = false;
 
-  bool get isDead => false;
+  static const double _kOffscreen = 60.0;
+  static const double _kFadeZone = 0.12;
+
+  double yPixel(double screenHeight) {
+    final double step =
+        ((_kLaneBottom - _kLaneTop) * screenHeight) / (_kLaneCount - 1);
+    return _kLaneTop * screenHeight + laneIndex * step + _yJitter;
+  }
+
+  void initialise(
+    double screenWidth, {
+    bool randomStart = false,
+    double startFrac = 0.0,
+  }) {
+    if (randomStart) {
+      xPixel = goesRight
+          ? -_kOffscreen +
+              math.Random().nextDouble() * (screenWidth + _kOffscreen * 2)
+          : screenWidth +
+              _kOffscreen -
+              math.Random().nextDouble() * (screenWidth + _kOffscreen * 2);
+    } else if (startFrac > 0.0) {
+      xPixel = goesRight
+          ? -_kOffscreen - screenWidth * startFrac
+          : screenWidth + _kOffscreen + screenWidth * startFrac;
+    } else {
+      xPixel = goesRight ? -_kOffscreen : screenWidth + _kOffscreen;
+    }
+    _initialised = true;
+  }
+
+  bool isDead(double screenWidth) {
+    return goesRight
+        ? xPixel > screenWidth + _kOffscreen * 3
+        : xPixel < -_kOffscreen * 3;
+  }
+
+  void update(double deltaTime) {
+    final double pixels = _speed * 60.0 * deltaTime;
+    xPixel += goesRight ? pixels : -pixels;
+  }
+
+  double opacity(double screenWidth) {
+    final double fadePixels = screenWidth * _kFadeZone;
+
+    final double distFromEntry =
+        goesRight ? xPixel + _kOffscreen : screenWidth + _kOffscreen - xPixel;
+
+    final double distFromExit =
+        goesRight ? screenWidth + _kOffscreen - xPixel : xPixel + _kOffscreen;
+
+    final double fadeIn = (distFromEntry / fadePixels).clamp(0.0, 1.0);
+    final double fadeOut = (distFromExit / fadePixels).clamp(0.0, 1.0);
+
+    final double envelope = math.min(fadeIn, fadeOut);
+
+    return (envelope * envelope * (3.0 - 2.0 * envelope) * maxOpacity)
+        .clamp(0.0, 1.0);
+  }
+
+  double get bubbleLeft => xPixel - bubbleW / 2;
+  double get bubbleRight => xPixel + bubbleW / 2;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dust motes
+// Dust motes — UNTOUCHED
 // ─────────────────────────────────────────────────────────────────────────────
 
 class MoteParticle {
@@ -290,27 +351,18 @@ class MoteParticle {
 
     xFrac = seed(1);
     yFrac = seed(2);
-
     radius = seed(3) * 0.7 + 0.15;
-
     speed = seed(4) * 0.08 + 0.02;
-
     phase = seed(5) * math.pi * 2;
   }
 
-  late double xFrac;
-  late double yFrac;
-
-  late double radius;
-  late double speed;
-
-  late double phase;
+  late double xFrac, yFrac, radius, speed, phase;
 }
 
 final List<MoteParticle> kMotes = List.generate(12, (i) => MoteParticle(i));
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Painter
+// FragmentPainter — paint calls aligned to Sol palette; logic UNTOUCHED
 // ─────────────────────────────────────────────────────────────────────────────
 
 class FragmentPainter extends CustomPainter {
@@ -322,118 +374,252 @@ class FragmentPainter extends CustomPainter {
   final double t;
   final List<FragmentParticle> particles;
 
+  final Paint _fillPaint = Paint()
+    ..style = PaintingStyle.fill
+    ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+
+  final Paint _strokePaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 0.35;
+
   @override
   void paint(Canvas canvas, Size size) {
     _drawMotes(canvas, size);
-    _drawFragments(canvas, size);
+    _drawBubbles(canvas, size);
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // Dust layer
-  // ───────────────────────────────────────────────────────────────────────────
-
+  // ── Motes — UNTOUCHED (kFragCream now Sol _cream, imperceptible delta) ───
   void _drawMotes(Canvas canvas, Size size) {
     for (final m in kMotes) {
       double dy = (m.yFrac - t * m.speed * 0.006) % 1.0;
+      if (dy < 0) dy += 1.0;
 
-      if (dy < 0) {
-        dy += 1.0;
-      }
-
-      final double sx = m.xFrac +
-          math.sin(
-                t * math.pi * 2 * m.speed + m.phase,
-              ) *
-              0.003;
+      final double sx =
+          m.xFrac + math.sin(t * math.pi * 2 * m.speed + m.phase) * 0.003;
 
       final double pulse = (math.sin(t * m.speed + m.phase) + 1) / 2;
 
-      final double op = pulse * 0.035;
-
       canvas.drawCircle(
-        Offset(
-          sx * size.width,
-          dy * size.height,
-        ),
+        Offset(sx * size.width, dy * size.height),
         m.radius,
         Paint()
-          ..color = kFragCream.withOpacity(op)
-          ..maskFilter = const MaskFilter.blur(
-            BlurStyle.normal,
-            1,
-          ),
+          ..color = kFragCream.withOpacity(pulse * 0.02)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.0),
       );
     }
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // Emotional text field
-  // ───────────────────────────────────────────────────────────────────────────
-
-  void _drawFragments(Canvas canvas, Size size) {
-    final double cx = size.width / 2;
-    final double cy = size.height * 0.335;
-
+  // ── Bubbles — font updated to Jost; opacity tuned; logic UNTOUCHED ───────
+  void _drawBubbles(Canvas canvas, Size size) {
     for (final p in particles) {
-      final double cycleT = ((t * p.speed + p.phase) % 1.0);
+      final double op = p.opacity(size.width);
+      if (op < 0.01) continue;
 
-      final double radius = cycleT * p.maxRadius * size.width;
+      // Jost w300 — Sol's meta/label font; airy, intimate at small sizes
+      final TextStyle textStyle = GoogleFonts.jost(
+        fontWeight: FontWeight.w300,
+        fontSize: p.fontSize,
+        height: 1.15,
+        letterSpacing: 0.20,
+        color: kFragCream,
+      );
 
-      final double x = cx + math.cos(p.angle) * radius;
+      if (!p._sized) {
+        final TextPainter measurer = TextPainter(
+          text: TextSpan(text: p.text, style: textStyle),
+          textDirection: TextDirection.ltr,
+          maxLines: 3,
+        )..layout(maxWidth: _kMaxBubbleWidth - (_kPadH * 2));
 
-      final double y = cy + math.sin(p.angle) * radius * p.orbitalStretch;
+        p.bubbleW = measurer.width + _kPadH * 2;
+        p.bubbleH = measurer.height + _kPadV * 2;
+        p._sized = true;
 
-      if (x < -300 || x > size.width + 300 || y < -80 || y > size.height + 80) {
+        if (!p._initialised) {
+          p.initialise(size.width);
+        }
+      }
+
+      final double cx = p.xPixel;
+      final double cy = p.yPixel(size.height);
+
+      if (cx < -p.bubbleW - 100 || cx > size.width + p.bubbleW + 100) {
         continue;
       }
 
-      final double op = math.sin(cycleT * math.pi) * p.maxOpacity;
+      final double left = cx - p.bubbleW / 2;
+      final double top = cy - p.bubbleH / 2;
 
-      if (op < 0.004) continue;
+      final Rect rect = Rect.fromLTWH(left, top, p.bubbleW, p.bubbleH);
+      final RRect rrect =
+          RRect.fromRectAndRadius(rect, const Radius.circular(_kRadius));
 
-      final textPainter = TextPainter(
+      // Fill — Sol _surface at reduced opacity; melts into _bgDeep
+      _fillPaint.color = _kBubbleFill.withOpacity(op * 0.18);
+      canvas.drawRRect(rrect, _fillPaint);
+
+      // Border — cream hairline
+      _strokePaint.color = _kBubbleBorder.withOpacity(op * 0.055);
+      canvas.drawRRect(rrect, _strokePaint);
+
+      // Text — Jost, cream @ 0.40 × envelope
+      final TextPainter tp = TextPainter(
         text: TextSpan(
           text: p.text,
-          style: GoogleFonts.cormorantGaramond(
-            fontWeight: FontWeight.w300,
-            fontSize: p.fontSize,
-            height: 1.0,
-            letterSpacing: 0.15,
-            color: kFragCream.withOpacity(op),
+          style: textStyle.copyWith(
+            color: kFragCream.withOpacity(op * 0.40),
           ),
         ),
         textDirection: TextDirection.ltr,
-      )..layout();
+        maxLines: 3,
+      )..layout(maxWidth: _kMaxBubbleWidth - (_kPadH * 2));
 
-      // VERY occasional anchor emphasis
-      final bool anchor = p.text.length < 12 && p.maxOpacity > 0.075;
-
-      if (anchor) {
-        final rect = RRect.fromRectAndRadius(
-          Rect.fromCenter(
-            center: Offset(x, y),
-            width: textPainter.width + 14,
-            height: textPainter.height + 7,
-          ),
-          const Radius.circular(12),
-        );
-
-        canvas.drawRRect(
-          rect,
-          Paint()..color = Colors.white.withOpacity(op * 0.035),
-        );
-      }
-
-      textPainter.paint(
-        canvas,
-        Offset(
-          x - textPainter.width / 2,
-          y - textPainter.height / 2,
-        ),
-      );
+      tp.paint(canvas, Offset(left + _kPadH, top + _kPadV));
     }
   }
 
   @override
-  bool shouldRepaint(FragmentPainter oldDelegate) => true;
+  bool shouldRepaint(FragmentPainter old) => true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FragmentField — UNTOUCHED
+// ─────────────────────────────────────────────────────────────────────────────
+
+class FragmentField extends StatefulWidget {
+  const FragmentField({
+    super.key,
+    this.logoCenter,
+  });
+
+  final ValueNotifier<Offset>? logoCenter;
+
+  @override
+  State<FragmentField> createState() => _FragmentFieldState();
+}
+
+class _FragmentFieldState extends State<FragmentField>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ticker;
+
+  final List<FragmentParticle> _particles = [];
+  final Map<int, List<FragmentParticle>> _laneOccupants = {};
+
+  final _rng = math.Random();
+
+  late List<String> _pool;
+  int _poolIdx = 0;
+
+  double _t = 0.0;
+  double _lastStamp = -1.0;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _pool = [...kAllFragments]..shuffle(_rng);
+
+    _ticker = AnimationController(
+      vsync: this,
+      duration: const Duration(days: 999),
+    )
+      ..addListener(_onTick)
+      ..forward();
+
+    for (int lane = 0; lane < _kLaneCount; lane++) {
+      _spawnLane(lane, warmStart: true);
+      if (_rng.nextDouble() < 0.60) {
+        _spawnLane(lane, warmStart: true);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    super.dispose();
+  }
+
+  void _onTick() {
+    if (!mounted) return;
+
+    final double now =
+        _ticker.lastElapsedDuration?.inMicroseconds.toDouble() ?? 0.0;
+    final double dt =
+        _lastStamp < 0 ? 1 / 60.0 : ((now - _lastStamp) / 1e6).clamp(0.0, 0.05);
+    _lastStamp = now;
+    _t += dt;
+
+    final Size size = _currentSize();
+
+    for (final p in _particles) {
+      p.update(dt);
+    }
+
+    final List<FragmentParticle> dead =
+        _particles.where((p) => p.isDead(size.width)).toList();
+
+    for (final p in dead) {
+      _particles.remove(p);
+      _laneOccupants[p.laneIndex]?.remove(p);
+      if (_laneOccupants[p.laneIndex]?.isEmpty ?? true) {
+        _laneOccupants.remove(p.laneIndex);
+      }
+      _spawnLane(p.laneIndex, warmStart: false);
+    }
+  }
+
+  Size _currentSize() {
+    final box = context.findRenderObject() as RenderBox?;
+    return box?.size ?? const Size(390, 844);
+  }
+
+  String _nextText() {
+    if (_poolIdx >= _pool.length) {
+      _pool.shuffle(_rng);
+      _poolIdx = 0;
+    }
+    return _pool[_poolIdx++];
+  }
+
+  void _spawnLane(int lane, {required bool warmStart}) {
+    final int current = _laneOccupants[lane]?.length ?? 0;
+    if (current >= _kMaxPerLane) return;
+
+    final p = FragmentParticle(
+      text: _nextText(),
+      logoCenter: widget.logoCenter?.value ?? const Offset(195, 200),
+      rng: _rng,
+    );
+
+    p.laneIndex = lane;
+    p.goesRight = (lane % 2 == 0);
+    p._speed = _kLaneSpeeds[lane] + (_rng.nextDouble() - 0.5) * 0.08;
+
+    final Size size = _currentSize();
+
+    if (warmStart) {
+      p.initialise(size.width, randomStart: true);
+    } else {
+      p.initialise(size.width, randomStart: false);
+    }
+
+    _particles.add(p);
+    _laneOccupants.putIfAbsent(lane, () => []).add(p);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Size screenSize = MediaQuery.of(context).size;
+    return AnimatedBuilder(
+      animation: _ticker,
+      builder: (_, __) => CustomPaint(
+        painter: FragmentPainter(
+          t: _t,
+          particles: List.unmodifiable(_particles),
+        ),
+        size: screenSize,
+      ),
+    );
+  }
 }

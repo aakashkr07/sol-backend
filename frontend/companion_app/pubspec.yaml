@@ -51,6 +51,11 @@ flutter:
     - assets/images/google_logo.png
 
   fonts:
+    - family: PlusJakartaSans
+      fonts:
+        - asset: assets/fonts/PlusJakartaSans-Regular.ttf
+        - asset: assets/fonts/PlusJakartaSans-Bold.ttf
+          weight: 700
     - family: CormorantGaramond
       fonts:
         - asset: assets/fonts/CormorantGaramond-Light.ttf
