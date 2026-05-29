@@ -1,6 +1,46 @@
+// lib/widgets/message_bubble.dart
+// Sol · MessageBubble  [DESIGN SYSTEM ALIGNED]
+//
+// Changes (frontend/visual only — Message model, status enum, all logic untouched):
+//
+//   · User bubble: solid amber → blue gradient [_blue → _blueSoft] with white text.
+//     Amber was the only orange element breaking the blue/violet palette.
+//
+//   · Companion avatar: amber radial gradient + Sol logo image →
+//     initial letter (first char of companion name) on dark surface circle
+//     with blue ring. Matches the top-bar avatar and WhatsApp/iMessage convention.
+//     When showAvatar=false, placeholder SizedBox width unchanged (28px).
+//
+//   · Read-tick colour: amber → _blue so it stays in palette.
+//
+//   · Overflow fix: the SlideTransition begin offset (0, 0.18) was painting
+//     ~52px above the widget's layout rect during entrance animation, causing
+//     the "overflowed by 52 pixels" debug stripe. Fixed by wrapping the
+//     FadeTransition+SlideTransition in a ClipRect so entrance animation
+//     is clipped to the item's allocated space.
+//
+//   · Font: all TextStyle(...) → GoogleFonts.plusJakartaSans for consistency
+//     with inbox_screen and chat_screen.
+//
+//   · Companion bubble surface: 0xFF1A2035 → 0xFF10131A (_surface token).
+//
+//   · Timestamp and tick colours stay functionally identical, just in-palette.
+
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../models/message_model.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Palette — identical to chat_screen.dart and inbox_screen.dart
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Color _blue = Color(0xFF7DA2FF);
+const Color _blueSoft = Color(0xFF8BA8FF);
+const Color _surface = Color(0xFF10131A);
+const Color _cream = Color(0xFFE8DDD0);
+const Color _sand = Color(0xFF9A8C78);
+const Color _dusty = Color(0xFF5A5568);
 
 class MessageBubble extends StatefulWidget {
   final Message message;
@@ -9,6 +49,10 @@ class MessageBubble extends StatefulWidget {
   final bool isLast;
   final bool showAvatar;
 
+  // companionName is needed to render the initial letter in the avatar.
+  // Defaults to empty string — shows '?' if truly unknown.
+  final String companionName;
+
   const MessageBubble({
     super.key,
     required this.message,
@@ -16,6 +60,7 @@ class MessageBubble extends StatefulWidget {
     this.isFirst = true,
     this.isLast = true,
     this.showAvatar = true,
+    this.companionName = '',
   });
 
   @override
@@ -24,13 +69,6 @@ class MessageBubble extends StatefulWidget {
 
 class _MessageBubbleState extends State<MessageBubble>
     with SingleTickerProviderStateMixin {
-  static const Color _amber = Color(0xFFF5A623);
-  static const Color _navySurface = Color(0xFF1A2035);
-  static const Color _textPrimary = Color(0xFFEEE8DF);
-  static const Color _textMuted = Color(0xFF6B7280);
-  static const Color _tickGrey = Color(0xFF8B95A7);
-  static const Color _tickRead = Color(0xFFF5A623);
-
   late final AnimationController _entranceCtrl;
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
@@ -47,14 +85,11 @@ class _MessageBubbleState extends State<MessageBubble>
       begin: const Offset(0, 0.18),
       end: Offset.zero,
     ).animate(
-      CurvedAnimation(parent: _entranceCtrl, curve: Curves.easeOutCubic),
-    );
+        CurvedAnimation(parent: _entranceCtrl, curve: Curves.easeOutCubic));
 
     if (widget.isNew) {
       Future.delayed(const Duration(milliseconds: 40), () {
-        if (mounted) {
-          _entranceCtrl.forward();
-        }
+        if (mounted) _entranceCtrl.forward();
       });
     } else {
       _entranceCtrl.value = 1;
@@ -94,100 +129,131 @@ class _MessageBubbleState extends State<MessageBubble>
     final isUser = widget.message.isUser;
     final screenWidth = MediaQuery.of(context).size.width;
 
-    return FadeTransition(
-      opacity: _fade,
-      child: SlideTransition(
-        position: _slide,
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: isUser ? 70 : 12,
-            right: isUser ? 12 : 70,
-            top: widget.isFirst ? 8 : 2,
-            bottom: widget.isLast ? 3 : 0,
-          ),
-          child: Column(
-            crossAxisAlignment:
-                isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment:
-                    isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (!isUser) _buildCompanionAvatar(),
-                  if (!isUser) const SizedBox(width: 6),
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: screenWidth * 0.76,
-                      minWidth: 54,
+    // ClipRect prevents the SlideTransition from painting above the item's
+    // layout rect during entrance — this was the source of the 52px overflow.
+    return ClipRect(
+      child: FadeTransition(
+        opacity: _fade,
+        child: SlideTransition(
+          position: _slide,
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: isUser ? 70 : 12,
+              right: isUser ? 12 : 70,
+              top: widget.isFirst ? 8 : 2,
+              bottom: widget.isLast ? 3 : 0,
+            ),
+            child: Column(
+              crossAxisAlignment:
+                  isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment:
+                      isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (!isUser) _buildCompanionAvatar(),
+                    if (!isUser) const SizedBox(width: 6),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: screenWidth * 0.65,
+                        minWidth: 54,
+                      ),
+                      child: _buildBubble(isUser),
                     ),
-                    child: _buildBubble(isUser),
-                  ),
-                ],
-              ),
-              if (widget.isLast) _buildTimestamp(isUser),
-            ],
+                  ],
+                ),
+                if (widget.isLast) _buildTimestamp(isUser),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
+  // ── Companion avatar — initial letter, blue ring ────────────────────────────
   Widget _buildCompanionAvatar() {
     if (!widget.showAvatar) {
+      // Placeholder preserves horizontal alignment for grouped messages
       return const SizedBox(width: 28);
     }
+
+    final initial = widget.companionName.isNotEmpty
+        ? widget.companionName[0].toUpperCase()
+        : '?';
 
     return Container(
       width: 28,
       height: 28,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: const RadialGradient(
-          colors: [Color(0xFFF5A623), Color(0xFF3D2A00)],
+        color: _surface,
+        border: Border.all(
+          color: _blue.withOpacity(0.40),
+          width: 1.0,
         ),
         boxShadow: [
           BoxShadow(
-            color: _amber.withValues(alpha: 0.22),
+            color: _blue.withOpacity(0.14),
             blurRadius: 8,
           ),
         ],
       ),
-      child: const Center(
-        child: Image(
-          image: AssetImage('assets/images/sol_logo.png'),
-          width: 14,
-          height: 14,
+      child: Center(
+        child: Text(
+          initial,
+          style: GoogleFonts.plusJakartaSans(
+            color: _cream.withOpacity(0.82),
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            height: 1.0,
+          ),
         ),
       ),
     );
   }
 
+  // ── Bubble ───────────────────────────────────────────────────────────────────
   Widget _buildBubble(bool isUser) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: isUser ? _amber : _navySurface,
+        // User: blue gradient. Companion: dark surface with hairline border.
+        gradient: isUser
+            ? const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [_blue, _blueSoft],
+              )
+            : null,
+        color: isUser ? null : _surface,
         borderRadius: _bubbleRadius(),
         border: isUser
             ? null
-            : Border.all(color: Colors.white.withValues(alpha: 0.06), width: 0.6),
+            : Border.all(
+                color: Colors.white.withOpacity(0.06),
+                width: 0.6,
+              ),
         boxShadow: [
           BoxShadow(
             color: isUser
-                ? _amber.withValues(alpha: 0.22)
-                : Colors.black.withValues(alpha: 0.22),
-            blurRadius: isUser ? 12 : 10,
+                ? _blue.withOpacity(0.20)
+                : Colors.black.withOpacity(0.18),
+            blurRadius: isUser ? 12 : 8,
             offset: const Offset(0, 3),
           ),
         ],
       ),
       child: Text(
         widget.message.text,
-        style: TextStyle(
-          color: isUser ? const Color(0xFF0A0E1A) : _textPrimary,
-          fontSize: 15.5,
-          height: 1.4,
+        style: GoogleFonts.plusJakartaSans(
+          // User text: white on blue. Companion text: cream.
+          color: isUser
+              ? Colors.white.withOpacity(0.95)
+              : _cream.withOpacity(0.88),
+          fontSize: 15,
+          height: 1.45,
           fontWeight: isUser ? FontWeight.w500 : FontWeight.w400,
           letterSpacing: -0.1,
         ),
@@ -195,6 +261,7 @@ class _MessageBubbleState extends State<MessageBubble>
     );
   }
 
+  // ── Timestamp row ─────────────────────────────────────────────────────────────
   Widget _buildTimestamp(bool isUser) {
     return Padding(
       padding: EdgeInsets.only(
@@ -209,9 +276,10 @@ class _MessageBubbleState extends State<MessageBubble>
         children: [
           Text(
             widget.message.timeLabel,
-            style: TextStyle(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 11,
-              color: _textMuted.withValues(alpha: 0.82),
+              color: _dusty.withOpacity(0.75),
+              height: 1.0,
             ),
           ),
           if (isUser) ...[
@@ -223,20 +291,25 @@ class _MessageBubbleState extends State<MessageBubble>
     );
   }
 
+  // ── Status ticks ──────────────────────────────────────────────────────────────
   Widget _buildTicks(MessageStatus status) {
     const double iconSize = 13;
+    // All tick colours in-palette: sand for unread, blue for read
+    const Color tickGrey = _sand;
+    const Color tickRead = _blue;
 
     switch (status) {
       case MessageStatus.sending:
-        return const Icon(Icons.schedule_rounded, size: iconSize, color: _tickGrey);
+        return Icon(Icons.schedule_rounded,
+            size: iconSize, color: tickGrey.withOpacity(0.55));
       case MessageStatus.sent:
       case MessageStatus.delivered:
-        return _doubleTick(color: _tickGrey, size: iconSize);
+        return _doubleTick(color: tickGrey.withOpacity(0.55), size: iconSize);
       case MessageStatus.read:
-        return _doubleTick(color: _tickRead, size: iconSize);
+        return _doubleTick(color: tickRead, size: iconSize);
       case MessageStatus.failed:
-        return const Icon(Icons.error_outline_rounded,
-            size: iconSize, color: Colors.redAccent);
+        return Icon(Icons.error_outline_rounded,
+            size: iconSize, color: const Color(0xFFBB7070));
     }
   }
 
@@ -247,13 +320,9 @@ class _MessageBubbleState extends State<MessageBubble>
       child: Stack(
         children: [
           Positioned(
-            left: 0,
-            child: Icon(Icons.check, size: size, color: color),
-          ),
+              left: 0, child: Icon(Icons.check, size: size, color: color)),
           Positioned(
-            left: 5,
-            child: Icon(Icons.check, size: size, color: color),
-          ),
+              left: 5, child: Icon(Icons.check, size: size, color: color)),
         ],
       ),
     );

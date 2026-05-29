@@ -251,7 +251,7 @@ class _InboxScreenState extends State<InboxScreen>
             child: CircularProgressIndicator(
               strokeWidth: 1.0,
               valueColor: AlwaysStoppedAnimation<Color>(
-                _blue.withOpacity(0.45),
+                _blue.withOpacity(0.62),
               ),
             ),
           ),
@@ -261,7 +261,7 @@ class _InboxScreenState extends State<InboxScreen>
             style: GoogleFonts.plusJakartaSans(
               color: _sand.withOpacity(0.38),
               fontSize: 12,
-              fontWeight: FontWeight.w300,
+              fontWeight: FontWeight.w400,
               letterSpacing: 0.5,
             ),
           ),
@@ -344,7 +344,7 @@ class _InboxScreenState extends State<InboxScreen>
                         color: _blue.withOpacity(0.70),
                         boxShadow: [
                           BoxShadow(
-                            color: _blue.withOpacity(0.45),
+                            color: _blue.withOpacity(0.62),
                             blurRadius: 6,
                             spreadRadius: 1,
                           ),
@@ -355,9 +355,9 @@ class _InboxScreenState extends State<InboxScreen>
                     Text(
                       'sol',
                       style: GoogleFonts.jost(
-                        color: _sand.withOpacity(0.40),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w400,
+                        color: _sand.withOpacity(0.58),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
                         letterSpacing: 2.5,
                       ),
                     ),
@@ -370,7 +370,7 @@ class _InboxScreenState extends State<InboxScreen>
                   style: GoogleFonts.plusJakartaSans(
                     color: _cream.withOpacity(0.92),
                     fontSize: 26,
-                    fontWeight: FontWeight.w300,
+                    fontWeight: FontWeight.w400,
                     letterSpacing: -0.3,
                     height: 1.12,
                   ),
@@ -408,7 +408,7 @@ class _InboxScreenState extends State<InboxScreen>
             style: GoogleFonts.jost(
               color: const Color(0xFFBB7070).withOpacity(0.65),
               fontSize: 11.5,
-              fontWeight: FontWeight.w300,
+              fontWeight: FontWeight.w400,
               letterSpacing: 0.2,
             ),
           ),
@@ -449,8 +449,8 @@ class _InboxScreenState extends State<InboxScreen>
       child: Text(
         label,
         style: GoogleFonts.jost(
-          color: _violet.withOpacity(0.45),
-          fontSize: 10,
+          color: _violet.withOpacity(0.68),
+          fontSize: 10.5,
           fontWeight: FontWeight.w400,
           letterSpacing: 2.0,
         ),
@@ -489,9 +489,9 @@ class _InboxScreenState extends State<InboxScreen>
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
                     style: GoogleFonts.jost(
-                      color: _sand.withOpacity(0.55),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w300,
+                      color: _sand.withOpacity(0.78),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w400,
                       letterSpacing: 0.2,
                     ),
                   ),
@@ -535,9 +535,9 @@ class _InboxScreenState extends State<InboxScreen>
               Text(
                 'nothing yet.',
                 style: GoogleFonts.plusJakartaSans(
-                  color: _sand.withOpacity(0.25),
+                  color: _sand.withOpacity(0.42),
                   fontSize: 20,
-                  fontWeight: FontWeight.w300,
+                  fontWeight: FontWeight.w400,
                   letterSpacing: -0.2,
                 ),
               ),
@@ -545,9 +545,9 @@ class _InboxScreenState extends State<InboxScreen>
               Text(
                 'your connections will appear here.',
                 style: GoogleFonts.jost(
-                  color: _dusty.withOpacity(0.50),
+                  color: _dusty.withOpacity(0.68),
                   fontSize: 12,
-                  fontWeight: FontWeight.w300,
+                  fontWeight: FontWeight.w400,
                   letterSpacing: 0.3,
                 ),
               ),
@@ -581,7 +581,7 @@ class _InboxScreenState extends State<InboxScreen>
             child: Icon(
               icon,
               size: 15,
-              color: _sand.withOpacity(0.50),
+              color: _sand.withOpacity(0.72),
             ),
           ),
         ),
@@ -805,7 +805,7 @@ class _InboxTileState extends State<_InboxTile>
                                             widget.entry.companionName,
                                             style: GoogleFonts.plusJakartaSans(
                                               color: _cream.withOpacity(
-                                                unread ? 0.96 : 0.58,
+                                                unread ? 0.96 : 0.78,
                                               ),
                                               fontSize: 15,
                                               fontWeight: unread
@@ -825,8 +825,8 @@ class _InboxTileState extends State<_InboxTile>
                                                     ? _violet.withOpacity(0.65)
                                                     : _blue.withOpacity(0.60))
                                                 : _sand.withOpacity(0.30),
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.w300,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w400,
                                             letterSpacing: 0.1,
                                           ),
                                         ),
@@ -850,9 +850,9 @@ class _InboxTileState extends State<_InboxTile>
                                                   ? _violetSoft
                                                       .withOpacity(0.52)
                                                   : _amber.withOpacity(0.52))
-                                              : _sand.withOpacity(0.28),
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w300,
+                                              : _sand.withOpacity(0.46),
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w400,
                                           letterSpacing: 0.15,
                                           fontStyle: FontStyle.italic,
                                         ),
@@ -868,11 +868,11 @@ class _InboxTileState extends State<_InboxTile>
                                       overflow: TextOverflow.ellipsis,
                                       style: GoogleFonts.jost(
                                         color: _cream.withOpacity(
-                                          unread ? 0.58 : 0.28,
+                                          unread ? 0.78 : 0.52,
                                         ),
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w300,
-                                        height: 1.4,
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w400,
+                                        height: 1.45,
                                         letterSpacing: 0.1,
                                       ),
                                     ),

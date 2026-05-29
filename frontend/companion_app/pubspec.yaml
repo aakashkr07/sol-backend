@@ -36,13 +36,13 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  flutter_launcher_icons: ^0.14.3
+  flutter_launcher_icons: ^0.14.4
   flutter_lints: ^5.0.0
 
 flutter_icons:
   android: true
   ios: true
-  image_path: "assets/icon/app_icon.png"
+  image_path: "assets/images/sol_logo.png"
 
 flutter:
   uses-material-design: true
@@ -66,9 +66,10 @@ flutter:
 
 flutter_native_splash:
   color: "#000000"                  # This sets your full background to true black
-  image: assets/icon/app_icon.png # Path to your logo asset
+  image: assets/images/sol_logo.png # Path to your logo asset
 
   # This section explicitly overrides the Android 12+ circular donut bug
   android_12:
     color: "#000000"
-    image: assets/icon/app_icon.png          
+    image: assets/images/sol_logo.png          
+    icon_background_color: "#000000" 

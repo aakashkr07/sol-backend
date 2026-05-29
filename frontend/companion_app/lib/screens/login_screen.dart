@@ -477,7 +477,8 @@ class _LoginScreenState extends State<LoginScreen>
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: _violet.withOpacity(0.07 + p * 0.08),
+                          color: const Color.fromARGB(255, 111, 69, 238)
+                              .withOpacity(0.07 + p * 0.08),
                           blurRadius: 80 + p * 35,
                           spreadRadius: 4 + p * 10,
                         ),
@@ -500,7 +501,8 @@ class _LoginScreenState extends State<LoginScreen>
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: _blue.withOpacity(0.04 + p * 0.055),
+                          color: const Color.fromARGB(255, 95, 136, 238)
+                              .withOpacity(0.04 + p * 0.055),
                           blurRadius: 60 + p * 28,
                           spreadRadius: 0,
                         ),
@@ -524,7 +526,8 @@ class _LoginScreenState extends State<LoginScreen>
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: _amberSft.withOpacity(0.13 + p * 0.20),
+                            color: const Color.fromARGB(255, 250, 184, 109)
+                                .withOpacity(0.13 + p * 0.20),
                             blurRadius: 28 + p * 28,
                           ),
                         ],
@@ -691,10 +694,11 @@ class _LoginScreenState extends State<LoginScreen>
                           boxShadow: [
                             // Burst glow — amber (on tap, unchanged feel)
                             BoxShadow(
-                              color: _amberAcc.withOpacity(
-                                _burstGlow.value * 0.22,
+                              color: const Color.fromARGB(255, 60, 83, 141)
+                                  .withOpacity(
+                                _burstGlow.value * 0.20,
                               ),
-                              blurRadius: 36,
+                              blurRadius: 40,
                               spreadRadius: 0,
                             ),
                             // Resting glow — Presence Blue (new, ties to Sol palette)
