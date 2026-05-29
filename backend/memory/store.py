@@ -1079,13 +1079,26 @@ class Database:
         )
 
     def get_primary_pair(self, user_id: str) -> Optional[dict]:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM relationship_pairs
+            WHERE user_id = ? AND is_primary = 1
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+        if row:
+            return self._row_to_dict(row)
+    # Fallback: return most recent pair but do NOT silently treat it as primary
         return self._row_to_dict(
             self.conn.execute(
                 """
                 SELECT *
                 FROM relationship_pairs
                 WHERE user_id = ?
-                ORDER BY is_primary DESC, updated_at DESC
+                ORDER BY updated_at DESC
                 LIMIT 1
                 """,
                 (user_id,),
@@ -1443,9 +1456,6 @@ class Database:
         pair = self.get_pair_by_id(pair_id) or {}
         session_number = int(pair.get("total_sessions") or 0) + 1
         now = _utcnow_iso()
-        existing_id = self.get_current_conversation(user_id, pair_id=pair_id)
-        if existing_id:
-            self.close_conversation(existing_id)
         self.conn.execute(
             """
             INSERT INTO conversations
@@ -1475,6 +1485,7 @@ class Database:
 
     def get_current_conversation(self, user_id: str, pair_id: Optional[str] = None) -> Optional[str]:
         if pair_id:
+        # First look for an active (not ended) conversation
             row = self.conn.execute(
                 """
                 SELECT id
@@ -1485,6 +1496,21 @@ class Database:
                 """,
                 (user_id, pair_id),
             ).fetchone()
+            if row:
+                return row["id"]
+            # Fallback: return most recent conversation even if closed,
+            # so session/start can resume history rather than starting fresh
+            row = self.conn.execute(
+                """
+                SELECT id
+                FROM conversations
+                WHERE user_id = ? AND pair_id = ?
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                (user_id, pair_id),
+            ).fetchone()
+            return row["id"] if row else None
         else:
             row = self.conn.execute(
                 """
@@ -1496,7 +1522,19 @@ class Database:
                 """,
                 (user_id,),
             ).fetchone()
-        return row["id"] if row else None
+            if row:
+                return row["id"]
+            row = self.conn.execute(
+                """
+                SELECT id
+                FROM conversations
+                WHERE user_id = ?
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+            return row["id"] if row else None
 
     def get_conversation(self, conversation_id: str) -> Optional[dict]:
         return self._row_to_dict(

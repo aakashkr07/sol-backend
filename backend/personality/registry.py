@@ -4,7 +4,7 @@ from collections import Counter
 from datetime import datetime
 from typing import Optional
 
-from memory.store import db
+from memory.store import db, make_pair_id
 from personality.loader import Character, list_characters, load_character
 
 
@@ -54,6 +54,12 @@ def resolve_or_assign_primary_pair(
 ) -> dict:
     if requested_companion_id:
         character = load_character(requested_companion_id)
+        # Check if this pair already exists before creating anything
+        existing_pair = db.get_pair(user_id, requested_companion_id)
+        if existing_pair:
+            if make_primary:
+                db.set_primary_pair(existing_pair["id"])
+            return db.get_pair_by_id(existing_pair["id"]) or existing_pair
     else:
         primary_pair = db.get_primary_pair(user_id)
         if primary_pair:

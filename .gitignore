@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+.venv/
+venv/
 
 # Secrets
 firebase-service-account.json
@@ -25,6 +27,7 @@ backend/db/*.db-shm
 backend/db/*.db-wal
 backend/chroma_db/
 backend/venv/
+backend/.venv/
 backend/__pycache__/
 backend/.pytest_cache/
 backend/.mypy_cache/
