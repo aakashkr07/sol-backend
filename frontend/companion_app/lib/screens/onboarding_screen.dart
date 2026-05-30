@@ -38,6 +38,9 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen>
     with TickerProviderStateMixin {
   late final AnimationController _bgController;
+  late final Animation<double> _blueOpacity;
+  late final Animation<double> _violetOpacity;
+  late final Animation<double> _amberOpacity;
 
   int _currentStep = 0;
   String _preferredName = '';
@@ -58,6 +61,27 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       vsync: this,
       duration: const Duration(seconds: 6),
     )..repeat(reverse: true);
+
+    _blueOpacity = Tween<double>(begin: 0.02, end: 0.12).animate(
+      CurvedAnimation(
+        parent: _bgController,
+        curve: const _SinCurve(),
+      ),
+    );
+
+    _violetOpacity = Tween<double>(begin: 0.10, end: 0.01).animate(
+      CurvedAnimation(
+        parent: _bgController,
+        curve: const _SinCurve(),
+      ),
+    );
+
+    _amberOpacity = Tween<double>(begin: 0.01, end: 0.07).animate(
+      CurvedAnimation(
+        parent: _bgController,
+        curve: const _CosCurve(),
+      ),
+    );
   }
 
   @override
@@ -183,13 +207,74 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         children: [
           // Ambient breathing background
           Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _bgController,
-              builder: (context, child) {
-                return CustomPaint(
-                  painter: _AtmosphericBackgroundPainter(_bgController.value),
-                );
-              },
+            child: Stack(
+              children: [
+                // Presence Blue (top-left)
+                Positioned.fill(
+                  child: FadeTransition(
+                    opacity: _blueOpacity,
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: RadialGradient(
+                          center: Alignment.topLeft,
+                          radius: 1.2,
+                          colors: [
+                            _blue,
+                            Colors.transparent,
+                          ],
+                          stops: [0.0, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Warm Violet (bottom-right)
+                Positioned.fill(
+                  child: FadeTransition(
+                    opacity: _violetOpacity,
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: RadialGradient(
+                          center: Alignment.bottomRight,
+                          radius: 1.3,
+                          colors: [
+                            _violet,
+                            Colors.transparent,
+                          ],
+                          stops: [0.0, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Human Warmth (bottom-center)
+                Positioned.fill(
+                  child: FadeTransition(
+                    opacity: _amberOpacity,
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: RadialGradient(
+                          center: Alignment.bottomCenter,
+                          radius: 1.0,
+                          colors: [
+                            _amber,
+                            Colors.transparent,
+                          ],
+                          stops: [0.0, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Global glassmorphic blur overlay
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: const SizedBox.shrink(),
             ),
           ),
           
@@ -256,24 +341,18 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             _currentStep--;
           });
         },
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: _surface.withOpacity(0.60),
-                border: Border.all(color: _cream.withOpacity(0.07), width: 0.6),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.chevron_left,
-                color: _cream,
-                size: 20,
-              ),
-            ),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: _surface.withOpacity(0.70),
+            border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(
+            Icons.chevron_left,
+            color: _cream,
+            size: 20,
           ),
         ),
       ),
@@ -406,28 +485,22 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   }
 
   Widget _buildErrorPanel() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF331515).withOpacity(0.72),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: const Color(0xFFE08B8B).withOpacity(0.22),
-            ),
-          ),
-          child: Text(
-            _error!,
-            style: GoogleFonts.jost(
-              color: const Color(0xFFE08B8B),
-              fontSize: 13,
-              height: 1.45,
-            ),
-          ),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF331515).withOpacity(0.72),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFE08B8B).withOpacity(0.22),
+        ),
+      ),
+      child: Text(
+        _error!,
+        style: GoogleFonts.jost(
+          color: const Color(0xFFE08B8B),
+          fontSize: 13,
+          height: 1.45,
         ),
       ),
     );
@@ -487,38 +560,32 @@ class _NameInputCardState extends State<_NameInputCard> {
           ),
         ),
         const SizedBox(height: 36),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: Container(
-              decoration: BoxDecoration(
-                color: _surface.withOpacity(0.60),
-                border: Border.all(color: _cream.withOpacity(0.07), width: 0.6),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: TextField(
-                controller: _controller,
-                cursorColor: _blueSoft,
-                textCapitalization: TextCapitalization.words,
-                style: GoogleFonts.jost(
-                  color: _cream,
-                  fontSize: 16,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Enter your preferred name',
-                  hintStyle: GoogleFonts.jost(
-                    color: _dusty,
-                    fontSize: 16,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-                  border: InputBorder.none,
-                ),
-                onSubmitted: (_) {
-                  if (_canSubmit) widget.onSubmitted(_controller.text.trim());
-                },
-              ),
+        Container(
+          decoration: BoxDecoration(
+            color: _surface.withOpacity(0.70),
+            border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: TextField(
+            controller: _controller,
+            cursorColor: _blueSoft,
+            textCapitalization: TextCapitalization.words,
+            style: GoogleFonts.jost(
+              color: _cream,
+              fontSize: 16,
             ),
+            decoration: InputDecoration(
+              hintText: 'Enter your preferred name',
+              hintStyle: GoogleFonts.jost(
+                color: _dusty,
+                fontSize: 16,
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+              border: InputBorder.none,
+            ),
+            onSubmitted: (_) {
+              if (_canSubmit) widget.onSubmitted(_controller.text.trim());
+            },
           ),
         ),
         const SizedBox(height: 48),
@@ -651,30 +718,24 @@ class _OptionTileState extends State<_OptionTile> {
           scale: _scale,
           duration: const Duration(milliseconds: 90),
           curve: Curves.easeOut,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-                decoration: BoxDecoration(
-                  color: widget.selected ? _blue.withOpacity(0.15) : _surface.withOpacity(0.60),
-                  border: Border.all(
-                    color: widget.selected
-                        ? _blueSoft.withOpacity(0.4)
-                        : _cream.withOpacity(0.07),
-                    width: 0.6,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  widget.text,
-                  style: GoogleFonts.jost(
-                    color: widget.selected ? _cream : _cream.withOpacity(0.78),
-                    fontSize: 14.5,
-                    fontWeight: widget.selected ? FontWeight.w500 : FontWeight.w400,
-                  ),
-                ),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+            decoration: BoxDecoration(
+              color: widget.selected ? _blue.withOpacity(0.15) : _surface.withOpacity(0.70),
+              border: Border.all(
+                color: widget.selected
+                    ? _blueSoft.withOpacity(0.4)
+                    : _cream.withOpacity(0.08),
+                width: 0.6,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              widget.text,
+              style: GoogleFonts.jost(
+                color: widget.selected ? _cream : _cream.withOpacity(0.78),
+                fontSize: 14.5,
+                fontWeight: widget.selected ? FontWeight.w500 : FontWeight.w400,
               ),
             ),
           ),
@@ -734,61 +795,55 @@ class _IntroCard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 28),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(22),
-              decoration: BoxDecoration(
-                color: _surface.withOpacity(0.60),
-                border: Border.all(color: _cream.withOpacity(0.07), width: 0.6),
-                borderRadius: BorderRadius.circular(20),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: _surface.withOpacity(0.70),
+            border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                match.companionSummary,
+                style: GoogleFonts.plusJakartaSans(
+                  color: _cream.withOpacity(0.92),
+                  fontSize: 15,
+                  height: 1.45,
+                  fontWeight: FontWeight.w400,
+                ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    match.companionSummary,
-                    style: GoogleFonts.plusJakartaSans(
-                      color: _cream.withOpacity(0.92),
-                      fontSize: 15,
-                      height: 1.45,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                  if (match.humanizingDetails.isNotEmpty) ...[
-                    const SizedBox(height: 24),
-                    ...match.humanizingDetails.map((detail) => Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: _cream.withOpacity(0.03),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: _cream.withOpacity(0.05), width: 0.6),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.star_border, color: _violetSoft, size: 16),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  detail,
-                                  style: GoogleFonts.jost(
-                                    color: _cream.withOpacity(0.85),
-                                    fontSize: 13.5,
-                                    height: 1.35,
-                                  ),
-                                ),
+              if (match.humanizingDetails.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                ...match.humanizingDetails.map((detail) => Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _cream.withOpacity(0.03),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: _cream.withOpacity(0.05), width: 0.6),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.star_border, color: _violetSoft, size: 16),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              detail,
+                              style: GoogleFonts.jost(
+                                color: _cream.withOpacity(0.85),
+                                fontSize: 13.5,
+                                height: 1.35,
                               ),
-                            ],
+                            ),
                           ),
-                        )),
-                  ],
-                ],
-              ),
-            ),
+                        ],
+                      ),
+                    )),
+              ],
+            ],
           ),
         ),
         const SizedBox(height: 40),
@@ -941,166 +996,120 @@ class _BreathingSilhouettesState extends State<_BreathingSilhouettes>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _pulse,
-      builder: (context, child) {
-        final glow = 0.5 + (_pulse.value * 0.5);
-        return SizedBox(
-          width: 180,
-          height: 140,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Silhouette 1 (Back left)
-              Transform.translate(
-                offset: Offset(-35 + 4 * math.sin(_pulse.value * math.pi), 5),
-                child: Opacity(
-                  opacity: 0.25 + 0.15 * _pulse.value,
-                  child: Container(
-                    width: 70,
-                    height: 70,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _violet,
-                      boxShadow: [
-                        BoxShadow(
-                          color: _violet.withOpacity(0.1),
-                          blurRadius: 12,
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.person,
-                      color: _ink,
-                      size: 38,
-                    ),
-                  ),
-                ),
-              ),
-              // Silhouette 2 (Back right)
-              Transform.translate(
-                offset: Offset(35 - 4 * math.sin(_pulse.value * math.pi), 5),
-                child: Opacity(
-                  opacity: 0.25 + 0.15 * _pulse.value,
-                  child: Container(
-                    width: 70,
-                    height: 70,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _amber,
-                      boxShadow: [
-                        BoxShadow(
-                          color: _amber.withOpacity(0.1),
-                          blurRadius: 12,
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.person,
-                      color: _ink,
-                      size: 38,
-                    ),
-                  ),
-                ),
-              ),
-              // Silhouette 3 (Foreground center glowing)
-              Transform.scale(
-                scale: 1.0 + 0.04 * math.sin(_pulse.value * math.pi),
-                child: Container(
-                  width: 90,
-                  height: 90,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _surface,
-                    border: Border.all(
-                      color: _blueSoft.withOpacity(0.12 + 0.12 * glow),
-                      width: 1.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _blue.withOpacity(0.10 * glow),
-                        blurRadius: 20 + 8 * _pulse.value,
-                        spreadRadius: 2,
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _pulse,
+        builder: (context, child) {
+          final glow = 0.5 + (_pulse.value * 0.5);
+          return SizedBox(
+            width: 180,
+            height: 140,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Silhouette 1 (Back left)
+                Transform.translate(
+                  offset: Offset(-35 + 4 * math.sin(_pulse.value * math.pi), 5),
+                  child: Opacity(
+                    opacity: 0.25 + 0.15 * _pulse.value,
+                    child: Container(
+                      width: 70,
+                      height: 70,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _violet,
+                        boxShadow: [
+                          BoxShadow(
+                            color: _violet.withOpacity(0.1),
+                            blurRadius: 12,
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Icon(
-                      Icons.person_outline,
-                      color: _cream.withOpacity(0.3 + 0.3 * _pulse.value),
-                      size: 40,
+                      child: const Icon(
+                        Icons.person,
+                        color: _ink,
+                        size: 38,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+                // Silhouette 2 (Back right)
+                Transform.translate(
+                  offset: Offset(35 - 4 * math.sin(_pulse.value * math.pi), 5),
+                  child: Opacity(
+                    opacity: 0.25 + 0.15 * _pulse.value,
+                    child: Container(
+                      width: 70,
+                      height: 70,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _amber,
+                        boxShadow: [
+                          BoxShadow(
+                            color: _amber.withOpacity(0.1),
+                            blurRadius: 12,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.person,
+                        color: _ink,
+                        size: 38,
+                      ),
+                    ),
+                  ),
+                ),
+                // Silhouette 3 (Foreground center glowing)
+                Transform.scale(
+                  scale: 1.0 + 0.04 * math.sin(_pulse.value * math.pi),
+                  child: Container(
+                    width: 90,
+                    height: 90,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _surface,
+                      border: Border.all(
+                        color: _blueSoft.withOpacity(0.12 + 0.12 * glow),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _blue.withOpacity(0.10 * glow),
+                          blurRadius: 20 + 8 * _pulse.value,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: Icon(
+                        Icons.person_outline,
+                        color: _cream.withOpacity(0.3 + 0.3 * _pulse.value),
+                        size: 40,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }
 
-class _AtmosphericBackgroundPainter extends CustomPainter {
-  final double animationValue;
-
-  _AtmosphericBackgroundPainter(this.animationValue);
-
+class _SinCurve extends Curve {
+  const _SinCurve();
   @override
-  void paint(Canvas canvas, Size size) {
-    final pulse = math.sin(animationValue * math.pi * 2);
-    final scale1 = 1.0 + 0.12 * pulse;
-    final scale2 = 1.0 - 0.10 * pulse;
-    final scale3 = 1.0 + 0.08 * math.cos(animationValue * math.pi * 2);
-
-    // Presence Blue (0xFF7DA2FF) - top-left
-    final paint1 = Paint()
-      ..shader = RadialGradient(
-        center: Alignment.topLeft,
-        radius: 1.2 * scale1,
-        colors: [
-          const Color(0xFF7DA2FF).withOpacity(0.12),
-          const Color(0xFF7DA2FF).withOpacity(0.02),
-          Colors.transparent,
-        ],
-        stops: const [0.0, 0.5, 1.0],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint1);
-
-    // Warm Violet (0xFFA78BFA) - bottom-right
-    final paint2 = Paint()
-      ..shader = RadialGradient(
-        center: Alignment.bottomRight,
-        radius: 1.3 * scale2,
-        colors: [
-          const Color(0xFFA78BFA).withOpacity(0.10),
-          const Color(0xFFA78BFA).withOpacity(0.01),
-          Colors.transparent,
-        ],
-        stops: const [0.0, 0.6, 1.0],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint2);
-
-    // Human Warmth (0xFFF2B8A0) - bottom-center
-    final paint3 = Paint()
-      ..shader = RadialGradient(
-        center: Alignment.bottomCenter,
-        radius: 1.0 * scale3,
-        colors: [
-          const Color(0xFFF2B8A0).withOpacity(0.07),
-          const Color(0xFFF2B8A0).withOpacity(0.01),
-          Colors.transparent,
-        ],
-        stops: const [0.0, 0.5, 1.0],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint3);
+  double transformInternal(double t) {
+    return (math.sin(t * math.pi * 2) + 1.0) / 2.0;
   }
+}
 
+class _CosCurve extends Curve {
+  const _CosCurve();
   @override
-  bool shouldRepaint(covariant _AtmosphericBackgroundPainter oldDelegate) {
-    return oldDelegate.animationValue != animationValue;
+  double transformInternal(double t) {
+    return (math.cos(t * math.pi * 2) + 1.0) / 2.0;
   }
 }

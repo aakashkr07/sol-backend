@@ -129,7 +129,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeMetrics() {
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    // Left empty since reverse layout naturally anchors to the bottom of the viewport when keyboard resizes
   }
 
   @override
@@ -150,19 +150,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (session != null && mounted) {
         _applySession(session);
         if (session.historyMessages.isNotEmpty) {
+          final hist = session.historyMessages
+              .map(
+                (message) => Message.fromHistory(
+                  role: message.role,
+                  content: message.content,
+                  createdAt: message.createdAt,
+                ),
+              )
+              .toList();
           _messages
             ..clear()
-            ..addAll(
-              session.historyMessages
-                  .map(
-                    (message) => Message.fromHistory(
-                      role: message.role,
-                      content: message.content,
-                      createdAt: message.createdAt,
-                    ),
-                  )
-                  .toList(),
-            );
+            ..addAll(hist.reversed);
         } else if (session.openingBursts.isNotEmpty ||
             session.openingMessage.trim().isNotEmpty) {
           openingBursts = session.openingBursts.isNotEmpty
@@ -186,6 +185,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       await _playCompanionBursts(openingBursts);
     }
     await _loadPendingProactiveEvents(silent: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _scrollToBottom();
+      }
+    });
   }
 
   void _applySession(SessionStartResponse session) {
@@ -268,7 +272,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       setState(() {
         _typingSpec = null;
-        _messages.add(
+        _messages.insert(
+          0,
           Message.fromCompanion(burst.text, startsNewGroup: burst.isFollowUp),
         );
       });
@@ -365,7 +370,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     HapticFeedback.lightImpact();
 
     setState(() {
-      _messages.add(userMessage);
+      _messages.insert(0, userMessage);
       _isSending = true;
       _isAssistantDelivering = true;
       _typingSpec = TypingIndicatorSpec.network();
@@ -443,7 +448,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   DateTime? _latestAssistantTimestamp() {
-    for (var i = _messages.length - 1; i >= 0; i--) {
+    for (var i = 0; i < _messages.length; i++) {
       if (!_messages[i].isUser) return _messages[i].timestamp;
     }
     return null;
@@ -516,7 +521,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
       _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
+        0.0,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOut,
       );
@@ -524,15 +529,53 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   bool _isFirstInGroup(int index) {
-    if (index == 0) return true;
-    return _messages[index].role != _messages[index - 1].role ||
+    if (index == _messages.length - 1) return true;
+    return _messages[index].role != _messages[index + 1].role ||
         _messages[index].startsNewGroup;
   }
 
   bool _isLastInGroup(int index) {
-    if (index == _messages.length - 1) return true;
-    return _messages[index].role != _messages[index + 1].role ||
-        _messages[index + 1].startsNewGroup;
+    if (index == 0) return true;
+    return _messages[index].role != _messages[index - 1].role ||
+        _messages[index - 1].startsNewGroup;
+  }
+
+  String _formatDateHeader(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final compareDate = DateTime(date.year, date.month, date.day);
+    if (compareDate == today) {
+      return 'Today';
+    } else if (compareDate == yesterday) {
+      return 'Yesterday';
+    } else {
+      final months = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      return '${months[date.month - 1]} ${date.day}, ${date.year}';
+    }
+  }
+
+  List<ChatItem> _buildDisplayItems() {
+    final List<ChatItem> items = [];
+    if (_messages.isEmpty) return items;
+    for (int i = 0; i < _messages.length; i++) {
+      final msg = _messages[i];
+      items.add(MessageItem(msg, _isFirstInGroup(i), _isLastInGroup(i)));
+      final msgDate = DateTime(msg.timestamp.year, msg.timestamp.month, msg.timestamp.day);
+      if (i == _messages.length - 1) {
+        items.add(DateHeaderItem(_formatDateHeader(msg.timestamp)));
+      } else {
+        final nextMsg = _messages[i + 1];
+        final nextMsgDate = DateTime(nextMsg.timestamp.year, nextMsg.timestamp.month, nextMsg.timestamp.day);
+        if (msgDate != nextMsgDate) {
+          items.add(DateHeaderItem(_formatDateHeader(msg.timestamp)));
+        }
+      }
+    }
+    return items;
   }
 
   // ── Build ────────────────────────────────────────────────────────────────────
@@ -766,15 +809,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       );
     }
 
+    final displayItems = _buildDisplayItems();
+
     return ListView.builder(
       controller: _scrollController,
+      reverse: true,
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       clipBehavior:
           Clip.hardEdge, // prevents avatar/label clipping at item boundaries
       padding: const EdgeInsets.fromLTRB(0, 8, 0, 16),
-      itemCount: _messages.length + (_typingSpec != null ? 1 : 0),
+      itemCount: displayItems.length + (_typingSpec != null ? 1 : 0),
       itemBuilder: (context, index) {
-        if (_typingSpec != null && index == _messages.length) {
+        if (_typingSpec != null && index == 0) {
           return TypingIndicator(
             key: ValueKey(
               '${_typingSpec!.pauseIntensity}-'
@@ -787,15 +833,46 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           );
         }
 
-        final message = _messages[index];
-        return MessageBubble(
-          key: ValueKey(message.id),
-          message: message,
-          isNew: message.isNew,
-          isFirst: _isFirstInGroup(index),
-          isLast: _isLastInGroup(index),
-          showAvatar: !message.isUser && _isLastInGroup(index),
-        );
+        final item = displayItems[_typingSpec != null ? index - 1 : index];
+        if (item is DateHeaderItem) {
+          return Center(
+            key: ValueKey('date_${item.dateText}'),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.04),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.05),
+                    width: 0.6,
+                  ),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  item.dateText.toLowerCase(),
+                  style: GoogleFonts.jost(
+                    color: _sand,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ),
+            ),
+          );
+        } else if (item is MessageItem) {
+          final message = item.message;
+          return MessageBubble(
+            key: ValueKey(message.id),
+            message: message,
+            isNew: message.isNew,
+            isFirst: item.isFirst,
+            isLast: item.isLast,
+            showAvatar: !message.isUser && item.isLast,
+          );
+        }
+        return const SizedBox.shrink();
       },
     );
   }
@@ -1024,4 +1101,18 @@ class _IconButton extends StatelessWidget {
       ),
     );
   }
+}
+
+abstract class ChatItem {}
+
+class DateHeaderItem extends ChatItem {
+  final String dateText;
+  DateHeaderItem(this.dateText);
+}
+
+class MessageItem extends ChatItem {
+  final Message message;
+  final bool isFirst;
+  final bool isLast;
+  MessageItem(this.message, this.isFirst, this.isLast);
 }

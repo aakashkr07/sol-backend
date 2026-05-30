@@ -63,6 +63,10 @@ class _InboxScreenState extends State<InboxScreen>
   late Animation<double> _breatheAnim;
   late Animation<double> _fadeInAnim;
 
+  late final Animation<double> _blueOpacity;
+  late final Animation<double> _violetOpacity;
+  late final Animation<double> _amberOpacity;
+
   // ── Lifecycle (untouched) ─────────────────────────────────────────────────
   @override
   void initState() {
@@ -77,6 +81,10 @@ class _InboxScreenState extends State<InboxScreen>
       parent: _breatheCtrl,
       curve: Curves.easeInOut,
     );
+
+    _blueOpacity = Tween<double>(begin: 0.028, end: 0.046).animate(_breatheAnim);
+    _violetOpacity = Tween<double>(begin: 0.038, end: 0.022).animate(_breatheAnim);
+    _amberOpacity = Tween<double>(begin: 0.014, end: 0.024).animate(_breatheAnim);
 
     _fadeInCtrl = AnimationController(
       vsync: this,
@@ -216,6 +224,14 @@ class _InboxScreenState extends State<InboxScreen>
           // ── Atmospheric breathing background ──────────────────────────
           _buildAtmosphere(),
 
+          // ── Global glassmorphic blur overlay ──────────────────────────
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: const SizedBox.shrink(),
+            ),
+          ),
+
           // ── Main content ──────────────────────────────────────────────
           SafeArea(
             child: _isLoading ? _buildLoader() : _buildBody(),
@@ -227,16 +243,69 @@ class _InboxScreenState extends State<InboxScreen>
 
   // ── Atmospheric background — subtle breathing gradient orbs ───────────────
   Widget _buildAtmosphere() {
-    return AnimatedBuilder(
-      animation: _breatheAnim,
-      builder: (context, _) {
-        final t = _breatheAnim.value;
-        return SizedBox.expand(
-          child: CustomPaint(
-            painter: _AtmospherePainter(t: t),
+    return Stack(
+      children: [
+        // Base deep background fill
+        Positioned.fill(
+          child: Container(
+            color: const Color(0xFF080A0E),
           ),
-        );
-      },
+        ),
+        // Orb 1 — presence blue (top-left)
+        Positioned.fill(
+          child: FadeTransition(
+            opacity: _blueOpacity,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: RadialGradient(
+                  center: FractionalOffset(0.15, 0.12),
+                  radius: 0.65,
+                  colors: [
+                    Color(0xFF7DA2FF),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Orb 2 — warm violet (bottom-right)
+        Positioned.fill(
+          child: FadeTransition(
+            opacity: _violetOpacity,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: RadialGradient(
+                  center: FractionalOffset(0.88, 0.72),
+                  radius: 0.75,
+                  colors: [
+                    Color(0xFFA78BFA),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Orb 3 — center-bottom, human warmth (bottom-center)
+        Positioned.fill(
+          child: FadeTransition(
+            opacity: _amberOpacity,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: RadialGradient(
+                  center: FractionalOffset(0.50, 0.95),
+                  radius: 0.55,
+                  colors: [
+                    Color(0xFFF2B8A0),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -463,43 +532,45 @@ class _InboxScreenState extends State<InboxScreen>
   // ── Presence strip — Stories-style horizontal scroll ─────────────────────
   Widget _buildPresenceStrip(List<InboxEntrySummary> threads) {
     final list = threads.take(8).toList();
-    return SizedBox(
-      height: 104,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(24, 6, 24, 14),
-        itemCount: list.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 20),
-        itemBuilder: (context, i) {
-          final entry = list[i];
-          return GestureDetector(
-            onTap: _isOpeningThread ? null : () => _openEntry(entry),
-            child: SizedBox(
-              width: 58,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Avatar with animated presence ring
-                  _PresenceAvatar(entry: entry),
-                  const SizedBox(height: 7),
-                  Text(
-                    entry.companionName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.jost(
-                      color: _sand.withOpacity(0.78),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w400,
-                      letterSpacing: 0.2,
+    return RepaintBoundary(
+      child: SizedBox(
+        height: 104,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(24, 6, 24, 14),
+          itemCount: list.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 20),
+          itemBuilder: (context, i) {
+            final entry = list[i];
+            return GestureDetector(
+              onTap: _isOpeningThread ? null : () => _openEntry(entry),
+              child: SizedBox(
+                width: 58,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Avatar with animated presence ring
+                    _PresenceAvatar(entry: entry),
+                    const SizedBox(height: 7),
+                    Text(
+                      entry.companionName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.jost(
+                        color: _sand.withOpacity(0.78),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w400,
+                        letterSpacing: 0.2,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
@@ -563,27 +634,21 @@ class _InboxScreenState extends State<InboxScreen>
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(999),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _surface.withOpacity(0.60),
-              border: Border.all(
-                color: _cream.withOpacity(0.07),
-                width: 0.6,
-              ),
-            ),
-            child: Icon(
-              icon,
-              size: 15,
-              color: _sand.withOpacity(0.72),
-            ),
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: _surface.withOpacity(0.70),
+          border: Border.all(
+            color: _cream.withOpacity(0.08),
+            width: 0.6,
           ),
+        ),
+        child: Icon(
+          icon,
+          size: 15,
+          color: _sand.withOpacity(0.72),
         ),
       ),
     );
@@ -671,35 +736,37 @@ class _PresenceDotState extends State<_PresenceDot>
   @override
   Widget build(BuildContext context) {
     final color = widget.isTyping ? _violetSoft : _blueSoft;
-    return AnimatedBuilder(
-      animation: _pulse,
-      builder: (context, _) {
-        final glow = _pulse.value;
-        return Container(
-          width: 12,
-          height: 12,
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            color: _bgDeep,
-          ),
-          alignment: Alignment.center,
-          child: Container(
-            width: 8.5,
-            height: 8.5,
-            decoration: BoxDecoration(
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _pulse,
+        builder: (context, _) {
+          final glow = _pulse.value;
+          return Container(
+            width: 12,
+            height: 12,
+            decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              color: color,
-              boxShadow: [
-                BoxShadow(
-                  color: color.withOpacity(0.35 + glow * 0.45),
-                  blurRadius: 3 + glow * 5,
-                  spreadRadius: 0.5,
-                ),
-              ],
+              color: _bgDeep,
             ),
-          ),
-        );
-      },
+            alignment: Alignment.center,
+            child: Container(
+              width: 8.5,
+              height: 8.5,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: color,
+                boxShadow: [
+                  BoxShadow(
+                    color: color.withOpacity(0.35 + glow * 0.45),
+                    blurRadius: 3 + glow * 5,
+                    spreadRadius: 0.5,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -1294,77 +1361,4 @@ class _InboxTileState extends State<_InboxTile>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// _AtmospherePainter — subtle breathing gradient orbs in the background
-// ─────────────────────────────────────────────────────────────────────────────
 
-class _AtmospherePainter extends CustomPainter {
-  final double t; // 0.0 → 1.0, breathing oscillation
-
-  const _AtmospherePainter({required this.t});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Base fill
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = const Color(0xFF080A0E),
-    );
-
-    // Orb 1 — top-left, presence blue
-    _drawOrb(
-      canvas,
-      center: Offset(
-        size.width * 0.15 + math.sin(t * math.pi) * 12,
-        size.height * 0.12 + math.cos(t * math.pi) * 8,
-      ),
-      radius: 220 + t * 40,
-      color: const Color(0xFF7DA2FF),
-      opacity: 0.028 + t * 0.018,
-    );
-
-    // Orb 2 — bottom-right, warm violet
-    _drawOrb(
-      canvas,
-      center: Offset(
-        size.width * 0.88 - math.cos(t * math.pi) * 10,
-        size.height * 0.72 + math.sin(t * math.pi) * 14,
-      ),
-      radius: 260 + (1 - t) * 50,
-      color: const Color(0xFFA78BFA),
-      opacity: 0.022 + (1 - t) * 0.016,
-    );
-
-    // Orb 3 — center-bottom, human warmth
-    _drawOrb(
-      canvas,
-      center: Offset(
-        size.width * 0.50,
-        size.height * 0.95,
-      ),
-      radius: 180 + t * 30,
-      color: const Color(0xFFF2B8A0),
-      opacity: 0.014 + t * 0.010,
-    );
-  }
-
-  void _drawOrb(
-    Canvas canvas, {
-    required Offset center,
-    required double radius,
-    required Color color,
-    required double opacity,
-  }) {
-    final paint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          color.withOpacity(opacity),
-          color.withOpacity(0),
-        ],
-      ).createShader(Rect.fromCircle(center: center, radius: radius));
-    canvas.drawCircle(center, radius, paint);
-  }
-
-  @override
-  bool shouldRepaint(_AtmospherePainter old) => old.t != t;
-}

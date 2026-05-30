@@ -206,34 +206,36 @@ class _TypingIndicatorState extends State<TypingIndicator>
               horizontal: _horizontalPadding,
               vertical: _verticalPadding,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(_dotCount, (i) {
-                return Padding(
-                  padding: EdgeInsets.only(right: i < _dotCount - 1 ? 5 : 0),
-                  child: AnimatedBuilder(
-                    animation: _animations[i],
-                    builder: (context, child) {
-                      return Opacity(
-                        opacity:
-                            opacity + ((_animations[i].value - 0.38) * 0.28),
-                        child: Transform.scale(
-                          scale: _animations[i].value,
-                          child: child,
+            child: RepaintBoundary(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(_dotCount, (i) {
+                  return Padding(
+                    padding: EdgeInsets.only(right: i < _dotCount - 1 ? 5 : 0),
+                    child: AnimatedBuilder(
+                      animation: _animations[i],
+                      builder: (context, child) {
+                        return Opacity(
+                          opacity:
+                              opacity + ((_animations[i].value - 0.38) * 0.28),
+                          child: Transform.scale(
+                            scale: _animations[i].value,
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: Container(
+                        width: widget.spec.pauseIntensity == 'long' ? 6 : 7,
+                        height: widget.spec.pauseIntensity == 'long' ? 6 : 7,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.70),
+                          shape: BoxShape.circle,
                         ),
-                      );
-                    },
-                    child: Container(
-                      width: widget.spec.pauseIntensity == 'long' ? 6 : 7,
-                      height: widget.spec.pauseIntensity == 'long' ? 6 : 7,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.70),
-                        shape: BoxShape.circle,
                       ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                }),
+              ),
             ),
           ),
         ],

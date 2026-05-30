@@ -55,6 +55,10 @@ class _ProfileScreenState extends State<ProfileScreen>
   late Animation<double> _breatheAnim;
   late Animation<double> _fadeInAnim;
 
+  late final Animation<double> _blueOpacity;
+  late final Animation<double> _violetOpacity;
+  late final Animation<double> _amberOpacity;
+
   @override
   void initState() {
     super.initState();
@@ -68,6 +72,10 @@ class _ProfileScreenState extends State<ProfileScreen>
       parent: _breatheCtrl,
       curve: Curves.easeInOut,
     );
+
+    _violetOpacity = Tween<double>(begin: 0.028, end: 0.046).animate(_breatheAnim);
+    _blueOpacity = Tween<double>(begin: 0.030, end: 0.018).animate(_breatheAnim);
+    _amberOpacity = Tween<double>(begin: 0.012, end: 0.020).animate(_breatheAnim);
 
     _fadeInCtrl = AnimationController(
       vsync: this,
@@ -311,6 +319,14 @@ class _ProfileScreenState extends State<ProfileScreen>
           // ── Atmospheric breathing background ──────────────────────────
           _buildAtmosphere(),
 
+          // ── Global glassmorphic blur overlay ──────────────────────────
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: const SizedBox.shrink(),
+            ),
+          ),
+
           // ── Content ───────────────────────────────────────────────────
           SafeArea(
             child: Column(
@@ -327,15 +343,69 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   // ── Atmosphere ────────────────────────────────────────────────────────────
   Widget _buildAtmosphere() {
-    return AnimatedBuilder(
-      animation: _breatheAnim,
-      builder: (context, _) {
-        return SizedBox.expand(
-          child: CustomPaint(
-            painter: _AtmospherePainter(t: _breatheAnim.value),
+    return Stack(
+      children: [
+        // Base deep background fill
+        Positioned.fill(
+          child: Container(
+            color: const Color(0xFF080A0E),
           ),
-        );
-      },
+        ),
+        // Orb 1 — warm violet (top-right)
+        Positioned.fill(
+          child: FadeTransition(
+            opacity: _violetOpacity,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: RadialGradient(
+                  center: FractionalOffset(0.85, 0.12),
+                  radius: 0.65,
+                  colors: [
+                    Color(0xFFA78BFA),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Orb 2 — presence blue (center-left)
+        Positioned.fill(
+          child: FadeTransition(
+            opacity: _blueOpacity,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: RadialGradient(
+                  center: FractionalOffset(0.12, 0.60),
+                  radius: 0.75,
+                  colors: [
+                    Color(0xFF7DA2FF),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Orb 3 — center-bottom, human warmth (bottom-center)
+        Positioned.fill(
+          child: FadeTransition(
+            opacity: _amberOpacity,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: RadialGradient(
+                  center: FractionalOffset(0.50, 0.96),
+                  radius: 0.55,
+                  colors: [
+                    Color(0xFFF2B8A0),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -538,58 +608,52 @@ class _ProfileScreenState extends State<ProfileScreen>
         color: _surface.withOpacity(0.72),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: _cream.withOpacity(0.055),
+          color: _cream.withOpacity(0.08),
           width: 0.6,
         ),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Section header
-                Text(
-                  title,
-                  style: GoogleFonts.plusJakartaSans(
-                    color: _cream.withOpacity(0.90),
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: -0.1,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.jost(
-                    color: _sand.withOpacity(0.52),
-                    fontSize: 12.5,
-                    height: 1.50,
-                    letterSpacing: 0.1,
-                  ),
-                ),
-                // Hairline rule
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  child: Container(
-                    height: 0.4,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          _cream.withOpacity(0.07),
-                          Colors.transparent,
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                child,
-              ],
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Section header
+            Text(
+              title,
+              style: GoogleFonts.plusJakartaSans(
+                color: _cream.withOpacity(0.90),
+                fontSize: 15.5,
+                fontWeight: FontWeight.w500,
+                letterSpacing: -0.1,
+              ),
             ),
-          ),
+            const SizedBox(height: 5),
+            Text(
+              subtitle,
+              style: GoogleFonts.jost(
+                color: _sand.withOpacity(0.52),
+                fontSize: 12.5,
+                height: 1.50,
+                letterSpacing: 0.1,
+              ),
+            ),
+            // Hairline rule
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Container(
+                height: 0.4,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      _cream.withOpacity(0.07),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            child,
+          ],
         ),
       ),
     );
@@ -1067,27 +1131,21 @@ class _ProfileScreenState extends State<ProfileScreen>
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(999),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _surface.withOpacity(0.60),
-              border: Border.all(
-                color: _cream.withOpacity(0.07),
-                width: 0.6,
-              ),
-            ),
-            child: Icon(
-              icon,
-              size: 15,
-              color: _sand.withOpacity(0.72),
-            ),
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: _surface.withOpacity(0.70),
+          border: Border.all(
+            color: _cream.withOpacity(0.08),
+            width: 0.6,
           ),
+        ),
+        child: Icon(
+          icon,
+          size: 15,
+          color: _sand.withOpacity(0.72),
         ),
       ),
     );
@@ -1292,69 +1350,7 @@ class _SolActionButtonState extends State<_SolActionButton> {
 // _AtmospherePainter — identical to InboxScreen
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _AtmospherePainter extends CustomPainter {
-  final double t;
 
-  const _AtmospherePainter({required this.t});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = const Color(0xFF080A0E),
-    );
-
-    _drawOrb(
-      canvas,
-      center: Offset(
-        size.width * 0.85 + math.cos(t * math.pi) * 12,
-        size.height * 0.12 + math.sin(t * math.pi) * 8,
-      ),
-      radius: 220 + t * 40,
-      color: const Color(0xFFA78BFA),
-      opacity: 0.028 + t * 0.018,
-    );
-
-    _drawOrb(
-      canvas,
-      center: Offset(
-        size.width * 0.12 + math.sin(t * math.pi) * 10,
-        size.height * 0.60 + math.cos(t * math.pi) * 14,
-      ),
-      radius: 260 + (1 - t) * 50,
-      color: const Color(0xFF7DA2FF),
-      opacity: 0.018 + (1 - t) * 0.012,
-    );
-
-    _drawOrb(
-      canvas,
-      center: Offset(size.width * 0.50, size.height * 0.96),
-      radius: 180 + t * 30,
-      color: const Color(0xFFF2B8A0),
-      opacity: 0.012 + t * 0.008,
-    );
-  }
-
-  void _drawOrb(
-    Canvas canvas, {
-    required Offset center,
-    required double radius,
-    required Color color,
-    required double opacity,
-  }) {
-    final paint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          color.withOpacity(opacity),
-          color.withOpacity(0),
-        ],
-      ).createShader(Rect.fromCircle(center: center, radius: radius));
-    canvas.drawCircle(center, radius, paint);
-  }
-
-  @override
-  bool shouldRepaint(_AtmospherePainter old) => old.t != t;
-}
 
 extension on String {
   String ifEmpty(String fallback) => trim().isEmpty ? fallback : this;
