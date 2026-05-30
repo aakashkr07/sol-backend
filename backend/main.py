@@ -69,11 +69,6 @@ async def lifespan(app: FastAPI):
     """
     Everything in the 'before yield' block runs at startup.
     Everything in the 'after yield' block runs at shutdown.
-
-    Using lifespan instead of @app.on_event because:
-    - It's the modern FastAPI pattern (0.95+)
-    - It's cleaner and handles async properly
-    - It runs exactly once, not per-request
     """
 
     # ── STARTUP ────────────────────────────────────────────────────────────
@@ -104,8 +99,6 @@ async def lifespan(app: FastAPI):
         get_chroma_client()
         logger.info(f"ChromaDB ready at {settings.CHROMA_DB_PATH}")
     except Exception as e:
-        # ChromaDB failure is non-fatal at startup — app can run without memories
-        # (though memory features won't work until it's fixed)
         logger.error(f"ChromaDB initialization failed: {e}. Memory features disabled.")
 
     # 4. Load default character (validates the JSON is parseable)
@@ -134,6 +127,36 @@ async def lifespan(app: FastAPI):
         logger.critical(f"Failed to sync companion registry: {e}")
         sys.exit(1)
 
+    # 7. Start the Proactive Dispatch Worker loop in the background
+    worker_task = None
+    if settings.PROACTIVE_MESSAGES_ENABLED:
+        import asyncio
+        from core.proactive_engine import maybe_generate_for_user
+
+        async def run_worker_loop():
+            logger.info("Starting Sol Proactive Dispatch Worker...")
+            while True:
+                try:
+                    # Get list of all registered users in the database
+                    users = db.conn.execute("SELECT id FROM users").fetchall()
+                    for user in users:
+                        user_id = user["id"]
+                        # Scan pairs, evaluate quiet hours/inactivity, and generate proactive messages
+                        events = await maybe_generate_for_user(user_id, limit=1)
+                        if events:
+                            logger.info("Successfully generated and dispatched %d proactive notification events for user %s", len(events), user_id)
+                    # Poll every 10 minutes (600 seconds)
+                    await asyncio.sleep(600)
+                except asyncio.CancelledError:
+                    logger.info("Proactive worker loop cancelled")
+                    break
+                except Exception as exc:
+                    logger.error("Error in proactive worker loop: %s", exc, exc_info=True)
+                    await asyncio.sleep(60)
+
+        worker_task = asyncio.create_task(run_worker_loop())
+        logger.info("Proactive dispatch background worker task successfully spawned")
+
     logger.info("=" * 60)
     logger.info(f"Server ready at http://{settings.APP_HOST}:{settings.APP_PORT}")
     logger.info("=" * 60)
@@ -142,9 +165,18 @@ async def lifespan(app: FastAPI):
 
     # ── SHUTDOWN ───────────────────────────────────────────────────────────
     logger.info("Shutting down gracefully...")
+    
+    if worker_task:
+        logger.info("Cancelling proactive dispatch background worker...")
+        worker_task.cancel()
+        try:
+            await worker_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Proactive dispatch background worker stopped")
+
     db.close()
     logger.info("Database connections closed. Goodbye.")
-
 
 # ---------------------------------------------------------------------------
 # FastAPI Application

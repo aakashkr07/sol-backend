@@ -100,7 +100,7 @@ class Settings:
     # Default character loaded at startup
     DEFAULT_CHARACTER: str = os.getenv("DEFAULT_CHARACTER", "nova")
     FIREBASE_PROJECT_ID: str = os.getenv("FIREBASE_PROJECT_ID", "sol-mvp-4f7c1")
-    FIREBASE_SERVICE_ACCOUNT_PATH: str = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "")
+    FIREBASE_SERVICE_ACCOUNT_PATH: str = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "firebase_credential.json")
 
     # ── App / API ──────────────────────────────────────────────────────────
     APP_HOST: str = os.getenv("APP_HOST", "0.0.0.0")
