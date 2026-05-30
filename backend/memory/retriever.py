@@ -100,13 +100,22 @@ def retrieve_relevant_memories(
             })
             retrieved_ids.append(chroma_id)
 
+        def _calculate_rank(item: dict) -> float:
+            is_unresolved = str(item.get("emotion_tag") or "").lower() in {
+                "sad", "anxious", "grief", "anger", "lonely", "overwhelmed"
+            }
+            unresolved_bonus = 0.10 if is_unresolved else 0.0
+            
+            return (
+                item["similarity"] * 0.35
+                + item["emotional_weight"] * 0.30
+                + min(item["strength"], 3.0) / 3.0 * 0.15
+                + item["recency"] * 0.10
+                + unresolved_bonus
+            )
+
         memories.sort(
-            key=lambda item: (
-                item["similarity"] * 0.48
-                + item["emotional_weight"] * 0.22
-                + min(item["strength"], 2.5) / 2.5 * 0.18
-                + item["recency"] * 0.12
-            ),
+            key=_calculate_rank,
             reverse=True,
         )
 

@@ -175,10 +175,12 @@ async def chat(
         )
         raise HTTPException(status_code=503, detail="Your companion is having a moment. Try again in a few seconds.")
 
+    pair_state = db.get_pair_by_id(pair["id"]) or pair
     burst_plan = plan_burst_response(
         raw_text=reply,
         character=companion,
         user_message=request.message,
+        relationship_state=pair_state,
     )
     for burst in burst_plan.bursts:
         db.save_message(
@@ -190,6 +192,11 @@ async def chat(
             content=burst.text,
         )
         on_message_saved(pair["id"], "assistant", burst.text)
+
+    # Resolve active life event (Part 4)
+    active_event = db.get_latest_unresolved_life_event(pair["id"])
+    if active_event:
+        db.mark_life_event_resolved(active_event["id"])
 
     updated_pair = db.get_pair_by_id(pair["id"]) or pair
     total_messages = int(updated_pair.get("total_messages") or 0)
@@ -282,6 +289,7 @@ async def start_session(
         raw_text=opening_message,
         character=character,
         is_opening=True,
+        relationship_state=pair,
     )
     for burst in opening_plan.bursts:
         db.save_message(

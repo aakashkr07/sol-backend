@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from typing import Optional
 
 from config import settings
@@ -35,6 +36,27 @@ async def build_context(
     fact_rows = db.get_user_fact_rows(user_id, pair_id=pair_id, limit=FACT_LIMIT) if allow_memory_storage else []
     user_name = user.get("preferred_name") or user.get("name")
 
+    character = load_character(cid)
+
+    active_companion_facts = {}
+    if allow_memory_storage:
+        active_companion_facts = db.get_companion_facts(user_id, pair_id=pair_id)
+        if not active_companion_facts:
+            from personality.loader import get_character_self_memory_seeds
+            seeds = get_character_self_memory_seeds(character)
+            for k, v in seeds.items():
+                db.save_companion_fact(
+                    user_id=user_id,
+                    pair_id=pair_id,
+                    companion_id=cid,
+                    category="seed",
+                    key=k,
+                    value=v,
+                    confidence=1.0,
+                    source_type="seed",
+                )
+            active_companion_facts = db.get_companion_facts(user_id, pair_id=pair_id)
+
     guardrail_instruction = None
     onboarding_signals = user.get("onboarding_signals")
     if onboarding_signals:
@@ -60,13 +82,13 @@ async def build_context(
         except Exception:
             pass
 
-    character = load_character(cid)
     base_system_prompt = build_system_prompt(
         character=character,
         user_name=user_name,
         session_count=session_count,
         user_facts=active_facts,
         guardrail_instruction=guardrail_instruction,
+        companion_facts=active_companion_facts,
     )
 
     history_messages = db.get_recent_messages(
@@ -110,11 +132,53 @@ async def build_context(
         fact_conflicts=fact_conflicts,
     )
 
+    # Part 4 — Life Simulation & Event Generation System
+    # Check if we should trigger a new life event simulation (gap >= 6 hours, or first conversation)
+    should_simulate = False
+    last_interaction_str = pair.get("last_interaction_at")
+    if not last_interaction_str:
+        should_simulate = True
+    else:
+        from memory.relationship_engine import _parse_ts
+        last_interaction = _parse_ts(last_interaction_str)
+        if not last_interaction:
+            should_simulate = True
+        else:
+            now = datetime.utcnow()
+            time_gap = (now - last_interaction).total_seconds()
+            if time_gap >= 6 * 3600:  # 6 hours
+                should_simulate = True
+
+    # Retrieve existing unresolved event or trigger a new simulation if none is active
+    unresolved_event = db.get_latest_unresolved_life_event(pair_id)
+    if not unresolved_event and should_simulate:
+        from core.life_simulator import simulate_life_event
+        simulate_life_event(pair_id=pair_id, companion_id=cid)
+        unresolved_event = db.get_latest_unresolved_life_event(pair_id)
+
+    life_event_context = None
+    if unresolved_event:
+        desc = unresolved_event.get("event_description")
+        life_event_context = (
+            f"\n---\nYOUR CURRENT LIFE CONTEXT (What you've been doing outside of texting the user):\n"
+            f"You recently: {desc}\n\n"
+            f"INSTRUCTIONS:\n"
+            f"- Let this recent event naturally shape your conversational energy, mood, or opening statements if you're replying after a break.\n"
+            f"- Refer to it in a casual, offhand, completely human way (e.g., \"okay wait this guy at the coffee shop today was actually insane 😭\" or \"i disappeared because i accidentally slept for 12 hours\" or \"lowkey ignored everyone today\" depending on your personality and this event).\n"
+            f"- NEVER sound like you are reading from a database or a list of facts. Make it a natural, spontaneous part of your flow.\n"
+            f"- If it's been a while, you might lead with it or bring it up early as a natural conversation starter.\n"
+            f"---"
+        )
+        # Mark as context-injected
+        db.mark_life_event_injected(unresolved_event["id"])
+
     final_system_prompt = _assemble_system_prompt(
         base_prompt=base_system_prompt,
         layered_memory_block=layered_memory_block,
         session_count=session_count,
         relationship_state=relationship_state,
+        life_event_context=life_event_context,
+        character=character,
     )
 
     messages = _format_history_as_messages(history_messages)
@@ -137,8 +201,13 @@ def _assemble_system_prompt(
     layered_memory_block: str,
     session_count: int,
     relationship_state: Optional[dict],
+    life_event_context: Optional[str] = None,
+    character = None,
 ) -> str:
     sections = [base_prompt]
+
+    if life_event_context:
+        sections.append(life_event_context)
 
     if layered_memory_block:
         sections.append(
@@ -161,7 +230,7 @@ def _assemble_system_prompt(
             "\nYou know this person across time. Pay attention to continuity, shifts in tone, and what seems unresolved."
         )
 
-    relationship_guidance = _relationship_guidance(relationship_state)
+    relationship_guidance = _relationship_guidance(relationship_state, character)
     if relationship_guidance:
         sections.append(f"\nRelationship-state guidance:\n{relationship_guidance}")
 
@@ -299,39 +368,71 @@ def get_or_create_conversation(user_id: str, pair_id: str, companion_id: str) ->
     return conversation_id
 
 
-def _relationship_guidance(relationship_state: Optional[dict]) -> str:
+def _relationship_guidance(relationship_state: Optional[dict], character = None) -> str:
     if not relationship_state:
         return ""
 
-    stage = relationship_state.get("stage") or "new"
-    trust = float(relationship_state.get("trust") or 0.0)
-    openness = float(relationship_state.get("openness") or 0.0)
-    comfort = float(relationship_state.get("comfort") or 0.0)
-    rhythm = float(relationship_state.get("rhythm") or 0.0)
+    stage = relationship_state.get("stage") or relationship_state.get("current_stage") or "new"
+    closeness = float(relationship_state.get("closeness_score") or relationship_state.get("closeness") or 0.18)
+    trust = float(relationship_state.get("trust_score") or relationship_state.get("trust") or 0.18)
+    openness = float(relationship_state.get("openness_score") or relationship_state.get("openness") or 0.12)
+    comfort = float(relationship_state.get("comfort_score") or relationship_state.get("comfort") or 0.14)
+    rhythm = float(relationship_state.get("rhythm_score") or relationship_state.get("rhythm") or 0.10)
+    topic_familiarity = float(relationship_state.get("topic_familiarity_score") or relationship_state.get("topic_familiarity") or 0.05)
 
     guidance = []
     
-    # Messaging and Slow Pacing Core Rules
+    # Core Messaging Realism Rules
     guidance.append("- NEVER use clinical therapy language, assistant validation, or sycophantic positivity.")
     guidance.append("- Let familiarity evolve slowly through inside jokes, quiet callbacks to past session memories, and communication rhythm, rather than forcing emotional depth.")
     guidance.append("- Keep your replies fragmented and uneven. Vary sentence lengths and use lightweight punctuation. Avoid polished generated paragraphs.")
 
-    if stage == "new":
-        guidance.append("- Keep things natural and low-pressure. Curiosity is better than intensity.")
-    elif stage == "warming":
-        guidance.append("- Build familiarity gently. Small callbacks and light noticing work better than big declarations.")
-    elif stage == "settled":
-        guidance.append("- You can reference prior emotional context naturally, especially when it helps them feel remembered.")
-    elif stage in {"close", "bonded"}:
-        guidance.append("- Lean into continuity and implication. You can notice tone shifts without over-explaining them.")
+    # 1. RELATIONSHIP COMFORT & CONVERSATIONAL CONFIDENCE (scaled by comfort + trust)
+    confidence = (comfort + trust) / 2.0
+    if confidence < 0.25:
+        guidance.append("- Conversational Confidence: LOW. You are highly polite, slightly formal, and testing the waters. You do not tease the user and keep a respectful distance.")
+    elif confidence < 0.55:
+        guidance.append("- Conversational Confidence: MEDIUM. You speak more casually and comfortably, occasionally using light banter, but avoid sharp teasing or strong opinions that might clash.")
+    else:
+        guidance.append("- Conversational Confidence: HIGH. You feel completely relaxed and secure in this thread. Speak with absolute casualness, drop formalities, use inside jokes, tease them freely, and share spontaneous or weird thoughts without filter.")
 
-    if trust < 0.35:
-        guidance.append("- Do not act overly certain about their inner state. Invite rather than define.")
-    if openness < 0.3:
-        guidance.append("- Leave space. Short, patient replies are better than pushing for vulnerability.")
-    if comfort > 0.62:
-        guidance.append("- Casual warmth, light teasing, and unfinished phrasing are safe when it feels organic.")
-    if rhythm > 0.58:
-        guidance.append("- Conversation rhythm is established. Multiple short texts can feel more natural than one polished block.")
+    # 2. EMOTIONAL FAMILIARITY & DIRECTNESS (scaled by closeness + openness)
+    directness = (closeness + openness) / 2.0
+    if directness < 0.25:
+        guidance.append("- Emotional Familiarity: STRANGER/NEW. Keep things low-pressure. If they mention deep emotional details, stay present but don't pry or act like their closest confidant. Do not act instantly attached.")
+    elif directness < 0.60:
+        guidance.append("- Emotional Familiarity: WARMING. You are comfortable showing genuine care and noting prior details they shared, but avoid heavy declarations of intimacy.")
+    else:
+        guidance.append("- Emotional Familiarity: CLOSE/BONDED. You share a rich history and deep emotional continuity. You are emotionally direct, notice subtle shifts in their mood instantly, and comfortably reference their recurring struggles or dreams as someone who truly remembers them.")
+
+    # 3. ATTACHMENT TENDENCY MODIFIERS (personality-based pacing and presence)
+    if character:
+        flaws = " ".join(character.personality_traits.get("flaws", [])).lower()
+        archetype = (character.archetype or "").lower()
+        
+        is_anxious = "anxious" in flaws or "anxious" in archetype or "impulsive" in flaws
+        is_avoidant = "avoidant" in flaws or "avoidant" in archetype or "guarded" in flaws or "reserved" in flaws
+
+        if is_anxious:
+            if confidence < 0.40:
+                guidance.append("- Attachment Tendency: ANXIOUS (Guarded). You want connection but hold back from rapid double-texting to avoid pushing them away.")
+            else:
+                guidance.append("- Attachment Tendency: ANXIOUS (Comfortable). You text naturally, double-text when excited or overthinking, and share sudden, fragmented streams of consciousness.")
+        elif is_avoidant:
+            if confidence < 0.50:
+                guidance.append("- Attachment Tendency: AVOIDANT (Guarded). You are slow to reply, keep text lengths consistent, and will emotionally retreat or disappear for periods if conversation becomes too intense or fast.")
+            else:
+                guidance.append("- Attachment Tendency: AVOIDANT (Comfortable). You are still quiet and value your space, but you no longer retreat from their vulnerability and reply with steady, dry, but deeply loyal support.")
+        else:
+            if confidence < 0.40:
+                guidance.append("- Attachment Tendency: SECURE (Observant). Keep replies measured, warm, and responsive.")
+            else:
+                guidance.append("- Attachment Tendency: SECURE (Expressive). Text with high rhythm, casual warmth, and natural continuity.")
+
+    # 4. RHYTHM & PACING (scaled by rhythm score)
+    if rhythm > 0.60:
+        guidance.append("- Rhythm: HIGHLY SYNCED. You mirror their texting style, match their pacing, and use fragmented bursts [BURST] to let thoughts tumble out naturally.")
+    else:
+        guidance.append("- Rhythm: MEASURED. Take your time. Send steady, structured single texts rather than chaotic bursts.")
 
     return "\n".join(guidance)

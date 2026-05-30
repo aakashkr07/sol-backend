@@ -26,6 +26,14 @@ Return this shape exactly:
       "confidence": 0.0
     }
   ],
+  "companion_facts": [
+    {
+      "category": "preferences|routine|history|opinion|relation_to_other_bots|other",
+      "key": "snake_case_key",
+      "value": "fact value about the companion character revealed by them in their response",
+      "confidence": 0.0
+    }
+  ],
   "entities": [
     {
       "name": "Rahul",
@@ -76,11 +84,15 @@ Return this shape exactly:
 Rules:
 - Extract only information grounded in the conversation.
 - Facts should be durable things worth remembering, not momentary mood.
+- Companion facts should capture durable self-disclosed preferences, routines, opinions, or personal history revealed by the Companion (labeled as 'Companion:' in text) in their responses.
 - Entities should only include important people, places, organizations, concepts, or events.
 - Emotions should reflect the user, not the assistant.
 - Behavioral patterns should only be included when there is a meaningful signal, not a guess.
-- Episodic memories should capture emotionally or narratively meaningful moments.
-- Max 6 facts, 5 entities, 4 relationships, 4 emotions, 3 behavioral patterns, 4 episodic memories.
+- Episodic memories should capture emotionally or narratively meaningful moments. You MUST grade their 'importance' score strictly on a three-tier significance scale:
+  * 0.1 to 0.3 (Low Significance): Purely mundane, routine, transactional, or everyday factual occurrences (e.g. eating pasta, watching a movie, doing laundry, bought groceries, weather).
+  * 0.4 to 0.6 (Medium Significance): General life or narrative updates, constructive projects, or intellectual updates without deep distress (e.g. had a work meeting, planned a trip, worked on a song).
+  * 0.7 to 1.0 (High Significance): Deep emotional weight, personal vulnerabilities, confessions, rejections, crying, relationship fights, or major life changes (e.g. cried alone, fought with a partner, opened up about feeling lonely, got rejected, shared a deep childhood fear).
+- Max 6 facts, 6 companion_facts, 5 entities, 4 relationships, 4 emotions, 3 behavioral patterns, 4 episodic memories.
 - If a section has nothing useful, return an empty array or empty object."""
 
 
@@ -116,6 +128,7 @@ async def extract_and_save(user_id: str, pair_id: str, companion_id: str, conver
             )
 
         _save_facts(user_id, pair_id, companion_id, extracted.get("facts") or [], latest_user_message_id)
+        _save_companion_facts(user_id, pair_id, companion_id, extracted.get("companion_facts") or [], latest_user_message_id)
         entity_name_to_id = _save_entities(user_id, pair_id, companion_id, extracted.get("entities") or [])
         _save_relationships(user_id, pair_id, companion_id, entity_name_to_id, extracted.get("relationships") or [])
         _save_emotions(user_id, pair_id, companion_id, latest_user_message_id, extracted.get("emotions") or [])
@@ -219,6 +232,24 @@ def _save_facts(user_id: str, pair_id: str, companion_id: str, facts: list[dict]
 
         if fact["key"] in {"name", "preferred_name", "first_name"}:
             db.update_user_name(user_id, str(fact["value"]).strip())
+
+
+def _save_companion_facts(user_id: str, pair_id: str, companion_id: str, companion_facts: list[dict], source_message_id: Optional[int]):
+    for fact in companion_facts:
+        if not _is_valid_fact(fact):
+            continue
+
+        db.save_companion_fact(
+            user_id=user_id,
+            pair_id=pair_id,
+            companion_id=companion_id,
+            category=fact.get("category", "preferences"),
+            key=fact["key"],
+            value=str(fact["value"]).strip(),
+            confidence=_safe_float(fact.get("confidence"), default=0.8),
+            source_message_id=source_message_id,
+            source_type="extractor",
+        )
 
 
 def _save_entities(user_id: str, pair_id: str, companion_id: str, entities: list[dict]) -> dict[str, int]:

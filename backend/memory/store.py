@@ -743,6 +743,14 @@ class Database:
                 "is_outdated INTEGER DEFAULT 0",
                 "superseded_by_id INTEGER",
             ],
+            "companion_facts": [
+                "pair_id TEXT",
+                "companion_id TEXT",
+                "source_message_id INTEGER",
+                "source_type TEXT DEFAULT 'extracted'",
+                "is_outdated INTEGER DEFAULT 0",
+                "superseded_by_id INTEGER",
+            ],
             "entities": [
                 "pair_id TEXT",
                 "companion_id TEXT",
@@ -774,6 +782,15 @@ class Database:
                 "source_message_ids TEXT",
                 "conversation_id TEXT",
                 "archived INTEGER DEFAULT 0",
+            ],
+            "companion_life_events": [
+                "pair_id TEXT",
+                "companion_id TEXT",
+                "event_description TEXT",
+                "event_type TEXT",
+                "occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP",
+                "is_resolved INTEGER DEFAULT 0",
+                "context_injected INTEGER DEFAULT 0",
             ],
         }
 
@@ -1469,6 +1486,115 @@ class Database:
                 ORDER BY updated_at DESC
                 """,
                 (user_id, category),
+            ).fetchall()
+        return {row["fact_key"]: row["fact_value"] for row in rows}
+
+    def save_companion_fact(
+        self,
+        user_id: str,
+        pair_id: str,
+        companion_id: str,
+        category: str,
+        key: str,
+        value: str,
+        confidence: float = 1.0,
+        source_message_id: Optional[int] = None,
+        source_type: str = "extracted",
+    ) -> int:
+        now = _utcnow_iso()
+        current = self.conn.execute(
+            """
+            SELECT * FROM companion_facts
+            WHERE pair_id = ? AND fact_key = ? AND is_outdated = 0
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (pair_id, key),
+        ).fetchone()
+
+        if current:
+            if current["fact_value"] == value:
+                self.conn.execute(
+                    """
+                    UPDATE companion_facts
+                    SET category = ?,
+                        confidence = CASE
+                            WHEN ? > confidence THEN ?
+                            ELSE confidence
+                        END,
+                        source_message_id = COALESCE(?, source_message_id),
+                        source_type = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        category,
+                        confidence,
+                        confidence,
+                        source_message_id,
+                        source_type,
+                        now,
+                        current["id"],
+                    ),
+                )
+                return int(current["id"])
+
+            self.conn.execute(
+                "UPDATE companion_facts SET is_outdated = 1, updated_at = ? WHERE id = ?",
+                (now, current["id"]),
+            )
+
+        cursor = self.conn.execute(
+            """
+            INSERT INTO companion_facts
+                (user_id, pair_id, companion_id, category, fact_key, fact_value, confidence,
+                 source_message_id, source_type, created_at, updated_at, is_outdated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            """,
+            (
+                user_id,
+                pair_id,
+                companion_id,
+                category,
+                key,
+                value,
+                confidence,
+                source_message_id,
+                source_type,
+                now,
+                now,
+            ),
+        )
+        new_id = int(cursor.lastrowid)
+
+        if current:
+            self.conn.execute(
+                "UPDATE companion_facts SET superseded_by_id = ? WHERE id = ?",
+                (new_id, current["id"]),
+            )
+
+        return new_id
+
+    def get_companion_facts(self, user_id: str, pair_id: Optional[str] = None) -> dict[str, str]:
+        if pair_id:
+            rows = self.conn.execute(
+                """
+                SELECT fact_key, fact_value
+                FROM companion_facts
+                WHERE pair_id = ? AND is_outdated = 0
+                ORDER BY updated_at DESC
+                """,
+                (pair_id,),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT fact_key, fact_value
+                FROM companion_facts
+                WHERE user_id = ? AND is_outdated = 0
+                ORDER BY updated_at DESC
+                """,
+                (user_id,),
             ).fetchall()
         return {row["fact_key"]: row["fact_value"] for row in rows}
 
@@ -2396,10 +2522,52 @@ class Database:
             "messages": int(pair.get("total_messages") or 0),
         }
 
+    def save_companion_life_event(
+        self,
+        event_id: str,
+        pair_id: str,
+        companion_id: str,
+        event_description: str,
+        event_type: str,
+        is_resolved: int = 0,
+        context_injected: int = 0,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO companion_life_events (id, pair_id, companion_id, event_description, event_type, is_resolved, context_injected)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (event_id, pair_id, companion_id, event_description, event_type, is_resolved, context_injected),
+        )
+
+    def get_latest_unresolved_life_event(self, pair_id: str) -> Optional[dict]:
+        row = self.conn.execute(
+            """
+            SELECT * FROM companion_life_events
+            WHERE pair_id = ? AND is_resolved = 0
+            ORDER BY occurred_at DESC LIMIT 1
+            """,
+            (pair_id,),
+        ).fetchone()
+        return self._row_to_dict(row)
+
+    def mark_life_event_injected(self, event_id: str) -> None:
+        self.conn.execute(
+            "UPDATE companion_life_events SET context_injected = 1 WHERE id = ?",
+            (event_id,),
+        )
+
+    def mark_life_event_resolved(self, event_id: str) -> None:
+        self.conn.execute(
+            "UPDATE companion_life_events SET is_resolved = 1, context_injected = 1 WHERE id = ?",
+            (event_id,),
+        )
+
     def reset_pair_memory(self, pair_id: str) -> dict[str, int]:
         counts = {}
         for table_name in (
             "user_facts",
+            "companion_facts",
             "entities",
             "entity_relationships",
             "emotional_events",
@@ -2407,6 +2575,7 @@ class Database:
             "narrative_summaries",
             "memory_index",
             "proactive_events",
+            "companion_life_events",
         ):
             cursor = self.conn.execute(
                 f"DELETE FROM {table_name} WHERE pair_id = ?",

@@ -35,6 +35,7 @@ backend/.ruff_cache/
 backend/.coverage
 backend/.coverage.*
 backend/htmlcov/
+backend/tests/
 
 # Flutter / Dart
 frontend/companion_app/.dart_tool/

@@ -230,6 +230,27 @@ CREATE TABLE IF NOT EXISTS user_facts (
 
 
 -- =============================================================================
+-- COMPANION FACTS (SELF MEMORY)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS companion_facts (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    pair_id               TEXT NOT NULL REFERENCES relationship_pairs(id) ON DELETE CASCADE,
+    companion_id          TEXT NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+    category              TEXT NOT NULL,
+    fact_key              TEXT NOT NULL,
+    fact_value            TEXT NOT NULL,
+    confidence            REAL DEFAULT 1.0,
+    source_message_id     INTEGER REFERENCES messages(id),
+    source_type           TEXT DEFAULT 'extracted',
+    created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    is_outdated           INTEGER DEFAULT 0,
+    superseded_by_id      INTEGER REFERENCES companion_facts(id)
+);
+
+
+-- =============================================================================
 -- ENTITIES
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS entities (
@@ -355,6 +376,21 @@ CREATE TABLE IF NOT EXISTS memory_index (
 
 
 -- =============================================================================
+-- COMPANION LIFE EVENTS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS companion_life_events (
+    id                    TEXT PRIMARY KEY,
+    pair_id               TEXT NOT NULL REFERENCES relationship_pairs(id) ON DELETE CASCADE,
+    companion_id          TEXT NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+    event_description     TEXT NOT NULL,
+    event_type            TEXT NOT NULL,
+    occurred_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+    is_resolved           INTEGER DEFAULT 0,
+    context_injected      INTEGER DEFAULT 0
+);
+
+
+-- =============================================================================
 -- INDEXES
 -- =============================================================================
 DROP INDEX IF EXISTS idx_user_facts_active_unique;
@@ -391,6 +427,16 @@ CREATE INDEX IF NOT EXISTS idx_facts_category
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pair_facts_active_unique
     ON user_facts(pair_id, fact_key)
+    WHERE is_outdated = 0;
+
+CREATE INDEX IF NOT EXISTS idx_companion_facts_pair_key
+    ON companion_facts(pair_id, fact_key, is_outdated);
+
+CREATE INDEX IF NOT EXISTS idx_companion_facts_category
+    ON companion_facts(pair_id, category, is_outdated);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pair_companion_facts_active_unique
+    ON companion_facts(pair_id, fact_key)
     WHERE is_outdated = 0;
 
 CREATE INDEX IF NOT EXISTS idx_entities_pair_name

@@ -235,7 +235,12 @@ async def _generate_proactive_event(
         messages=[*messages, {"role": "user", "content": prompt}],
         system_prompt=system_prompt,
     )
-    burst_plan = plan_burst_response(raw_text=reply, character=companion, is_opening=True)
+    burst_plan = plan_burst_response(
+        raw_text=reply,
+        character=companion,
+        is_opening=True,
+        relationship_state=pair,
+    )
 
     for burst in burst_plan.bursts:
         db.save_message(
@@ -442,8 +447,10 @@ def _build_proactive_style(companion, pair: dict) -> ProactiveStyle:
     emotional_instruction = profile.get("emotional_instruction") or _default_emotional_instruction(archetype, flaws, humor)
     gentle_instruction = profile.get("gentle_instruction") or _default_gentle_instruction(energy, humor, archetype)
     notification_templates = profile.get("notification_templates") or _default_notification_templates(companion.name, humor, energy)
-    notification_mode = profile.get("notification_mode") or _default_notification_mode(humor, energy, rhythm, archetype)
     double_text_likelihood = float(profile.get("double_text_likelihood") or _default_double_text_likelihood(rhythm, energy))
+    # Scale double-texting likelihood dynamically as relationship comfort evolves (Part 5)
+    comfort = float(pair.get("comfort_score") or 0.14)
+    double_text_likelihood *= (0.5 + comfort * 0.5)
     preferred_opening_device = profile.get("preferred_opening_device") or _default_opening_device(
         archetype,
         energy,
