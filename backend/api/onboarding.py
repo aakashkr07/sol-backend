@@ -36,41 +36,41 @@ async def complete_onboarding(
     payload: OnboardingCompleteRequest,
     identity: AuthenticatedIdentity = Depends(get_authenticated_identity),
 ):
+    user_id = identity.uid
+    logger.info("Completing onboarding for user: %s", user_id)
     try:
-        user_id = identity.uid
-        logger.info("Completing onboarding for user: %s", user_id)
-        
-        # 1. Ensure user row exists
-        db.get_or_create_user(user_id)
-        
-        # 2. Save onboarding signals + preferred name
-        signals = {
-            "connection_style": payload.connection_style,
-            "presence_frequency": payload.presence_frequency,
-            "depth_preference": payload.depth_preference,
-            "behavioral_guardrail": payload.behavioral_guardrail,
-        }
-        db.save_onboarding_signals(user_id, payload.preferred_name, signals, onboarding_completed=1)
-        
-        # 3. Resolve companion matching using seeded chemistry
-        pair = resolve_or_assign_primary_pair(user_id=user_id, make_primary=True)
-        
-        # 4. Apply cadence to the new pair
-        cadence_map = {
-            "every_now_and_then": "light",
-            "when_it_matters": "light",
-            "fairly_often": "balanced",
-            "always_around": "frequent",
-        }
-        cadence = cadence_map.get(payload.presence_frequency, "balanced")
-        db.update_pair_proactive_settings(pair["id"], proactive_cadence=cadence)
-        
-        # 5. Load character to construct response payload
-        character = load_character(pair["companion_id"])
-        discovery = character.discovery or {}
-        humanizing_details = discovery.get("humanizing_details") or []
-        opening_line = build_opening_line(character, session_count=1)
-        
+        with db.transaction():
+            # 1. Ensure user row exists
+            db.get_or_create_user(user_id)
+            
+            # 2. Save onboarding signals + preferred name
+            signals = {
+                "connection_style": payload.connection_style,
+                "presence_frequency": payload.presence_frequency,
+                "depth_preference": payload.depth_preference,
+                "behavioral_guardrail": payload.behavioral_guardrail,
+            }
+            db.save_onboarding_signals(user_id, payload.preferred_name, signals, onboarding_completed=1)
+            
+            # 3. Resolve companion matching using seeded chemistry
+            pair = resolve_or_assign_primary_pair(user_id=user_id, make_primary=True)
+            
+            # 4. Apply cadence to the new pair
+            cadence_map = {
+                "every_now_and_then": "light",
+                "when_it_matters": "light",
+                "fairly_often": "balanced",
+                "always_around": "frequent",
+            }
+            cadence = cadence_map.get(payload.presence_frequency, "balanced")
+            db.update_pair_proactive_settings(pair["id"], proactive_cadence=cadence)
+            
+            # 5. Load character to construct response payload
+            character = load_character(pair["companion_id"])
+            discovery = character.discovery or {}
+            humanizing_details = discovery.get("humanizing_details") or []
+            opening_line = build_opening_line(character, session_count=1)
+            
         return {
             "companion_id": character.id,
             "companion_name": character.name,
@@ -81,5 +81,19 @@ async def complete_onboarding(
             "pair_id": pair["id"],
         }
     except Exception as e:
-        logger.exception("Failed to complete onboarding for user %s", identity.uid)
+        logger.exception("Failed to complete onboarding for user %s", user_id)
+        try:
+            db.log_system_event(
+                "onboarding_rollback",
+                "error",
+                user_id=user_id,
+                payload={
+                    "error": str(e),
+                    "action": "rollback",
+                    "preferred_name": payload.preferred_name,
+                    "connection_style": payload.connection_style,
+                }
+            )
+        except Exception as log_err:
+            logger.error("Failed to log onboarding rollback to system_events: %s", log_err)
         raise HTTPException(status_code=500, detail=f"Failed to complete onboarding: {str(e)}")

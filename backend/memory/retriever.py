@@ -52,6 +52,8 @@ def retrieve_relevant_memories(
     n = n_results or settings.MEMORY_RETRIEVAL_COUNT
     threshold = min_similarity or settings.MEMORY_SIMILARITY_THRESHOLD
 
+    logger.info("ChromaDB Query for semantic retrieval: '%s'", query_text)
+
     try:
         collection = get_chroma_collection(pair_id=pair_id, user_id=user_id)
         count = collection.count()

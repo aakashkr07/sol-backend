@@ -22,6 +22,7 @@ async def build_context(
     current_message: str,
     conversation_id: Optional[str] = None,
     character_id: Optional[str] = None,
+    is_proactive_generation: bool = False,
 ) -> tuple[str, list[dict]]:
     user = db.get_user(user_id)
     if not user:
@@ -97,7 +98,12 @@ async def build_context(
         limit=settings.RECENT_HISTORY_TURNS,
         conversation_id=conversation_id,
     )
-    memory_query = _build_memory_query(current_message, history_messages)
+    memory_query = _build_memory_query(
+        current_message,
+        history_messages,
+        is_proactive_generation=is_proactive_generation,
+        pair_id=pair_id,
+    )
     episodic_memories = retrieve_relevant_memories(
         pair_id=pair_id,
         user_id=user_id,
@@ -341,7 +347,40 @@ def _build_layered_memory_block(
     return "\n\n".join(sections)
 
 
-def _build_memory_query(current_message: str, recent_messages: list[dict]) -> str:
+def _build_memory_query(
+    current_message: str,
+    recent_messages: list[dict],
+    is_proactive_generation: bool = False,
+    pair_id: Optional[str] = None,
+) -> str:
+    if is_proactive_generation and pair_id:
+        try:
+            emotions = db.get_recent_emotional_events(user_id=None, pair_id=pair_id, limit=10)
+            high_intensity_events = [e for e in emotions if float(e.get("intensity") or 0.0) >= 0.6]
+            if high_intensity_events:
+                dominant_event = sorted(
+                    high_intensity_events, 
+                    key=lambda x: float(x.get("intensity") or 0.0), 
+                    reverse=True
+                )[0]
+                emotion = dominant_event.get("emotion") or ""
+                trigger = dominant_event.get("trigger_entity") or dominant_event.get("trigger_topic") or ""
+                if trigger:
+                    query = f"{emotion} {trigger}"
+                else:
+                    query = emotion
+                return query[:600]
+        except Exception as exc:
+            logger.error("Error retrieving emotional trigger for memory query: %s", exc)
+
+        parts = []
+        for message in recent_messages:
+            if message.get("role") == "user":
+                parts.append(message.get("content") or "")
+        user_parts = parts[-3:]
+        query = " ".join(user_parts)
+        return query[:600]
+
     parts = []
     for message in recent_messages[-3:]:
         if message.get("role") == "user":

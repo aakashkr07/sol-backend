@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import uuid
@@ -98,16 +99,29 @@ def decide_proactive_outreach(
 
 
 async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = False) -> list[dict]:
-    user = db.get_user(user_id)
+    loop = asyncio.get_running_loop()
+    user = await loop.run_in_executor(None, db.get_user, user_id)
     if not user:
         return []
 
-    preferences = db.get_or_create_user_preferences(user_id)
+    preferences = await loop.run_in_executor(None, db.get_or_create_user_preferences, user_id)
     if not settings.PROACTIVE_MESSAGES_ENABLED and not force:
         return []
 
     created: list[dict] = []
-    for pair in _sorted_pairs_for_outreach(user_id):
+    
+    # DB read for listing pairs:
+    pairs = await loop.run_in_executor(None, db.list_pairs_for_user, user_id)
+    sorted_pairs = sorted(
+        pairs,
+        key=lambda pair: (
+            float(pair.get("trust_score") or 0.0) + float(pair.get("closeness_score") or 0.0),
+            pair.get("last_user_message_at") or "",
+        ),
+        reverse=True,
+    )
+
+    for pair in sorted_pairs:
         if len(created) >= limit:
             break
         companion = load_character(pair["companion_id"])
@@ -123,9 +137,11 @@ async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = Fa
             int(preferences.get("quiet_hours_end") or settings.PROACTIVE_DEFAULT_QUIET_HOURS_END),
         )
         inactivity_hours = _inactivity_hours(pair.get("last_user_message_at") or pair.get("last_interaction_at"))
-        emotional_callback_ready = _emotional_callback_ready(pair["user_id"], pair["id"])
+        
+        # Offload sync DB reads inside _emotional_callback_ready and pending events check:
+        emotional_callback_ready = await loop.run_in_executor(None, _emotional_callback_ready, pair["user_id"], pair["id"])
         cooldown_active = _cooldown_active(pair.get("proactive_cooldown_until"))
-        has_pending = bool(db.list_pending_proactive_events(user_id, pair_id=pair["id"]))
+        has_pending = bool(await loop.run_in_executor(None, db.list_pending_proactive_events, user_id, pair["id"]))
 
         decision = decide_proactive_outreach(
             proactive_enabled=bool(int(preferences.get("allow_proactive_messages") or 0)) or force,
@@ -156,12 +172,15 @@ async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = Fa
                 allow_push=bool(int(preferences.get("allow_push_notifications") or 0)),
             )
         except Exception as exc:
-            db.log_system_event(
-                "proactive_generation_failed",
-                "error",
-                user_id=user_id,
-                pair_id=pair["id"],
-                payload={"error": str(exc), "reason": decision.reason},
+            await loop.run_in_executor(
+                None,
+                lambda: db.log_system_event(
+                    "proactive_generation_failed",
+                    "error",
+                    user_id=user_id,
+                    pair_id=pair["id"],
+                    payload={"error": str(exc), "reason": decision.reason},
+                )
             )
             logger.error("Proactive generation failed for pair %s: %s", pair["id"], exc, exc_info=True)
             continue
@@ -172,11 +191,12 @@ async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = Fa
 
 
 async def pull_pending_events(user_id: str, pair_id: Optional[str] = None) -> list[dict]:
-    user = db.get_user(user_id)
+    loop = asyncio.get_running_loop()
+    user = await loop.run_in_executor(None, db.get_user, user_id)
     if user:
         await maybe_generate_for_user(user_id, limit=1)
 
-    rows = db.list_pending_proactive_events(user_id, pair_id=pair_id)
+    rows = await loop.run_in_executor(None, db.list_pending_proactive_events, user_id, pair_id)
     events = []
     delivered_ids = []
     for row in rows:
@@ -188,7 +208,8 @@ async def pull_pending_events(user_id: str, pair_id: Optional[str] = None) -> li
         events.append(row)
         delivered_ids.append(row["id"])
 
-    db.mark_proactive_events_delivered(delivered_ids)
+    if delivered_ids:
+        await loop.run_in_executor(None, db.mark_proactive_events_delivered, delivered_ids)
     return events
 
 
@@ -201,11 +222,36 @@ async def _generate_proactive_event(
     style: ProactiveStyle,
     allow_push: bool,
 ) -> Optional[dict]:
+    loop = asyncio.get_running_loop()
     pair_id = pair["id"]
-    conversation_id = db.get_current_conversation(user["id"], pair_id=pair_id)
-    if not conversation_id:
-        conversation_id = db.create_conversation(user["id"], pair_id, pair["companion_id"])
-        on_session_started(pair_id)
+    
+    from core.concurrency import get_pair_lock, pair_lock_context
+    lock = await get_pair_lock(pair_id)
+    if lock.locked():
+        logger.info("Pair lock for %s is currently held by a live user request. Aborting proactive outreach.", pair_id)
+        return None
+
+    # Offload sync database calls inside transaction batch:
+    def get_or_create_conversation_proactive(uid, pid, comp_id):
+        with db.transaction():
+            cid = db.get_current_conversation(uid, pid)
+            if not cid:
+                cid = db.create_conversation(uid, pid, comp_id)
+                on_session_started(pid)
+            return cid
+
+    try:
+        async with pair_lock_context(pair_id, timeout=5.0):
+            conversation_id = await loop.run_in_executor(
+                None,
+                get_or_create_conversation_proactive,
+                user["id"],
+                pair_id,
+                pair["companion_id"],
+            )
+    except TimeoutError:
+        logger.info("Pair lock for %s held by user action. Aborting proactive outreach.", pair_id)
+        return None
 
     system_prompt, messages = await build_context(
         user_id=user["id"],
@@ -213,6 +259,7 @@ async def _generate_proactive_event(
         current_message=_proactive_context_instruction(decision.reason),
         conversation_id=conversation_id,
         character_id=pair["companion_id"],
+        is_proactive_generation=True,
     )
     prompt = (
         "You are reaching out first after some silence.\n"
@@ -242,16 +289,39 @@ async def _generate_proactive_event(
         relationship_state=pair,
     )
 
-    for burst in burst_plan.bursts:
-        db.save_message(
-            conversation_id=conversation_id,
-            user_id=user["id"],
-            pair_id=pair_id,
-            companion_id=pair["companion_id"],
-            role="assistant",
-            content=burst.text,
-        )
-        on_message_saved(pair_id, "assistant", burst.text)
+    # Batch all message saves and their respective relationship engine updates:
+    def save_all_bursts(cid, uid, pid, comp_id, bursts):
+        with db.transaction():
+            for burst in bursts:
+                db.save_message(
+                    conversation_id=cid,
+                    user_id=uid,
+                    pair_id=pid,
+                    companion_id=comp_id,
+                    role="assistant",
+                    content=burst.text,
+                )
+                on_message_saved(pid, "assistant", burst.text)
+
+    # Double check lock state right before committing bursts to SQLite
+    if lock.locked():
+        logger.info("Pair lock for %s was acquired by user action during LLM generation. Aborting proactive save.", pair_id)
+        return None
+
+    try:
+        async with pair_lock_context(pair_id, timeout=5.0):
+            await loop.run_in_executor(
+                None,
+                save_all_bursts,
+                conversation_id,
+                user["id"],
+                pair_id,
+                pair["companion_id"],
+                burst_plan.bursts,
+            )
+    except TimeoutError:
+        logger.info("Pair lock for %s was acquired by user. Aborting proactive save.", pair_id)
+        return None
 
     event_id = str(uuid.uuid4())
     cooldown_until = (datetime.utcnow() + timedelta(hours=decision.cooldown_hours)).isoformat(timespec="milliseconds")
@@ -279,11 +349,14 @@ async def _generate_proactive_event(
             burst_plan=burst_plan,
             fallback=reply,
         )
-        notification_status = _send_push_hooks(
-            user_id=user["id"],
-            title=companion.name,
-            body=notification_body,
-            data={
+        # Offload sync FCM network calls + DB calls:
+        notification_status = await loop.run_in_executor(
+            None,
+            _send_push_hooks,
+            user["id"],
+            companion.name,
+            notification_body,
+            {
                 "pair_id": pair_id,
                 "companion_id": pair["companion_id"],
                 "event_id": event_id,
@@ -291,18 +364,22 @@ async def _generate_proactive_event(
             },
         )
 
-    db.log_proactive_event(
-        event_id=event_id,
-        user_id=user["id"],
-        pair_id=pair_id,
-        companion_id=pair["companion_id"],
-        conversation_id=conversation_id,
-        reason=decision.reason,
-        message_text=burst_plan.combined_text,
-        payload_json=json.dumps(payload),
-        notification_status=notification_status,
-    )
-    db.touch_pair_proactive(pair_id, decision.reason, cooldown_until=cooldown_until)
+    # Offload sync database logging and touch calls:
+    def log_and_touch():
+        db.log_proactive_event(
+            event_id=event_id,
+            user_id=user["id"],
+            pair_id=pair_id,
+            companion_id=pair["companion_id"],
+            conversation_id=conversation_id,
+            reason=decision.reason,
+            message_text=burst_plan.combined_text,
+            payload_json=json.dumps(payload),
+            notification_status=notification_status,
+        )
+        db.touch_pair_proactive(pair_id, decision.reason, cooldown_until=cooldown_until)
+
+    await loop.run_in_executor(None, log_and_touch)
     return {
         "id": event_id,
         "pair_id": pair_id,

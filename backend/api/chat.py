@@ -104,123 +104,172 @@ async def chat(
     _ensure_request_matches_auth(request.user_id, identity)
 
     pair = _resolve_pair(identity, requested_character_id=request.character_id)
-    companion = load_character(pair["companion_id"])
-    user = db.get_or_create_user(
-        user_id=identity.uid,
-        character_id=pair["companion_id"],
-        display_name=identity.display_name,
-        email=identity.email,
-    )
-
-    conversation_id = request.conversation_id
-    if conversation_id:
-        conversation = db.get_conversation(conversation_id)
-        if not conversation or conversation["user_id"] != identity.uid or conversation["pair_id"] != pair["id"]:
-            raise HTTPException(status_code=404, detail="Conversation not found for this relationship")
-    else:
-        existing_conversation_id = db.get_current_conversation(identity.uid, pair_id=pair["id"])
-        conversation_id = get_or_create_conversation(
+    from core.concurrency import pair_lock_context
+    async with pair_lock_context(pair["id"]):
+        companion = load_character(pair["companion_id"])
+        user = db.get_or_create_user(
             user_id=identity.uid,
-            pair_id=pair["id"],
-            companion_id=pair["companion_id"],
-        )
-        if not existing_conversation_id:
-            on_session_started(pair["id"])
-        logger.info("New session started for pair %s: %s", pair["id"], conversation_id)
-
-    db.save_message(
-        conversation_id=conversation_id,
-        user_id=identity.uid,
-        pair_id=pair["id"],
-        companion_id=pair["companion_id"],
-        role="user",
-        content=request.message,
-        client_sent_at=request.client_sent_at,
-        draft_duration_ms=request.draft_duration_ms,
-        reply_latency_ms=request.reply_latency_ms,
-    )
-    on_message_saved(pair["id"], "user", request.message)
-
-    try:
-        system_prompt, messages = await build_context(
-            user_id=identity.uid,
-            pair_id=pair["id"],
-            current_message=request.message,
-            conversation_id=conversation_id,
             character_id=pair["companion_id"],
+            display_name=identity.display_name,
+            email=identity.email,
         )
-    except Exception as exc:
-        logger.error("Context building failed for pair %s: %s", pair["id"], exc, exc_info=True)
-        db.log_system_event(
-            "context_build_failed",
-            "error",
-            user_id=identity.uid,
-            pair_id=pair["id"],
+
+        conversation_id = request.conversation_id
+        if conversation_id:
+            conversation = db.get_conversation(conversation_id)
+            if not conversation or conversation["user_id"] != identity.uid or conversation["pair_id"] != pair["id"]:
+                raise HTTPException(status_code=404, detail="Conversation not found for this relationship")
+        else:
+            existing_conversation_id = db.get_current_conversation(identity.uid, pair_id=pair["id"])
+            try:
+                with db.transaction():
+                    conversation_id = get_or_create_conversation(
+                        user_id=identity.uid,
+                        pair_id=pair["id"],
+                        companion_id=pair["companion_id"],
+                    )
+                    if not existing_conversation_id:
+                        on_session_started(pair["id"])
+                    logger.info("New session started for pair %s: %s", pair["id"], conversation_id)
+            except Exception as e:
+                logger.exception("Failed to start session for user %s, pair %s", identity.uid, pair["id"])
+                try:
+                    db.log_system_event(
+                        "session_initiation_rollback",
+                        "error",
+                        user_id=identity.uid,
+                        pair_id=pair["id"],
+                        payload={"error": str(e), "action": "rollback"}
+                    )
+                except Exception as log_err:
+                    logger.error("Failed to log session_initiation_rollback: %s", log_err)
+                raise HTTPException(status_code=500, detail="Failed to initialize chat session. Please try again.")
+
+        try:
+            with db.transaction():
+                db.save_message(
+                    conversation_id=conversation_id,
+                    user_id=identity.uid,
+                    pair_id=pair["id"],
+                    companion_id=pair["companion_id"],
+                    role="user",
+                    content=request.message,
+                    client_sent_at=request.client_sent_at,
+                    draft_duration_ms=request.draft_duration_ms,
+                    reply_latency_ms=request.reply_latency_ms,
+                )
+                on_message_saved(pair["id"], "user", request.message)
+        except Exception as e:
+            logger.exception("Failed to save user message for user %s, pair %s", identity.uid, pair["id"])
+            try:
+                db.log_system_event(
+                    "user_message_save_rollback",
+                    "error",
+                    user_id=identity.uid,
+                    pair_id=pair["id"],
+                    conversation_id=conversation_id,
+                    payload={"error": str(e), "action": "rollback", "message_length": len(request.message)}
+                )
+            except Exception as log_err:
+                logger.error("Failed to log user_message_save_rollback: %s", log_err)
+            raise HTTPException(status_code=500, detail="Failed to save message. Please try again.")
+
+        try:
+            system_prompt, messages = await build_context(
+                user_id=identity.uid,
+                pair_id=pair["id"],
+                current_message=request.message,
+                conversation_id=conversation_id,
+                character_id=pair["companion_id"],
+            )
+        except Exception as exc:
+            logger.error("Context building failed for pair %s: %s", pair["id"], exc, exc_info=True)
+            db.log_system_event(
+                "context_build_failed",
+                "error",
+                user_id=identity.uid,
+                pair_id=pair["id"],
+                conversation_id=conversation_id,
+                payload={"error": str(exc)},
+            )
+            raise HTTPException(status_code=500, detail="Failed to build conversation context. Please try again.")
+
+        try:
+            reply = await generate_reply(messages=messages, system_prompt=system_prompt)
+        except LLMError as exc:
+            logger.error("LLM generation failed for pair %s: %s", pair["id"], exc)
+            db.log_system_event(
+                "llm_generation_failed",
+                "error",
+                user_id=identity.uid,
+                pair_id=pair["id"],
+                conversation_id=conversation_id,
+                payload={"error": str(exc)},
+            )
+            raise HTTPException(status_code=503, detail="Your companion is having a moment. Try again in a few seconds.")
+
+        pair_state = db.get_pair_by_id(pair["id"]) or pair
+        burst_plan = plan_burst_response(
+            raw_text=reply,
+            character=companion,
+            user_message=request.message,
+            relationship_state=pair_state,
+        )
+        try:
+            with db.transaction():
+                for burst in burst_plan.bursts:
+                    db.save_message(
+                        conversation_id=conversation_id,
+                        user_id=identity.uid,
+                        pair_id=pair["id"],
+                        companion_id=pair["companion_id"],
+                        role="assistant",
+                        content=burst.text,
+                    )
+                    on_message_saved(pair["id"], "assistant", burst.text)
+
+                # Resolve active life event (Part 4)
+                active_event = db.get_latest_unresolved_life_event(pair["id"])
+                if active_event:
+                    db.mark_life_event_resolved(active_event["id"])
+        except Exception as e:
+            logger.exception("Failed to save assistant bursts for user %s, pair %s", identity.uid, pair["id"])
+            try:
+                db.log_system_event(
+                    "assistant_message_save_rollback",
+                    "error",
+                    user_id=identity.uid,
+                    pair_id=pair["id"],
+                    conversation_id=conversation_id,
+                    payload={"error": str(e), "action": "rollback", "burst_count": len(burst_plan.bursts)}
+                )
+            except Exception as log_err:
+                logger.error("Failed to log assistant_message_save_rollback: %s", log_err)
+            raise HTTPException(status_code=500, detail="Failed to complete response. Please try again.")
+
+        updated_pair = db.get_pair_by_id(pair["id"]) or pair
+        total_messages = int(updated_pair.get("total_messages") or 0)
+        should_extract = total_messages % settings.MEMORY_EXTRACTION_EVERY_N_TURNS == 0
+        if should_extract:
+            background_tasks.add_task(
+                extract_and_save,
+                user_id=identity.uid,
+                pair_id=pair["id"],
+                companion_id=pair["companion_id"],
+                conversation_id=conversation_id,
+            )
+
+        mem_count = get_memory_count(pair_id=pair["id"], user_id=identity.uid)
+
+        return ChatResponse(
+            reply=burst_plan.combined_text,
+            bursts=[_burst_payload(burst) for burst in burst_plan.bursts],
             conversation_id=conversation_id,
-            payload={"error": str(exc)},
-        )
-        raise HTTPException(status_code=500, detail="Failed to build conversation context. Please try again.")
-
-    try:
-        reply = await generate_reply(messages=messages, system_prompt=system_prompt)
-    except LLMError as exc:
-        logger.error("LLM generation failed for pair %s: %s", pair["id"], exc)
-        db.log_system_event(
-            "llm_generation_failed",
-            "error",
-            user_id=identity.uid,
+            memory_count=mem_count,
             pair_id=pair["id"],
-            conversation_id=conversation_id,
-            payload={"error": str(exc)},
+            companion_id=companion.id,
+            companion_name=companion.name,
         )
-        raise HTTPException(status_code=503, detail="Your companion is having a moment. Try again in a few seconds.")
-
-    pair_state = db.get_pair_by_id(pair["id"]) or pair
-    burst_plan = plan_burst_response(
-        raw_text=reply,
-        character=companion,
-        user_message=request.message,
-        relationship_state=pair_state,
-    )
-    for burst in burst_plan.bursts:
-        db.save_message(
-            conversation_id=conversation_id,
-            user_id=identity.uid,
-            pair_id=pair["id"],
-            companion_id=pair["companion_id"],
-            role="assistant",
-            content=burst.text,
-        )
-        on_message_saved(pair["id"], "assistant", burst.text)
-
-    # Resolve active life event (Part 4)
-    active_event = db.get_latest_unresolved_life_event(pair["id"])
-    if active_event:
-        db.mark_life_event_resolved(active_event["id"])
-
-    updated_pair = db.get_pair_by_id(pair["id"]) or pair
-    total_messages = int(updated_pair.get("total_messages") or 0)
-    should_extract = total_messages % settings.MEMORY_EXTRACTION_EVERY_N_TURNS == 0
-    if should_extract:
-        background_tasks.add_task(
-            extract_and_save,
-            user_id=identity.uid,
-            pair_id=pair["id"],
-            companion_id=pair["companion_id"],
-            conversation_id=conversation_id,
-        )
-
-    mem_count = get_memory_count(pair_id=pair["id"], user_id=identity.uid)
-
-    return ChatResponse(
-        reply=burst_plan.combined_text,
-        bursts=[_burst_payload(burst) for burst in burst_plan.bursts],
-        conversation_id=conversation_id,
-        memory_count=mem_count,
-        pair_id=pair["id"],
-        companion_id=companion.id,
-        companion_name=companion.name,
-    )
 
 
 @router.post("/session/start", response_model=SessionStartResponse)
@@ -250,8 +299,9 @@ async def start_session(
             user_id=identity.uid,
             pair_id=pair["id"],
             conversation_id=existing_conversation_id,
-            limit=settings.RECENT_HISTORY_TURNS,
+            limit=1000,
         )
+        history_messages.reverse()
         pair = db.get_pair_by_id(pair["id"]) or pair
         return SessionStartResponse(
             conversation_id=existing_conversation_id,
@@ -277,30 +327,45 @@ async def start_session(
             ],
         )
 
-    conversation_id = db.create_conversation(
-        user_id=identity.uid,
-        pair_id=pair["id"],
-        companion_id=pair["companion_id"],
-    )
-    on_session_started(pair["id"])
-    pair = db.get_pair_by_id(pair["id"]) or pair
-    opening_message = build_opening_line(character, session_count=int(pair.get("total_sessions") or 1))
-    opening_plan = plan_burst_response(
-        raw_text=opening_message,
-        character=character,
-        is_opening=True,
-        relationship_state=pair,
-    )
-    for burst in opening_plan.bursts:
-        db.save_message(
-            conversation_id=conversation_id,
-            user_id=identity.uid,
-            pair_id=pair["id"],
-            companion_id=pair["companion_id"],
-            role="assistant",
-            content=burst.text,
-        )
-        on_message_saved(pair["id"], "assistant", burst.text)
+    try:
+        with db.transaction():
+            conversation_id = db.create_conversation(
+                user_id=identity.uid,
+                pair_id=pair["id"],
+                companion_id=pair["companion_id"],
+            )
+            on_session_started(pair["id"])
+            pair = db.get_pair_by_id(pair["id"]) or pair
+            opening_message = build_opening_line(character, session_count=int(pair.get("total_sessions") or 1))
+            opening_plan = plan_burst_response(
+                raw_text=opening_message,
+                character=character,
+                is_opening=True,
+                relationship_state=pair,
+            )
+            for burst in opening_plan.bursts:
+                db.save_message(
+                    conversation_id=conversation_id,
+                    user_id=identity.uid,
+                    pair_id=pair["id"],
+                    companion_id=pair["companion_id"],
+                    role="assistant",
+                    content=burst.text,
+                )
+                on_message_saved(pair["id"], "assistant", burst.text)
+    except Exception as e:
+        logger.exception("Failed to start session for user %s, pair %s", identity.uid, pair["id"])
+        try:
+            db.log_system_event(
+                "session_start_rollback",
+                "error",
+                user_id=identity.uid,
+                pair_id=pair["id"],
+                payload={"error": str(e), "action": "rollback"}
+            )
+        except Exception as log_err:
+            logger.error("Failed to log session_start_rollback: %s", log_err)
+        raise HTTPException(status_code=500, detail="Failed to start conversation session. Please try again.")
 
     return SessionStartResponse(
         conversation_id=conversation_id,

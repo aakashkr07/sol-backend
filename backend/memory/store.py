@@ -1,7 +1,9 @@
 import json
 import logging
 import sqlite3
+import threading
 import uuid
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -46,6 +48,38 @@ PAIR_REBUILD_TABLES = {
 class Database:
     def __init__(self):
         self._conn: Optional[sqlite3.Connection] = None
+        self._local = threading.local()
+
+    @contextmanager
+    def transaction(self, mode: str = "IMMEDIATE"):
+        """Thread-safe re-entrant SQLite transaction context manager."""
+        if mode not in ("IMMEDIATE", "DEFERRED", "EXCLUSIVE"):
+            raise ValueError(f"Invalid transaction mode: {mode}")
+
+        if not hasattr(self._local, "depth"):
+            self._local.depth = 0
+
+        is_outermost = False
+        if self._local.depth == 0:
+            self.conn.execute(f"BEGIN {mode}")
+            is_outermost = True
+
+        self._local.depth += 1
+        try:
+            yield
+            self._local.depth -= 1
+            if is_outermost:
+                self.conn.execute("COMMIT")
+        except Exception as e:
+            if is_outermost:
+                self._local.depth = 0
+                try:
+                    self.conn.execute("ROLLBACK")
+                except sqlite3.OperationalError as rollback_err:
+                    logger.warning("Rollback failed or transaction wasn't active: %s", rollback_err)
+            else:
+                self._local.depth -= 1
+            raise e
 
     def connect(self):
         db_path = Path(settings.SQLITE_DB_PATH)
@@ -1219,44 +1253,45 @@ class Database:
         assignment_source: str = "matcher",
         assignment_reason: Optional[str] = None,
     ) -> dict:
-        pair = self.get_pair(user_id, companion_id)
-        if pair:
+        with self.transaction():
+            pair = self.get_pair(user_id, companion_id)
+            if pair:
+                self.conn.execute(
+                    """
+                    UPDATE relationship_pairs
+                    SET updated_at = ?,
+                        relationship_label = COALESCE(?, relationship_label),
+                        assignment_source = COALESCE(?, assignment_source),
+                        assignment_reason = COALESCE(?, assignment_reason)
+                    WHERE id = ?
+                    """,
+                    (_utcnow_iso(), relationship_label, assignment_source, assignment_reason, pair["id"]),
+                )
+                return dict(
+                    self.conn.execute("SELECT * FROM relationship_pairs WHERE id = ?", (pair["id"],)).fetchone()
+                )
+
+            pair_id = make_pair_id(user_id, companion_id)
+            now = _utcnow_iso()
             self.conn.execute(
                 """
-                UPDATE relationship_pairs
-                SET updated_at = ?,
-                    relationship_label = COALESCE(?, relationship_label),
-                    assignment_source = COALESCE(?, assignment_source),
-                    assignment_reason = COALESCE(?, assignment_reason)
-                WHERE id = ?
+                INSERT INTO relationship_pairs
+                    (id, user_id, companion_id, relationship_label, assignment_status,
+                     assignment_source, assignment_reason, is_primary, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'assigned', ?, ?, 0, ?, ?)
                 """,
-                (_utcnow_iso(), relationship_label, assignment_source, assignment_reason, pair["id"]),
+                (
+                    pair_id,
+                    user_id,
+                    companion_id,
+                    relationship_label,
+                    assignment_source,
+                    assignment_reason,
+                    now,
+                    now,
+                ),
             )
-            return dict(
-                self.conn.execute("SELECT * FROM relationship_pairs WHERE id = ?", (pair["id"],)).fetchone()
-            )
-
-        pair_id = make_pair_id(user_id, companion_id)
-        now = _utcnow_iso()
-        self.conn.execute(
-            """
-            INSERT INTO relationship_pairs
-                (id, user_id, companion_id, relationship_label, assignment_status,
-                 assignment_source, assignment_reason, is_primary, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'assigned', ?, ?, 0, ?, ?)
-            """,
-            (
-                pair_id,
-                user_id,
-                companion_id,
-                relationship_label,
-                assignment_source,
-                assignment_reason,
-                now,
-                now,
-            ),
-        )
-        return dict(self.conn.execute("SELECT * FROM relationship_pairs WHERE id = ?", (pair_id,)).fetchone())
+            return dict(self.conn.execute("SELECT * FROM relationship_pairs WHERE id = ?", (pair_id,)).fetchone())
 
     def increment_pair_stats(self, pair_id: str, messages: int = 1, sessions: int = 0):
         self.conn.execute(
@@ -1603,36 +1638,37 @@ class Database:
     # ------------------------------------------------------------------
 
     def create_conversation(self, user_id: str, pair_id: str, companion_id: str) -> str:
-        conv_id = str(uuid.uuid4())
-        pair = self.get_pair_by_id(pair_id) or {}
-        session_number = int(pair.get("total_sessions") or 0) + 1
-        now = _utcnow_iso()
-        self.conn.execute(
-            """
-            INSERT INTO conversations
-                (id, user_id, pair_id, companion_id, character_id, started_at,
-                 last_message_at, session_number, session_status, message_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 0)
-            """,
-            (conv_id, user_id, pair_id, companion_id, companion_id, now, now, session_number),
-        )
-        self.increment_user_stats(user_id, messages=0, sessions=1)
-        self.increment_pair_stats(pair_id, messages=0, sessions=1)
-        self.conn.execute(
-            """
-            UPDATE relationship_pairs
-            SET first_session_at = COALESCE(first_session_at, ?),
-                last_session_started_at = ?,
-                assignment_status = CASE
-                    WHEN assignment_status = 'assigned' THEN 'introduced'
-                    ELSE assignment_status
-                END,
-                updated_at = ?
-            WHERE id = ?
-            """,
-            (now, now, now, pair_id),
-        )
-        return conv_id
+        with self.transaction():
+            conv_id = str(uuid.uuid4())
+            pair = self.get_pair_by_id(pair_id) or {}
+            session_number = int(pair.get("total_sessions") or 0) + 1
+            now = _utcnow_iso()
+            self.conn.execute(
+                """
+                INSERT INTO conversations
+                    (id, user_id, pair_id, companion_id, character_id, started_at,
+                     last_message_at, session_number, session_status, message_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 0)
+                """,
+                (conv_id, user_id, pair_id, companion_id, companion_id, now, now, session_number),
+            )
+            self.increment_user_stats(user_id, messages=0, sessions=1)
+            self.increment_pair_stats(pair_id, messages=0, sessions=1)
+            self.conn.execute(
+                """
+                UPDATE relationship_pairs
+                SET first_session_at = COALESCE(first_session_at, ?),
+                    last_session_started_at = ?,
+                    assignment_status = CASE
+                        WHEN assignment_status = 'assigned' THEN 'introduced'
+                        ELSE assignment_status
+                    END,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (now, now, now, pair_id),
+            )
+            return conv_id
 
     def get_current_conversation(self, user_id: str, pair_id: Optional[str] = None) -> Optional[str]:
         if pair_id:
@@ -1772,48 +1808,49 @@ class Database:
         draft_duration_ms: Optional[int] = None,
         reply_latency_ms: Optional[int] = None,
     ) -> int:
-        now = datetime.utcnow()
-        text_length = len((content or "").strip())
-        cursor = self.conn.execute(
-            """
-            INSERT INTO messages
-                (conversation_id, user_id, pair_id, companion_id, role, content, created_at,
-                 emotional_tone, emotional_intensity, topics, hour_of_day, day_of_week,
-                 client_sent_at, draft_duration_ms, reply_latency_ms, text_length)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                conversation_id,
-                user_id,
-                pair_id,
-                companion_id,
-                role,
-                content,
-                now.isoformat(timespec="milliseconds"),
-                emotional_tone,
-                emotional_intensity,
-                json.dumps(topics or []),
-                now.hour,
-                _day_of_week(now),
-                client_sent_at,
-                draft_duration_ms,
-                reply_latency_ms,
-                text_length,
-            ),
-        )
-        self.conn.execute(
-            """
-            UPDATE conversations
-            SET message_count = message_count + 1,
-                last_message_at = ?
-            WHERE id = ?
-            """,
-            (now.isoformat(timespec="milliseconds"), conversation_id),
-        )
-        self.increment_user_stats(user_id, messages=1)
-        self.increment_pair_stats(pair_id, messages=1, sessions=0)
-        self.touch_pair_message(pair_id, role)
-        return int(cursor.lastrowid)
+        with self.transaction():
+            now = datetime.utcnow()
+            text_length = len((content or "").strip())
+            cursor = self.conn.execute(
+                """
+                INSERT INTO messages
+                    (conversation_id, user_id, pair_id, companion_id, role, content, created_at,
+                     emotional_tone, emotional_intensity, topics, hour_of_day, day_of_week,
+                     client_sent_at, draft_duration_ms, reply_latency_ms, text_length)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    conversation_id,
+                    user_id,
+                    pair_id,
+                    companion_id,
+                    role,
+                    content,
+                    now.isoformat(timespec="milliseconds"),
+                    emotional_tone,
+                    emotional_intensity,
+                    json.dumps(topics or []),
+                    now.hour,
+                    _day_of_week(now),
+                    client_sent_at,
+                    draft_duration_ms,
+                    reply_latency_ms,
+                    text_length,
+                ),
+            )
+            self.conn.execute(
+                """
+                UPDATE conversations
+                SET message_count = message_count + 1,
+                    last_message_at = ?
+                WHERE id = ?
+                """,
+                (now.isoformat(timespec="milliseconds"), conversation_id),
+            )
+            self.increment_user_stats(user_id, messages=1)
+            self.increment_pair_stats(pair_id, messages=1, sessions=0)
+            self.touch_pair_message(pair_id, role)
+            return int(cursor.lastrowid)
 
     def annotate_message(
         self,

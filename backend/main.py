@@ -135,17 +135,73 @@ async def lifespan(app: FastAPI):
 
         async def run_worker_loop():
             logger.info("Starting Sol Proactive Dispatch Worker...")
+            sem = asyncio.Semaphore(10)
+
+            async def process_single_user(user_id: str, semaphore: asyncio.Semaphore):
+                async with semaphore:
+                    start_time = time.perf_counter()
+                    try:
+                        events = await maybe_generate_for_user(user_id, limit=1)
+                        elapsed = time.perf_counter() - start_time
+                        if events:
+                            logger.info(
+                                "Successfully generated and dispatched %d proactive notification events for user %s in %.2fs", 
+                                len(events), user_id, elapsed
+                            )
+                        return {"user_id": user_id, "success": True, "events_count": len(events), "elapsed": elapsed}
+                    except Exception as exc:
+                        elapsed = time.perf_counter() - start_time
+                        logger.error(
+                            "Failed to process proactive message for user %s after %.2fs: %s",
+                            user_id, elapsed, exc, exc_info=True
+                        )
+                        return {"user_id": user_id, "success": False, "error": str(exc), "elapsed": elapsed}
+
             while True:
                 try:
-                    # Get list of all registered users in the database
-                    users = db.conn.execute("SELECT id FROM users").fetchall()
-                    for user in users:
-                        user_id = user["id"]
-                        # Scan pairs, evaluate quiet hours/inactivity, and generate proactive messages
-                        events = await maybe_generate_for_user(user_id, limit=1)
-                        if events:
-                            logger.info("Successfully generated and dispatched %d proactive notification events for user %s", len(events), user_id)
-                    # Poll every 10 minutes (600 seconds)
+                    start_batch_time = time.perf_counter()
+                    loop = asyncio.get_running_loop()
+
+                    def get_all_user_ids():
+                        rows = db.conn.execute("SELECT id FROM users").fetchall()
+                        return [row["id"] for row in rows]
+
+                    user_ids = await loop.run_in_executor(None, get_all_user_ids)
+                    batch_size = len(user_ids)
+
+                    if batch_size > 0:
+                        cpu_info = ""
+                        mem_info = ""
+                        try:
+                            import psutil
+                            cpu_info = f" | CPU: {psutil.cpu_percent()}%"
+                            mem_info = f" | MEM: {psutil.virtual_memory().percent}%"
+                        except ImportError:
+                            pass
+
+                        import threading
+                        active_tasks = len(asyncio.all_tasks())
+                        active_threads = threading.active_count()
+                        logger.info(
+                            "Proactive Dispatch Batch Started: Processing %d users | Active Tasks: %d | Active Threads: %d%s%s",
+                            batch_size, active_tasks, active_threads, cpu_info, mem_info
+                        )
+
+                        tasks = [process_single_user(uid, sem) for uid in user_ids]
+                        results = await asyncio.gather(*tasks)
+
+                        successful = sum(1 for r in results if r["success"])
+                        failed = sum(1 for r in results if not r["success"])
+                        events_sent = sum(r.get("events_count", 0) for r in results)
+                        total_elapsed = time.perf_counter() - start_batch_time
+
+                        logger.info(
+                            "Proactive Dispatch Batch Completed in %.2fs: %d users processed (%d success, %d failed) | %d proactive events generated",
+                            total_elapsed, batch_size, successful, failed, events_sent
+                        )
+                    else:
+                        logger.debug("Proactive Dispatch: No registered users found.")
+
                     await asyncio.sleep(600)
                 except asyncio.CancelledError:
                     logger.info("Proactive worker loop cancelled")
