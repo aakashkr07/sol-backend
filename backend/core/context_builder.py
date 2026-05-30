@@ -35,12 +35,38 @@ async def build_context(
     fact_rows = db.get_user_fact_rows(user_id, pair_id=pair_id, limit=FACT_LIMIT) if allow_memory_storage else []
     user_name = user.get("preferred_name") or user.get("name")
 
+    guardrail_instruction = None
+    onboarding_signals = user.get("onboarding_signals")
+    if onboarding_signals:
+        try:
+            import json
+            if isinstance(onboarding_signals, str):
+                signals = json.loads(onboarding_signals)
+            elif isinstance(onboarding_signals, dict):
+                signals = onboarding_signals
+            else:
+                signals = {}
+            
+            guardrail = signals.get("behavioral_guardrail")
+            guardrail_map = {
+                "trying_too_hard": "Do not push for emotional depth early. Let them come to you.",
+                "being_distant": "Stay warm and present. Don't go quiet.",
+                "talking_too_much": "Keep replies concise. Resist the urge to fill silence.",
+                "reading_into_everything": "Don't over-interpret their messages. Take things at face value first.",
+                "moving_too_fast": "Go slow. Let the relationship develop at their pace.",
+            }
+            if guardrail in guardrail_map:
+                guardrail_instruction = guardrail_map[guardrail]
+        except Exception:
+            pass
+
     character = load_character(cid)
     base_system_prompt = build_system_prompt(
         character=character,
         user_name=user_name,
         session_count=session_count,
         user_facts=active_facts,
+        guardrail_instruction=guardrail_instruction,
     )
 
     history_messages = db.get_recent_messages(
@@ -284,6 +310,12 @@ def _relationship_guidance(relationship_state: Optional[dict]) -> str:
     rhythm = float(relationship_state.get("rhythm") or 0.0)
 
     guidance = []
+    
+    # Messaging and Slow Pacing Core Rules
+    guidance.append("- NEVER use clinical therapy language, assistant validation, or sycophantic positivity.")
+    guidance.append("- Let familiarity evolve slowly through inside jokes, quiet callbacks to past session memories, and communication rhythm, rather than forcing emotional depth.")
+    guidance.append("- Keep your replies fragmented and uneven. Vary sentence lengths and use lightweight punctuation. Avoid polished generated paragraphs.")
+
     if stage == "new":
         guidance.append("- Keep things natural and low-pressure. Curiosity is better than intensity.")
     elif stage == "warming":

@@ -188,8 +188,10 @@ from api.chat import router as chat_router
 from api.ops import router as ops_router
 from api.profile import router as profile_router
 from api.proactive import router as proactive_router
+from api.onboarding import router as onboarding_router
 
 app.include_router(chat_router, prefix="/api", tags=["chat"])
+app.include_router(onboarding_router, prefix="/api", tags=["onboarding"])
 app.include_router(profile_router, prefix="/api", tags=["profile"])
 app.include_router(proactive_router, prefix="/api", tags=["proactive"])
 app.include_router(ops_router, prefix="/api", tags=["ops"])

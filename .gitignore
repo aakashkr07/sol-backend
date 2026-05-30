@@ -50,3 +50,4 @@ frontend/companion_app/.packages
 Thumbs.db
 Desktop.ini
 .DS_Store
+.agents/

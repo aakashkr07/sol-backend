@@ -1,12 +1,27 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../services/api_service.dart';
-import '../services/auth_service.dart';
+import '../services/onboarding_service.dart';
+
+// Sol Design System Constants
+const Color _bgDeep = Color(0xFF080A0E);
+const Color _surface = Color(0xFF10131A);
+const Color _blue = Color(0xFF7DA2FF);
+const Color _blueSoft = Color(0xFF8BA8FF);
+const Color _violet = Color(0xFFA78BFA);
+const Color _violetSoft = Color(0xFFB69CFF);
+const Color _amber = Color(0xFFF2B8A0);
+const Color _cream = Color(0xFFE8DDD0);
+const Color _sand = Color(0xFF9A8C78);
+const Color _dusty = Color(0xFF5A5568);
+const Color _ink = Color(0xFF060810);
 
 class OnboardingScreen extends StatefulWidget {
   final Future<void> Function(SessionStartResponse session) onComplete;
@@ -22,154 +37,81 @@ class OnboardingScreen extends StatefulWidget {
 
 class _OnboardingScreenState extends State<OnboardingScreen>
     with TickerProviderStateMixin {
-  static const Color _bg = Color(0xFF060A12);
-  static const Color _surface = Color(0xFF111827);
-  static const Color _surfaceSoft = Color(0xFF171F31);
-  static const Color _amber = Color(0xFFF5A623);
-  static const Color _cream = Color(0xFFEEE8DF);
-  static const Color _muted = Color(0xFFB7A892);
+  late final AnimationController _bgController;
 
-  late final AnimationController _fadeCtrl;
-  late final AnimationController _pulseCtrl;
-  late final Animation<double> _fadeIn;
-  late final Animation<double> _cardIn;
+  int _currentStep = 0;
+  String _preferredName = '';
+  String _connectionStyle = '';
+  String _presenceFrequency = '';
+  String _depthPreference = '';
+  String _behavioralGuardrail = '';
 
-  MyCompanionsResponse? _roster;
-  CompanionSummary? _matchedCompanion;
-  bool _isLoading = true;
+  OnboardingCompleteResponse? _matchedResponse;
   bool _isStarting = false;
   String? _error;
-  int _lineIndex = 0;
-  Timer? _lineTimer;
-
-  List<String> get _encounterLines {
-    final companion = _matchedCompanion;
-    final firstName = _firstName();
-    return [
-      firstName == null ? 'you have a message waiting' : '$firstName, you have a message waiting',
-      companion == null
-          ? 'the conversation is there. it just has to come into focus.'
-          : 'it is from ${companion.name}',
-      companion?.summary.isNotEmpty == true
-          ? companion!.summary
-          : 'it should feel like opening a real thread, not setting up a product.',
-    ];
-  }
 
   @override
   void initState() {
     super.initState();
-    _fadeCtrl = AnimationController(
+    // 6-second slow breathing background oscillation
+    _bgController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    );
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 3200),
+      duration: const Duration(seconds: 6),
     )..repeat(reverse: true);
-    _fadeIn = CurvedAnimation(
-      parent: _fadeCtrl,
-      curve: Curves.easeOutCubic,
-    );
-    _cardIn = CurvedAnimation(
-      parent: _fadeCtrl,
-      curve: const Interval(0.22, 1.0, curve: Curves.easeOutCubic),
-    );
-    _loadEncounter();
   }
 
   @override
   void dispose() {
-    _lineTimer?.cancel();
-    _fadeCtrl.dispose();
-    _pulseCtrl.dispose();
+    _bgController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadEncounter() async {
+  Future<void> _submitOnboarding() async {
+    setState(() {
+      _currentStep = 5; // Finding your people loading state
+      _error = null;
+    });
+
     try {
-      final roster = await ApiService.getMyCompanions();
-      final matched = roster?.primaryCompanion ??
-          (roster?.pairs.isNotEmpty == true
-              ? roster!.pairs.first
-              : roster?.availableCompanions.isNotEmpty == true
-                  ? roster!.availableCompanions.first
-                  : null);
+      final response = await ApiService.completeOnboarding(
+        preferredName: _preferredName,
+        connectionStyle: _connectionStyle,
+        presenceFrequency: _presenceFrequency,
+        depthPreference: _depthPreference,
+        behavioralGuardrail: _behavioralGuardrail,
+      );
 
-      if (matched == null || matched.id.trim().isEmpty) {
-        throw const ChatException(
-          'No matched companion could be loaded. Make sure the backend is running and try again.',
-          -1,
-        );
+      if (response == null) {
+        throw const ChatException('Failed to match you. Try again.', -1);
       }
 
-      if (!mounted) {
-        return;
-      }
+      // Pause for a short bit to let the user enjoy the ambient silhouettes animation
+      await Future.delayed(const Duration(milliseconds: 2800));
 
+      if (!mounted) return;
       setState(() {
-        _roster = roster;
-        _matchedCompanion = matched;
-        _isLoading = false;
+        _matchedResponse = response;
+        _currentStep = 6; // Intro card step
       });
-
-      _fadeCtrl.forward(from: 0);
-      _startEncounterLines();
     } on ChatException catch (e) {
-      if (!mounted) {
-        return;
-      }
       setState(() {
         _error = e.message;
-        _isLoading = false;
+        _currentStep = 4; // Go back to Q5 to retry
       });
     } catch (_) {
-      if (!mounted) {
-        return;
-      }
       setState(() {
-        _error = 'The conversation did not come through. Try again.';
-        _isLoading = false;
+        _error = 'The matching system encountered an error. Try again.';
+        _currentStep = 4; // Go back to Q5 to retry
       });
     }
-  }
-
-  void _startEncounterLines() {
-    _lineTimer?.cancel();
-    _lineIndex = 0;
-    _lineTimer = Timer.periodic(const Duration(milliseconds: 1600), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      if (_lineIndex >= _encounterLines.length - 1) {
-        timer.cancel();
-        return;
-      }
-      setState(() => _lineIndex += 1);
-    });
-  }
-
-  String? _firstName() {
-    final name = _roster?.userName ?? AuthService.currentUserName;
-    if (name == null || name.trim().isEmpty) {
-      return null;
-    }
-    return name.trim().split(' ').first;
-  }
-
-  String _ctaLabel() {
-    return 'Open your messages';
   }
 
   Future<void> _beginEncounter() async {
-    if (_isStarting) {
-      return;
-    }
+    if (_isStarting) return;
 
-    final companionId = _matchedCompanion?.id;
-    if (companionId == null || companionId.isEmpty) {
-      setState(() => _error = 'No matched conversation could be opened yet.');
+    final companionId = _matchedResponse?.companionId;
+    if (companionId == null) {
+      setState(() => _error = 'No matched companion details found.');
       return;
     }
 
@@ -184,24 +126,46 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       if (session == null) {
         throw const ChatException('could not start the first thread.', -1);
       }
+      
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        await OnboardingService.markComplete(uid);
+      }
+      
       await widget.onComplete(session);
     } on ChatException catch (e) {
-      if (!mounted) {
-        return;
-      }
       setState(() {
         _isStarting = false;
         _error = e.message;
       });
     } catch (_) {
-      if (!mounted) {
-        return;
-      }
       setState(() {
         _isStarting = false;
-        _error = 'something interrupted the first message. try again.';
+        _error = 'Something interrupted the first message. Try again.';
       });
     }
+  }
+
+  void _onOptionSelected(int step, String backendValue) {
+    HapticFeedback.lightImpact();
+    
+    // Assign values depending on step
+    if (step == 1) _connectionStyle = backendValue;
+    if (step == 2) _presenceFrequency = backendValue;
+    if (step == 3) _depthPreference = backendValue;
+    if (step == 4) _behavioralGuardrail = backendValue;
+
+    // Small delay (350ms) to allow the user to see the selected state before moving
+    Future.delayed(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      if (step < 4) {
+        setState(() {
+          _currentStep = step + 1;
+        });
+      } else {
+        _submitOnboarding();
+      }
+    });
   }
 
   @override
@@ -209,19 +173,69 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: _bg,
+      systemNavigationBarColor: _bgDeep,
       systemNavigationBarIconBrightness: Brightness.light,
     ));
 
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: _bgDeep,
       body: Stack(
         children: [
-          Positioned.fill(child: _buildBackdrop()),
+          // Ambient breathing background
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _bgController,
+              builder: (context, child) {
+                return CustomPaint(
+                  painter: _AtmosphericBackgroundPainter(_bgController.value),
+                );
+              },
+            ),
+          ),
+          
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
-              child: _isLoading ? _buildLoading() : _buildContent(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
+                  child: _buildBackButton(),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(22, 12, 22, 22),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 600),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          transitionBuilder: (child, animation) {
+                            final offset = Tween<Offset>(
+                              begin: const Offset(0.0, 0.06),
+                              end: Offset.zero,
+                            ).animate(animation);
+                            return FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                position: offset,
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: _buildCurrentStepWidget(),
+                        ),
+                        if (_error != null && _currentStep < 5) ...[
+                          const SizedBox(height: 20),
+                          _buildErrorPanel(),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -229,334 +243,864 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     );
   }
 
-  Widget _buildBackdrop() {
-    return AnimatedBuilder(
-      animation: _pulseCtrl,
-      builder: (context, child) {
-        final wave = 0.35 + (_pulseCtrl.value * 0.65);
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              center: const Alignment(0, -0.72),
-              radius: 1.18,
-              colors: [
-                _amber.withValues(alpha: 0.12 * wave),
-                const Color(0xFF172033).withValues(alpha: 0.42),
-                _bg,
-              ],
-              stops: const [0.0, 0.42, 1.0],
+  Widget _buildBackButton() {
+    if (_currentStep == 0 || _currentStep >= 5) {
+      return const SizedBox(height: 40);
+    }
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          setState(() {
+            _currentStep--;
+          });
+        },
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: _surface.withOpacity(0.60),
+                border: Border.all(color: _cream.withOpacity(0.07), width: 0.6),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.chevron_left,
+                color: _cream,
+                size: 20,
+              ),
             ),
           ),
-          child: child,
-        );
-      },
-      child: IgnorePointer(
-        child: CustomPaint(
-          painter: _EncounterPainter(),
         ),
       ),
     );
   }
 
-  Widget _buildLoading() {
+  Widget _buildCurrentStepWidget() {
+    switch (_currentStep) {
+      case 0:
+        return _NameInputCard(
+          key: const ValueKey('step-name'),
+          onSubmitted: (name) {
+            HapticFeedback.lightImpact();
+            setState(() {
+              _preferredName = name;
+              _currentStep = 1;
+            });
+          },
+        );
+      case 1:
+        return _QuestionCard(
+          key: const ValueKey('step-q2'),
+          header: 'When you meet someone new...',
+          question: 'What usually makes you want to keep talking to them?',
+          options: const [
+            _QuestionOption('They take their time.', 'takes_their_time'),
+            _QuestionOption("They're easy to talk to.", 'easy_to_talk_to'),
+            _QuestionOption("They say exactly what's on their mind.", 'says_whats_on_mind'),
+            _QuestionOption('They make things fun.', 'makes_things_fun'),
+            _QuestionOption('They make conversations feel meaningful.', 'meaningful_conversations'),
+          ],
+          selectedValue: _connectionStyle,
+          onSelected: (val) => _onOptionSelected(1, val),
+        );
+      case 2:
+        return _QuestionCard(
+          key: const ValueKey('step-q3'),
+          header: 'The people you stay close to...',
+          question: 'How do they usually show up in your life?',
+          options: const [
+            _QuestionOption('Every now and then.', 'every_now_and_then'),
+            _QuestionOption('When it matters.', 'when_it_matters'),
+            _QuestionOption('Fairly often.', 'fairly_often'),
+            _QuestionOption("They're always around.", 'always_around'),
+          ],
+          selectedValue: _presenceFrequency,
+          onSelected: (val) => _onOptionSelected(2, val),
+        );
+      case 3:
+        return _QuestionCard(
+          key: const ValueKey('step-q4'),
+          header: 'When conversations become real...',
+          question: 'What feels right to you?',
+          options: const [
+            _QuestionOption('Let it happen naturally.', 'let_it_happen'),
+            _QuestionOption('A little honesty goes a long way.', 'little_honesty'),
+            _QuestionOption("I don't mind getting personal.", 'dont_mind_personal'),
+            _QuestionOption("I'd rather skip the small talk.", 'skip_small_talk'),
+          ],
+          selectedValue: _depthPreference,
+          onSelected: (val) => _onOptionSelected(3, val),
+        );
+      case 4:
+        return _QuestionCard(
+          key: const ValueKey('step-q5'),
+          header: 'One thing that usually pushes you away?',
+          question: 'What acts as a behavior guardrail?',
+          options: const [
+            _QuestionOption('Trying too hard.', 'trying_too_hard'),
+            _QuestionOption('Being distant.', 'being_distant'),
+            _QuestionOption('Talking too much.', 'talking_too_much'),
+            _QuestionOption('Reading into everything.', 'reading_into_everything'),
+            _QuestionOption('Moving too fast.', 'moving_too_fast'),
+          ],
+          selectedValue: _behavioralGuardrail,
+          onSelected: (val) => _onOptionSelected(4, val),
+        );
+      case 5:
+        return _buildLoadingState();
+      case 6:
+        if (_matchedResponse != null) {
+          return _IntroCard(
+            key: const ValueKey('step-intro'),
+            match: _matchedResponse!,
+            isStarting: _isStarting,
+            onStart: _beginEncounter,
+          );
+        }
+        return const SizedBox.shrink();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  Widget _buildLoadingState() {
     return Center(
+      key: const ValueKey('step-loading'),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 84,
-            height: 84,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _amber.withValues(alpha: 0.08),
-              boxShadow: [
-                BoxShadow(
-                  color: _amber.withValues(alpha: 0.14),
-                  blurRadius: 28,
-                ),
-              ],
-            ),
-            child: const Center(
-              child: Image(
-                image: AssetImage('assets/images/sol_logo.png'),
-                width: 46,
-                height: 46,
-              ),
+          const SizedBox(height: 80),
+          // Subtle animated profile silhouettes
+          const _BreathingSilhouettes(),
+          const SizedBox(height: 48),
+          Text(
+            'Finding your people...',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.plusJakartaSans(
+              color: _cream.withOpacity(0.92),
+              fontSize: 22,
+              fontWeight: FontWeight.w400,
+              letterSpacing: -0.3,
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 8),
           Text(
-            'finding the conversation that is already waiting...',
+            "This shouldn't take long.",
             textAlign: TextAlign.center,
             style: GoogleFonts.jost(
-              color: _muted.withValues(alpha: 0.74),
+              color: _sand.withOpacity(0.72),
+              fontSize: 14,
+              fontWeight: FontWeight.w300,
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(height: 120),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorPanel() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF331515).withOpacity(0.72),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFE08B8B).withOpacity(0.22),
+            ),
+          ),
+          child: Text(
+            _error!,
+            style: GoogleFonts.jost(
+              color: const Color(0xFFE08B8B),
               fontSize: 13,
-              letterSpacing: 0.35,
+              height: 1.45,
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildContent() {
-    final lines = _encounterLines;
-    final companion = _matchedCompanion;
-
-    return FadeTransition(
-      opacity: _fadeIn,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 12),
-          Text(
-            'A message is waiting',
-            style: GoogleFonts.jost(
-              color: _muted.withValues(alpha: 0.65),
-              fontSize: 11,
-              letterSpacing: 2.2,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-          const SizedBox(height: 24),
-          ...List.generate(lines.length, (index) {
-            final visible = index <= _lineIndex;
-            return AnimatedOpacity(
-              opacity: visible ? 1 : 0,
-              duration: const Duration(milliseconds: 700),
-              curve: Curves.easeOut,
-              child: AnimatedSlide(
-                offset: visible ? Offset.zero : const Offset(0, 0.08),
-                duration: const Duration(milliseconds: 700),
-                curve: Curves.easeOutCubic,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: Text(
-                    lines[index],
-                    style: GoogleFonts.cormorantGaramond(
-                      color: index == 0 ? _cream : _cream.withValues(alpha: 0.88),
-                      fontSize: index == 0 ? 34 : 24,
-                      height: 1.06,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }),
-          const Spacer(),
-          if (companion != null)
-            ScaleTransition(
-              scale: Tween<double>(begin: 0.96, end: 1.0).animate(_cardIn),
-              child: FadeTransition(
-                opacity: _cardIn,
-                child: _buildCompanionCard(companion),
-              ),
-            ),
-          if (_error != null) ...[
-            const SizedBox(height: 14),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF3A1717).withValues(alpha: 0.72),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: const Color(0xFFE08B8B).withValues(alpha: 0.22),
-                ),
-              ),
-              child: Text(
-                _error!,
-                style: GoogleFonts.jost(
-                  color: const Color(0xFFE08B8B),
-                  fontSize: 12.5,
-                  height: 1.45,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: _isStarting
-                    ? null
-                    : () {
-                        setState(() {
-                          _isLoading = true;
-                          _error = null;
-                          _matchedCompanion = null;
-                          _roster = null;
-                        });
-                        _loadEncounter();
-                      },
-                child: Text(
-                  'Try again',
-                  style: GoogleFonts.jost(
-                    color: _amber,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 18),
-          FadeTransition(
-            opacity: _cardIn,
-            child: _buildEncounterButton(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCompanionCard(CompanionSummary companion) {
-    final isNew = companion.totalSessions == 0;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            _surface.withValues(alpha: 0.94),
-            _surfaceSoft.withValues(alpha: 0.94),
-          ],
-        ),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.06),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.24),
-            blurRadius: 24,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      _amber.withValues(alpha: 0.72),
-                      const Color(0xFF3D2A00).withValues(alpha: 0.44),
-                    ],
-                  ),
-                ),
-                child: const Center(
-                  child: Image(
-                    image: AssetImage('assets/images/sol_logo.png'),
-                    width: 22,
-                    height: 22,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      companion.name,
-                      style: GoogleFonts.cormorantGaramond(
-                        color: _cream,
-                        fontSize: 29,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    Text(
-                      isNew
-                          ? 'first conversation'
-                          : '${companion.totalSessions} sessions already between you',
-                      style: GoogleFonts.jost(
-                        color: _muted.withValues(alpha: 0.72),
-                        fontSize: 11.5,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Text(
-            companion.summary.isEmpty
-                ? 'this should feel like opening a real thread, not configuring anything'
-                : companion.summary,
-            style: GoogleFonts.jost(
-              color: _cream.withValues(alpha: 0.76),
-              fontSize: 13.5,
-              height: 1.55,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEncounterButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton(
-        onPressed: _isStarting ? null : _beginEncounter,
-        style: FilledButton.styleFrom(
-          backgroundColor: _amber,
-          foregroundColor: const Color(0xFF0B0E16),
-          disabledBackgroundColor: _amber.withValues(alpha: 0.5),
-          elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
           ),
         ),
-        child: _isStarting
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0B0E16)),
-                ),
-              )
-            : Text(
-                _ctaLabel(),
-                style: GoogleFonts.jost(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.2,
-                ),
-              ),
       ),
     );
   }
 }
 
-class _EncounterPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rng = math.Random(7);
-    final dotPaint = Paint()..style = PaintingStyle.fill;
+class _NameInputCard extends StatefulWidget {
+  final Function(String) onSubmitted;
+  const _NameInputCard({super.key, required this.onSubmitted});
 
-    for (var i = 0; i < 48; i++) {
-      final dx = rng.nextDouble() * size.width;
-      final dy = rng.nextDouble() * size.height;
-      final radius = 0.8 + (rng.nextDouble() * 1.6);
-      dotPaint.color = Colors.white.withValues(alpha: 0.02 + (rng.nextDouble() * 0.05));
-      canvas.drawCircle(Offset(dx, dy), radius, dotPaint);
-    }
+  @override
+  State<_NameInputCard> createState() => _NameInputCardState();
+}
+
+class _NameInputCardState extends State<_NameInputCard> {
+  final _controller = TextEditingController();
+  bool _canSubmit = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() {
+      setState(() {
+        _canSubmit = _controller.text.trim().isNotEmpty;
+      });
+    });
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Before we start...',
+          style: GoogleFonts.plusJakartaSans(
+            color: _cream.withOpacity(0.92),
+            fontSize: 25,
+            fontWeight: FontWeight.w400,
+            letterSpacing: -0.3,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'What should we call you?',
+          style: GoogleFonts.plusJakartaSans(
+            color: _sand.withOpacity(0.72),
+            fontSize: 16,
+            fontWeight: FontWeight.w300,
+          ),
+        ),
+        const SizedBox(height: 36),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: _surface.withOpacity(0.60),
+                border: Border.all(color: _cream.withOpacity(0.07), width: 0.6),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: TextField(
+                controller: _controller,
+                cursorColor: _blueSoft,
+                textCapitalization: TextCapitalization.words,
+                style: GoogleFonts.jost(
+                  color: _cream,
+                  fontSize: 16,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Enter your preferred name',
+                  hintStyle: GoogleFonts.jost(
+                    color: _dusty,
+                    fontSize: 16,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                  border: InputBorder.none,
+                ),
+                onSubmitted: (_) {
+                  if (_canSubmit) widget.onSubmitted(_controller.text.trim());
+                },
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 48),
+        SizedBox(
+          width: double.infinity,
+          height: 54,
+          child: AnimatedScale(
+            scale: _canSubmit ? 1.0 : 0.98,
+            duration: const Duration(milliseconds: 150),
+            child: Opacity(
+              opacity: _canSubmit ? 1.0 : 0.5,
+              child: ElevatedButton(
+                onPressed: _canSubmit ? () => widget.onSubmitted(_controller.text.trim()) : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _blue,
+                  foregroundColor: _ink,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: Text(
+                  'Continue',
+                  style: GoogleFonts.jost(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _QuestionOption {
+  final String label;
+  final String backendValue;
+  const _QuestionOption(this.label, this.backendValue);
+}
+
+class _QuestionCard extends StatelessWidget {
+  final String header;
+  final String question;
+  final List<_QuestionOption> options;
+  final String selectedValue;
+  final Function(String) onSelected;
+
+  const _QuestionCard({
+    super.key,
+    required this.header,
+    required this.question,
+    required this.options,
+    required this.selectedValue,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          header,
+          style: GoogleFonts.plusJakartaSans(
+            color: _cream.withOpacity(0.92),
+            fontSize: 24,
+            fontWeight: FontWeight.w400,
+            letterSpacing: -0.3,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          question,
+          style: GoogleFonts.plusJakartaSans(
+            color: _sand.withOpacity(0.72),
+            fontSize: 15,
+            fontWeight: FontWeight.w300,
+          ),
+        ),
+        const SizedBox(height: 36),
+        ...options.map((opt) {
+          final isSelected = selectedValue == opt.backendValue;
+          return _OptionTile(
+            text: opt.label,
+            selected: isSelected,
+            onTap: () => onSelected(opt.backendValue),
+          );
+        }),
+      ],
+    );
+  }
+}
+
+class _OptionTile extends StatefulWidget {
+  final String text;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _OptionTile({
+    required this.text,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  State<_OptionTile> createState() => _OptionTileState();
+}
+
+class _OptionTileState extends State<_OptionTile> {
+  double _scale = 1.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      width: double.infinity,
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _scale = 0.970),
+        onTapUp: (_) {
+          setState(() => _scale = 1.0);
+          widget.onTap();
+        },
+        onTapCancel: () => setState(() => _scale = 1.0),
+        child: AnimatedScale(
+          scale: _scale,
+          duration: const Duration(milliseconds: 90),
+          curve: Curves.easeOut,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                decoration: BoxDecoration(
+                  color: widget.selected ? _blue.withOpacity(0.15) : _surface.withOpacity(0.60),
+                  border: Border.all(
+                    color: widget.selected
+                        ? _blueSoft.withOpacity(0.4)
+                        : _cream.withOpacity(0.07),
+                    width: 0.6,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  widget.text,
+                  style: GoogleFonts.jost(
+                    color: widget.selected ? _cream : _cream.withOpacity(0.78),
+                    fontSize: 14.5,
+                    fontWeight: widget.selected ? FontWeight.w500 : FontWeight.w400,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IntroCard extends StatelessWidget {
+  final OnboardingCompleteResponse match;
+  final bool isStarting;
+  final VoidCallback onStart;
+
+  const _IntroCard({
+    super.key,
+    required this.match,
+    required this.isStarting,
+    required this.onStart,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Align(
+          alignment: Alignment.center,
+          child: _MatchedAvatar(initials: match.companionName[0]),
+        ),
+        const SizedBox(height: 24),
+        Align(
+          alignment: Alignment.center,
+          child: Column(
+            children: [
+              Text(
+                match.companionName,
+                style: GoogleFonts.plusJakartaSans(
+                  color: _cream,
+                  fontSize: 38,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.8,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                match.conversationalVibe.toUpperCase(),
+                style: GoogleFonts.jost(
+                  color: _violetSoft,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: 1.8,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 28),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                color: _surface.withOpacity(0.60),
+                border: Border.all(color: _cream.withOpacity(0.07), width: 0.6),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    match.companionSummary,
+                    style: GoogleFonts.plusJakartaSans(
+                      color: _cream.withOpacity(0.92),
+                      fontSize: 15,
+                      height: 1.45,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                  if (match.humanizingDetails.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    ...match.humanizingDetails.map((detail) => Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: _cream.withOpacity(0.03),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: _cream.withOpacity(0.05), width: 0.6),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.star_border, color: _violetSoft, size: 16),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  detail,
+                                  style: GoogleFonts.jost(
+                                    color: _cream.withOpacity(0.85),
+                                    fontSize: 13.5,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 40),
+        SizedBox(
+          width: double.infinity,
+          height: 56,
+          child: ElevatedButton(
+            onPressed: isStarting ? null : onStart,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _blue,
+              foregroundColor: _ink,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            child: isStarting
+                ? _BreathingText(
+                    text: 'gathering presence…',
+                    style: GoogleFonts.jost(
+                      color: _ink,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  )
+                : Text(
+                    'Say hi',
+                    style: GoogleFonts.jost(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MatchedAvatar extends StatelessWidget {
+  final String initials;
+  const _MatchedAvatar({required this.initials});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 100,
+      height: 100,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            _blue.withOpacity(0.8),
+            _violet.withOpacity(0.8),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: _blue.withOpacity(0.24),
+            blurRadius: 28,
+            spreadRadius: 2,
+          ),
+        ],
+        border: Border.all(
+          color: _cream.withOpacity(0.2),
+          width: 1.5,
+        ),
+      ),
+      child: Center(
+        child: Text(
+          initials,
+          style: GoogleFonts.plusJakartaSans(
+            color: _cream,
+            fontSize: 32,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.5,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BreathingText extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+
+  const _BreathingText({required this.text, required this.style});
+
+  @override
+  State<_BreathingText> createState() => _BreathingTextState();
+}
+
+class _BreathingTextState extends State<_BreathingText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.35, end: 1.0).animate(_ctrl),
+      child: Text(widget.text, style: widget.style),
+    );
+  }
+}
+
+class _BreathingSilhouettes extends StatefulWidget {
+  const _BreathingSilhouettes();
+
+  @override
+  State<_BreathingSilhouettes> createState() => _BreathingSilhouettesState();
+}
+
+class _BreathingSilhouettesState extends State<_BreathingSilhouettes>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2500),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, child) {
+        final glow = 0.5 + (_pulse.value * 0.5);
+        return SizedBox(
+          width: 180,
+          height: 140,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Silhouette 1 (Back left)
+              Transform.translate(
+                offset: Offset(-35 + 4 * math.sin(_pulse.value * math.pi), 5),
+                child: Opacity(
+                  opacity: 0.25 + 0.15 * _pulse.value,
+                  child: Container(
+                    width: 70,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _violet,
+                      boxShadow: [
+                        BoxShadow(
+                          color: _violet.withOpacity(0.1),
+                          blurRadius: 12,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.person,
+                      color: _ink,
+                      size: 38,
+                    ),
+                  ),
+                ),
+              ),
+              // Silhouette 2 (Back right)
+              Transform.translate(
+                offset: Offset(35 - 4 * math.sin(_pulse.value * math.pi), 5),
+                child: Opacity(
+                  opacity: 0.25 + 0.15 * _pulse.value,
+                  child: Container(
+                    width: 70,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _amber,
+                      boxShadow: [
+                        BoxShadow(
+                          color: _amber.withOpacity(0.1),
+                          blurRadius: 12,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.person,
+                      color: _ink,
+                      size: 38,
+                    ),
+                  ),
+                ),
+              ),
+              // Silhouette 3 (Foreground center glowing)
+              Transform.scale(
+                scale: 1.0 + 0.04 * math.sin(_pulse.value * math.pi),
+                child: Container(
+                  width: 90,
+                  height: 90,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _surface,
+                    border: Border.all(
+                      color: _blueSoft.withOpacity(0.12 + 0.12 * glow),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _blue.withOpacity(0.10 * glow),
+                        blurRadius: 20 + 8 * _pulse.value,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Icon(
+                      Icons.person_outline,
+                      color: _cream.withOpacity(0.3 + 0.3 * _pulse.value),
+                      size: 40,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AtmosphericBackgroundPainter extends CustomPainter {
+  final double animationValue;
+
+  _AtmosphericBackgroundPainter(this.animationValue);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final pulse = math.sin(animationValue * math.pi * 2);
+    final scale1 = 1.0 + 0.12 * pulse;
+    final scale2 = 1.0 - 0.10 * pulse;
+    final scale3 = 1.0 + 0.08 * math.cos(animationValue * math.pi * 2);
+
+    // Presence Blue (0xFF7DA2FF) - top-left
+    final paint1 = Paint()
+      ..shader = RadialGradient(
+        center: Alignment.topLeft,
+        radius: 1.2 * scale1,
+        colors: [
+          const Color(0xFF7DA2FF).withOpacity(0.12),
+          const Color(0xFF7DA2FF).withOpacity(0.02),
+          Colors.transparent,
+        ],
+        stops: const [0.0, 0.5, 1.0],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint1);
+
+    // Warm Violet (0xFFA78BFA) - bottom-right
+    final paint2 = Paint()
+      ..shader = RadialGradient(
+        center: Alignment.bottomRight,
+        radius: 1.3 * scale2,
+        colors: [
+          const Color(0xFFA78BFA).withOpacity(0.10),
+          const Color(0xFFA78BFA).withOpacity(0.01),
+          Colors.transparent,
+        ],
+        stops: const [0.0, 0.6, 1.0],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint2);
+
+    // Human Warmth (0xFFF2B8A0) - bottom-center
+    final paint3 = Paint()
+      ..shader = RadialGradient(
+        center: Alignment.bottomCenter,
+        radius: 1.0 * scale3,
+        colors: [
+          const Color(0xFFF2B8A0).withOpacity(0.07),
+          const Color(0xFFF2B8A0).withOpacity(0.01),
+          Colors.transparent,
+        ],
+        stops: const [0.0, 0.5, 1.0],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint3);
+  }
+
+  @override
+  bool shouldRepaint(covariant _AtmosphericBackgroundPainter oldDelegate) {
+    return oldDelegate.animationValue != animationValue;
+  }
 }

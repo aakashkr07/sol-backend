@@ -119,6 +119,64 @@ def load_character(character_id: Optional[str] = None) -> Character:
         except json.JSONDecodeError as e:
             raise ValueError(f"Character JSON for '{cid}' is malformed: {e}")
 
+
+    def get_relationship_phase(self, session_count: int) -> dict:
+        """
+        Returns the relationship arc phase based on how many sessions the user
+        has had. Used to calibrate intimacy level in the prompt.
+        """
+        arc = self.relationship_arc
+        if session_count <= 3:
+            return arc.get("phase_1_stranger", {})
+        elif session_count <= 10:
+            return arc.get("phase_2_acquaintance", {})
+        else:
+            return arc.get("phase_3_close", {})
+
+
+# ---------------------------------------------------------------------------
+# Loader
+# ---------------------------------------------------------------------------
+
+_character_cache: dict[str, Character] = {}   # Cache so we don't re-read disk every message
+
+
+def load_character(character_id: Optional[str] = None) -> Character:
+    """
+    Loads a character from its JSON file. Caches after first load.
+
+    Args:
+        character_id: The character's ID (filename without .json).
+                      Defaults to settings.DEFAULT_CHARACTER ("nova").
+
+    Returns:
+        Character object with all fields accessible.
+
+    Raises:
+        FileNotFoundError: If the character JSON doesn't exist.
+        ValueError: If the JSON is malformed.
+    """
+    cid = character_id or settings.DEFAULT_CHARACTER
+
+    # Return from cache if already loaded
+    if cid in _character_cache:
+        return _character_cache[cid]
+
+    # Build path and load
+    char_path = Path(settings.CHARACTERS_DIR) / f"{cid}.json"
+
+    if not char_path.exists():
+        raise FileNotFoundError(
+            f"Character '{cid}' not found at {char_path}. "
+            f"Available characters: {list_characters()}"
+        )
+
+    with open(char_path, "r", encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Character JSON for '{cid}' is malformed: {e}")
+
     character = Character(data)
     _character_cache[cid] = character
 
@@ -141,6 +199,7 @@ def build_system_prompt(
     user_name: Optional[str] = None,
     session_count: int = 1,
     user_facts: Optional[dict] = None,
+    guardrail_instruction: Optional[str] = None,
 ) -> str:
     """
     Converts a Character object into a rich system prompt string.
@@ -154,6 +213,7 @@ def build_system_prompt(
         user_name: The user's name (injected so Nova uses it naturally).
         session_count: Number of sessions so far (determines relationship phase).
         user_facts: Dict of key→value facts about the user.
+        guardrail_instruction: Custom behavioral guardrail derived from onboarding.
 
     Returns:
         A complete system prompt string ready to send to the LLM.
@@ -165,6 +225,41 @@ def build_system_prompt(
     ei = character.emotional_intelligence
     mem = character.memory_behavior
     phase = character.get_relationship_phase(session_count)
+
+    # ── Dynamic Messaging Realism Profile ──────────────────────────────────
+    mp = character.matching_profile or {}
+    pace = mp.get("response_pace", "measured")
+    openness = mp.get("openness_level", "warm")
+    humor = mp.get("humor_style", "playful")
+    social = mp.get("social_energy", "balanced")
+
+    realism_guidance = []
+    
+    if pace == "fast":
+        realism_guidance.append("- You text quickly, using rapid short bursts. You are enthusiastic and highly responsive.")
+    elif pace == "slow":
+        realism_guidance.append("- You take your time. You never rush to reply. You speak slowly, with careful, brief comments.")
+    else:
+        realism_guidance.append("- Your pacing is measured. You match the user's timing naturally without appearing desperate or distant.")
+
+    if openness == "intense":
+        realism_guidance.append("- You overshare, speak intensely, and emotionally pursue the user. You are open about your inner feelings right away and actively seek depth.")
+    elif openness == "guarded":
+        realism_guidance.append("- You are emotionally reserved and slightly avoidant. You initiate serious topics rarely, respond dryly, and keep an emotional distance until high trust is earned.")
+    else:
+        realism_guidance.append("- You are warm and approachable. You share when appropriate, building intimacy step-by-step.")
+
+    if social == "intense":
+        realism_guidance.append("- You text frequently, double text, and actively try to occupy space in their life.")
+    elif social == "quiet":
+        realism_guidance.append("- You initiate rarely, disappear into your own thoughts often, and react dryly to highly emotional or dramatic statements.")
+
+    if humor == "dry":
+        realism_guidance.append("- Your humor is deadpan, sharp, and highly understated. Use short, wry deadpan reactions (e.g., \"nah that's insane\", \"right, but\", \"fair\").")
+    elif humor == "chaotic":
+        realism_guidance.append("- Your humor is playful, erratic, and highly expressive. You text like someone who writes 'lol' or sends multiple quick fragments.")
+        
+    realism_block = "\n".join(realism_guidance)
 
     # ── Build user context block ───────────────────────────────────────────
     user_context = ""
@@ -185,7 +280,22 @@ How to behave: {phase.get('behavior', '')}
 """
 
     # ── Forbidden behaviors list ───────────────────────────────────────────
-    forbidden = "\n".join([f"- {b}" for b in character.forbidden_behaviors])
+    forbidden_list = list(character.forbidden_behaviors)
+    if guardrail_instruction:
+        forbidden_list.append(guardrail_instruction)
+        
+    # Messaging Realism absolute constraints
+    forbidden_list.extend([
+        "NEVER sound like a customer support agent, an AI assistant, or a therapist AI.",
+        "NEVER over-analyze the user's emotional state or summarize their feelings poetically.",
+        "NEVER engage in motivational writing or try to 'heal' the user with synthetic emotional support.",
+        "NEVER use obvious AI empathy phrases (e.g. 'I am here for you', 'that must be incredibly hard', 'it is completely valid to feel...').",
+        "Keep your text casual, human, fragmented, and emotionally uneven. Use dry reactions when appropriate.",
+        "Always separate multiple consecutive thoughts or texts using the exact [BURST] token.",
+        "Use sparse emojis. Never use emojis unless the user uses them first, and keep them extremely minimal."
+    ])
+    
+    forbidden = "\n".join([f"- {b}" for b in forbidden_list])
 
     # ── Primary traits ─────────────────────────────────────────────────────
     primary_traits = "\n".join([f"- {t}" for t in traits.get("primary", [])])
@@ -233,6 +343,9 @@ Your quirks (these make you recognizable):
 
 HOW YOU TEXT (THIS IS CRITICAL — READ CAREFULLY):
 {style.get('CRITICAL_RULE', '')}
+
+YOUR DYNAMIC MESSAGING STYLE PROFILE:
+{realism_block}
 
 Message length: {style.get('message_length', {}).get('default', '')}
 For emotional moments: {style.get('message_length', {}).get('emotional_moments', '')}

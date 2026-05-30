@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -278,6 +279,7 @@ class _InboxScreenState extends State<InboxScreen>
     final arrivals = all.where((e) => e.isArrival).toList();
     final quiet = all.where((e) => !e.isArrival && !e.waitingOnUser).toList();
     final ordered = [...active, ...arrivals, ...quiet];
+    final threads = all.where((e) => !e.isArrival).toList();
 
     return FadeTransition(
       opacity: _fadeInAnim,
@@ -298,8 +300,8 @@ class _InboxScreenState extends State<InboxScreen>
                       physics: const BouncingScrollPhysics(),
                       padding: const EdgeInsets.only(bottom: 60),
                       children: [
-                        if (active.isNotEmpty) ...[
-                          _buildPresenceStrip(active),
+                        if (threads.isNotEmpty) ...[
+                          _buildPresenceStrip(threads),
                           _buildSectionDivider(),
                         ],
                         if (arrivals.isNotEmpty) ...[
@@ -459,17 +461,18 @@ class _InboxScreenState extends State<InboxScreen>
   }
 
   // ── Presence strip — Stories-style horizontal scroll ─────────────────────
-  Widget _buildPresenceStrip(List<InboxEntrySummary> active) {
+  Widget _buildPresenceStrip(List<InboxEntrySummary> threads) {
+    final list = threads.take(8).toList();
     return SizedBox(
       height: 104,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(24, 6, 24, 14),
-        itemCount: active.take(8).length,
+        itemCount: list.length,
         separatorBuilder: (_, __) => const SizedBox(width: 20),
         itemBuilder: (context, i) {
-          final entry = active[i];
+          final entry = list[i];
           return GestureDetector(
             onTap: _isOpeningThread ? null : () => _openEntry(entry),
             child: SizedBox(
@@ -478,10 +481,7 @@ class _InboxScreenState extends State<InboxScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Avatar with animated presence ring
-                  _PresenceAvatar(
-                    name: entry.companionName,
-                    isActive: true,
-                  ),
+                  _PresenceAvatar(entry: entry),
                   const SizedBox(height: 7),
                   Text(
                     entry.companionName,
@@ -591,14 +591,185 @@ class _InboxScreenState extends State<InboxScreen>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// _getAvatarGradient — elegant, name-derived deep linear gradients
+// ─────────────────────────────────────────────────────────────────────────────
+
+LinearGradient _getAvatarGradient(String name, bool isArrival) {
+  if (isArrival) {
+    return const LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        Color(0xFF241544), // Deep Violet
+        Color(0xFF0F0B1E), // Deep Dark Indigo
+      ],
+    );
+  }
+  final hash = name.codeUnits.fold<int>(0, (prev, element) => prev + element);
+  final index = hash % 4;
+  switch (index) {
+    case 0:
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF132242), Color(0xFF0A1224)],
+      );
+    case 1:
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF221642), Color(0xFF0F0A24)],
+      );
+    case 2:
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF331E18), Color(0xFF1B0F0C)],
+      );
+    default:
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF152626), Color(0xFF0B1414)],
+      );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _PresenceDot — miniature glowing and breathing connection indicator
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PresenceDot extends StatefulWidget {
+  final bool isTyping;
+  const _PresenceDot({super.key, required this.isTyping});
+
+  @override
+  State<_PresenceDot> createState() => _PresenceDotState();
+}
+
+class _PresenceDotState extends State<_PresenceDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat(reverse: true);
+    _pulse = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.isTyping ? _violetSoft : _blueSoft;
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, _) {
+        final glow = _pulse.value;
+        return Container(
+          width: 12,
+          height: 12,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: _bgDeep,
+          ),
+          alignment: Alignment.center,
+          child: Container(
+            width: 8.5,
+            height: 8.5,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color,
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(0.35 + glow * 0.45),
+                  blurRadius: 3 + glow * 5,
+                  spreadRadius: 0.5,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _BouncingDots — lightweight fluid typing circles
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _BouncingDots extends StatefulWidget {
+  const _BouncingDots({super.key});
+
+  @override
+  State<_BouncingDots> createState() => _BouncingDotsState();
+}
+
+class _BouncingDotsState extends State<_BouncingDots>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: List.generate(3, (index) {
+            final delay = index * 0.2;
+            final t = (_controller.value - delay) % 1.0;
+            final bounce = math.sin(t * math.pi).clamp(0.0, 1.0);
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 1.2),
+              width: 3.5,
+              height: 3.5,
+              transform: Matrix4.translationValues(0, -bounce * 3.2, 0),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _blueSoft.withOpacity(0.42 + (1.0 - bounce) * 0.58),
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // _PresenceAvatar — pulsing ring for active companions
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _PresenceAvatar extends StatefulWidget {
-  final String name;
-  final bool isActive;
-
-  const _PresenceAvatar({required this.name, required this.isActive});
+  final InboxEntrySummary entry;
+  const _PresenceAvatar({super.key, required this.entry});
 
   @override
   State<_PresenceAvatar> createState() => _PresenceAvatarState();
@@ -627,44 +798,68 @@ class _PresenceAvatarState extends State<_PresenceAvatar>
 
   @override
   Widget build(BuildContext context) {
+    final name = widget.entry.companionName;
+    final unread = widget.entry.unreadCount > 0;
+    final waiting = widget.entry.waitingOnUser;
+    final isOnline = unread || waiting;
+
+    final gradient = _getAvatarGradient(name, false);
+    final ringColor = unread
+        ? _blue.withOpacity(0.55)
+        : waiting
+            ? _blueSoft.withOpacity(0.35)
+            : _cream.withOpacity(0.07);
+
     return AnimatedBuilder(
       animation: _pulse,
       builder: (context, _) {
         final glow = _pulse.value;
-        return Container(
-          width: 54,
-          height: 54,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            // Outer glow ring — presence blue, breathing
-            boxShadow: [
-              BoxShadow(
-                color: _blue.withOpacity(0.08 + glow * 0.18),
-                blurRadius: 14 + glow * 8,
-                spreadRadius: 0,
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: isOnline
+                    ? [
+                        BoxShadow(
+                          color: _blue.withOpacity(0.06 + glow * 0.14),
+                          blurRadius: 10 + glow * 6,
+                          spreadRadius: 0,
+                        ),
+                      ]
+                    : null,
               ),
-            ],
-          ),
-          child: Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _surface,
-              border: Border.all(
-                color: _blue.withOpacity(0.35 + glow * 0.30),
-                width: 1.5,
-              ),
-            ),
-            child: Center(
-              child: Text(
-                widget.name.isNotEmpty ? widget.name[0].toUpperCase() : '?',
-                style: GoogleFonts.plusJakartaSans(
-                  color: _cream.withOpacity(0.82),
-                  fontSize: 17,
-                  fontWeight: FontWeight.w500,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: gradient,
+                  border: Border.all(
+                    color: ringColor,
+                    width: isOnline ? 1.5 : 0.8,
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    name.isNotEmpty ? name[0].toUpperCase() : '?',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: _cream.withOpacity(isOnline ? 0.90 : 0.48),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
+            if (isOnline)
+              const Positioned(
+                right: 0,
+                bottom: 0,
+                child: _PresenceDot(isTyping: false),
+              ),
+          ],
         );
       },
     );
@@ -700,6 +895,8 @@ class _InboxTileState extends State<_InboxTile>
   late Animation<double> _entryFade;
   late Animation<Offset> _entrySlide;
   bool _pressed = false;
+  bool _isTyping = false;
+  Timer? _typingTimer;
 
   @override
   void initState() {
@@ -718,12 +915,41 @@ class _InboxTileState extends State<_InboxTile>
     Future.delayed(Duration(milliseconds: widget.index * 55), () {
       if (mounted) _entryCtrl.forward();
     });
+
+    _initTypingSimulation();
+  }
+
+  void _initTypingSimulation() {
+    if (widget.entry.isArrival) return;
+    final random = math.Random();
+    _typingTimer = Timer.periodic(Duration(seconds: 14 + random.nextInt(10)), (timer) {
+      if (!mounted || widget.opening) return;
+      final isCompanionActive = widget.entry.waitingOnUser || (random.nextDouble() < 0.12);
+      if (isCompanionActive && !_isTyping) {
+        setState(() => _isTyping = true);
+        Timer(Duration(seconds: 4 + random.nextInt(4)), () {
+          if (mounted) {
+            setState(() => _isTyping = false);
+          }
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
+    _typingTimer?.cancel();
     _entryCtrl.dispose();
     super.dispose();
+  }
+
+  String _getFormattedPreviewText() {
+    final preview = widget.entry.previewText;
+    if (widget.entry.isArrival) return preview;
+    if (widget.entry.latestRole == 'user') {
+      return 'You: $preview';
+    }
+    return preview;
   }
 
   @override
@@ -745,11 +971,35 @@ class _InboxTileState extends State<_InboxTile>
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
-            color: _pressed
-                ? _cream.withOpacity(0.018)
-                : unread
-                    ? _surfaceUp.withOpacity(0.38)
-                    : Colors.transparent,
+            margin: arrival
+                ? const EdgeInsets.symmetric(horizontal: 14, vertical: 6)
+                : EdgeInsets.zero,
+            padding: arrival ? const EdgeInsets.only(right: 6) : EdgeInsets.zero,
+            decoration: BoxDecoration(
+              color: _pressed
+                  ? _cream.withOpacity(0.018)
+                  : arrival
+                      ? _surfaceUp.withOpacity(0.24)
+                      : unread
+                          ? _surfaceUp.withOpacity(0.38)
+                          : Colors.transparent,
+              border: arrival
+                  ? Border.all(
+                      color: _violet.withOpacity(0.08),
+                      width: 0.8,
+                    )
+                  : null,
+              borderRadius: arrival ? BorderRadius.circular(16) : null,
+              boxShadow: arrival
+                  ? [
+                      BoxShadow(
+                        color: _violet.withOpacity(0.025),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
+                  : null,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -760,19 +1010,15 @@ class _InboxTileState extends State<_InboxTile>
                       // ── Left accent bar ──────────────────────────────
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 300),
-                        width: 2.0,
+                        width: arrival ? 0.0 : 2.0,
                         decoration: BoxDecoration(
                           gradient: unread
                               ? LinearGradient(
                                   begin: Alignment.topCenter,
                                   end: Alignment.bottomCenter,
                                   colors: [
-                                    arrival
-                                        ? _violet.withOpacity(0.80)
-                                        : _blue.withOpacity(0.70),
-                                    arrival
-                                        ? _violet.withOpacity(0.20)
-                                        : _blue.withOpacity(0.20),
+                                    _blue.withOpacity(0.70),
+                                    _blue.withOpacity(0.20),
                                   ],
                                 )
                               : null,
@@ -783,7 +1029,7 @@ class _InboxTileState extends State<_InboxTile>
                       // ── Content ──────────────────────────────────────
                       Expanded(
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 16, 18, 16),
+                          padding: EdgeInsets.fromLTRB(arrival ? 16 : 20, 16, 18, 16),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
@@ -861,21 +1107,43 @@ class _InboxTileState extends State<_InboxTile>
 
                                     const SizedBox(height: 5),
 
-                                    // Preview text
-                                    Text(
-                                      widget.entry.previewText,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.jost(
-                                        color: _cream.withOpacity(
-                                          unread ? 0.78 : 0.52,
+                                    // Preview text or Typing indicator
+                                    if (_isTyping)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2.0),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment: CrossAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              'typing',
+                                              style: GoogleFonts.jost(
+                                                color: _blueSoft.withOpacity(0.85),
+                                                fontSize: 13.5,
+                                                fontWeight: FontWeight.w500,
+                                                letterSpacing: 0.2,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 5),
+                                            const _BouncingDots(),
+                                          ],
                                         ),
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.w400,
-                                        height: 1.45,
-                                        letterSpacing: 0.1,
+                                      )
+                                    else
+                                      Text(
+                                        _getFormattedPreviewText(),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.jost(
+                                          color: _cream.withOpacity(
+                                            unread ? 0.78 : 0.52,
+                                          ),
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w400,
+                                          height: 1.45,
+                                          letterSpacing: 0.1,
+                                        ),
                                       ),
-                                    ),
                                   ],
                                 ),
                               ),
@@ -894,7 +1162,7 @@ class _InboxTileState extends State<_InboxTile>
                 ),
 
                 // Hairline separator
-                if (!widget.isLast)
+                if (!widget.isLast && !arrival)
                   Container(
                     height: 0.4,
                     margin: const EdgeInsets.only(left: 86),
@@ -916,7 +1184,7 @@ class _InboxTileState extends State<_InboxTile>
   }
 
   Widget _buildAvatar(bool unread, bool arrival) {
-    // Avatar color — blue ring for unread, violet for arrival, dim when read
+    final gradient = _getAvatarGradient(widget.entry.companionName, arrival);
     final ringColor = arrival
         ? _violet.withOpacity(unread ? 0.65 : 0.22)
         : unread
@@ -924,38 +1192,50 @@ class _InboxTileState extends State<_InboxTile>
             : _cream.withOpacity(0.07);
 
     final ringWidth = (arrival || unread) ? 1.3 : 0.6;
+    final isOnline = !arrival && (widget.entry.waitingOnUser || _isTyping || widget.entry.unreadCount > 0);
 
-    return Container(
-      width: 50,
-      height: 50,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: _surface,
-        border: Border.all(color: ringColor, width: ringWidth),
-        boxShadow: (unread || arrival)
-            ? [
-                BoxShadow(
-                  color: arrival
-                      ? _violet.withOpacity(0.12)
-                      : _blue.withOpacity(0.14),
-                  blurRadius: 14,
-                  spreadRadius: 0,
-                ),
-              ]
-            : null,
-      ),
-      child: Center(
-        child: Text(
-          widget.entry.companionName.isNotEmpty
-              ? widget.entry.companionName[0].toUpperCase()
-              : '?',
-          style: GoogleFonts.plusJakartaSans(
-            color: _cream.withOpacity(unread ? 0.85 : 0.48),
-            fontSize: 17,
-            fontWeight: FontWeight.w500,
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: gradient,
+            border: Border.all(color: ringColor, width: ringWidth),
+            boxShadow: (unread || arrival)
+                ? [
+                    BoxShadow(
+                      color: arrival
+                          ? _violet.withOpacity(0.12)
+                          : _blue.withOpacity(0.14),
+                      blurRadius: 14,
+                      spreadRadius: 0,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Center(
+            child: Text(
+              widget.entry.companionName.isNotEmpty
+                  ? widget.entry.companionName[0].toUpperCase()
+                  : '?',
+              style: GoogleFonts.plusJakartaSans(
+                color: _cream.withOpacity(unread ? 0.85 : 0.48),
+                fontSize: 17,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ),
-      ),
+        if (isOnline)
+          Positioned(
+            right: -1,
+            bottom: -1,
+            child: _PresenceDot(isTyping: _isTyping),
+          ),
+      ],
     );
   }
 

@@ -365,13 +365,14 @@ def _compatibility_score(profile: dict, character: Character) -> float:
 
 
 def _build_user_chemistry_profile(user_id: str) -> dict:
+    import json
     messages = db.get_recent_messages(user_id=user_id, limit=120)
     user_messages = [message for message in messages if message.get("role") == "user"]
     user = db.get_user(user_id) or {}
 
     if not user_messages:
         fallback_hour = datetime.utcnow().hour
-        return {
+        profile = {
             "active_window": _classify_active_window([fallback_hour]),
             "response_pace": "measured",
             "message_length_style": "medium",
@@ -381,44 +382,99 @@ def _build_user_chemistry_profile(user_id: str) -> dict:
             "social_energy": "balanced",
             "confidence": 0.12,
             "signal_labels": ["early activity signals"],
+            "timezone": user.get("timezone"),
+        }
+    else:
+        lengths = [int(message.get("text_length") or len((message.get("content") or "").strip())) for message in user_messages]
+        drafts = [int(message.get("draft_duration_ms") or 0) for message in user_messages if message.get("draft_duration_ms") is not None]
+        latencies = [int(message.get("reply_latency_ms") or 0) for message in user_messages if message.get("reply_latency_ms") is not None]
+        hours = [
+            int(message.get("hour_of_day"))
+            for message in user_messages
+            if message.get("hour_of_day") is not None
+        ]
+        texts = [(message.get("content") or "").lower() for message in user_messages]
+
+        average_length = sum(lengths) / max(1, len(lengths))
+        average_draft = (sum(drafts) / len(drafts)) if drafts else None
+        average_latency = (sum(latencies) / len(latencies)) if latencies else None
+        burst_ratio = _burst_ratio(user_messages)
+        openness_score = _openness_score(texts, average_length)
+        humor_style = _infer_humor_style(texts)
+        social_energy = _infer_social_energy(texts, average_length, burst_ratio, openness_score)
+
+        signal_labels = [
+            f"{_classify_active_window(hours)} active hours",
+            f"{_classify_message_length(average_length)} messages",
+            f"{_infer_rhythm(average_draft, burst_ratio)} rhythm",
+        ]
+
+        profile = {
+            "active_window": _classify_active_window(hours),
+            "response_pace": _classify_response_pace(average_draft, average_latency),
+            "message_length_style": _classify_message_length(average_length),
+            "openness_level": _classify_openness(openness_score),
+            "humor_style": humor_style,
+            "rhythm": _infer_rhythm(average_draft, burst_ratio),
+            "social_energy": social_energy,
+            "confidence": min(1.0, 0.18 + (len(user_messages) * 0.03)),
+            "signal_labels": signal_labels,
+            "timezone": user.get("timezone"),
         }
 
-    lengths = [int(message.get("text_length") or len((message.get("content") or "").strip())) for message in user_messages]
-    drafts = [int(message.get("draft_duration_ms") or 0) for message in user_messages if message.get("draft_duration_ms") is not None]
-    latencies = [int(message.get("reply_latency_ms") or 0) for message in user_messages if message.get("reply_latency_ms") is not None]
-    hours = [
-        int(message.get("hour_of_day"))
-        for message in user_messages
-        if message.get("hour_of_day") is not None
-    ]
-    texts = [(message.get("content") or "").lower() for message in user_messages]
+    # Seeding chemistry using onboarding signals if message history is thin (< 30 messages)
+    if len(user_messages) < 30:
+        onboarding_signals = user.get("onboarding_signals")
+        signals = {}
+        if onboarding_signals:
+            try:
+                if isinstance(onboarding_signals, str):
+                    signals = json.loads(onboarding_signals)
+                elif isinstance(onboarding_signals, dict):
+                    signals = onboarding_signals
+            except Exception:
+                pass
+        
+        if signals:
+            connection_style = signals.get("connection_style")
+            if connection_style == "takes_their_time":
+                profile["response_pace"] = "slow"
+                profile["humor_style"] = "soft"
+                profile["social_energy"] = "quiet"
+            elif connection_style == "easy_to_talk_to":
+                profile["openness_level"] = "warm"
+                profile["humor_style"] = "playful"
+                profile["social_energy"] = "balanced"
+            elif connection_style == "says_whats_on_mind":
+                profile["openness_level"] = "intense"
+                profile["humor_style"] = "dry"
+            elif connection_style == "makes_things_fun":
+                profile["humor_style"] = "chaotic"
+                profile["social_energy"] = "intense"
+            elif connection_style == "meaningful_conversations":
+                profile["openness_level"] = "intense"
+                profile["humor_style"] = "intellectual"
+                profile["message_length_style"] = "long"
 
-    average_length = sum(lengths) / max(1, len(lengths))
-    average_draft = (sum(drafts) / len(drafts)) if drafts else None
-    average_latency = (sum(latencies) / len(latencies)) if latencies else None
-    burst_ratio = _burst_ratio(user_messages)
-    openness_score = _openness_score(texts, average_length)
-    humor_style = _infer_humor_style(texts)
-    social_energy = _infer_social_energy(texts, average_length, burst_ratio, openness_score)
+            depth_preference = signals.get("depth_preference")
+            if depth_preference == "let_it_happen":
+                profile["openness_level"] = profile.get("openness_level") or "warm"
+                profile["rhythm"] = "slow"
+            elif depth_preference == "little_honesty":
+                profile["openness_level"] = profile.get("openness_level") or "warm"
+                profile["humor_style"] = "dry"
+            elif depth_preference == "dont_mind_personal":
+                profile["openness_level"] = "intense"
+                profile["message_length_style"] = "long"
+            elif depth_preference == "skip_small_talk":
+                profile["openness_level"] = "intense"
+                profile["humor_style"] = "intellectual"
+                profile["rhythm"] = "burst"
 
-    signal_labels = [
-        f"{_classify_active_window(hours)} active hours",
-        f"{_classify_message_length(average_length)} messages",
-        f"{_infer_rhythm(average_draft, burst_ratio)} rhythm",
-    ]
+            profile["confidence"] = min(1.0, profile.get("confidence", 0.0) + 0.15)
+            profile["signal_labels"].append("seeded onboarding chemistry")
 
-    return {
-        "active_window": _classify_active_window(hours),
-        "response_pace": _classify_response_pace(average_draft, average_latency),
-        "message_length_style": _classify_message_length(average_length),
-        "openness_level": _classify_openness(openness_score),
-        "humor_style": humor_style,
-        "rhythm": _infer_rhythm(average_draft, burst_ratio),
-        "social_energy": social_energy,
-        "confidence": min(1.0, 0.18 + (len(user_messages) * 0.03)),
-        "signal_labels": signal_labels,
-        "timezone": user.get("timezone"),
-    }
+    return profile
 
 
 def _build_assignment_reason(user_id: str, character: Character) -> str:

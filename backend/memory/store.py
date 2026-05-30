@@ -664,6 +664,8 @@ class Database:
                 "character_id TEXT DEFAULT 'nova'",
                 "relationship_label TEXT DEFAULT 'friend'",
                 "total_sessions INTEGER DEFAULT 0",
+                "onboarding_signals TEXT",
+                "onboarding_completed INTEGER DEFAULT 0",
             ],
             "companions": [
                 "status TEXT DEFAULT 'active'",
@@ -870,6 +872,29 @@ class Database:
             WHERE id = ?
             """,
             (name, preferred_name, name, display_name, user_id),
+        )
+
+    def save_onboarding_signals(
+        self,
+        user_id: str,
+        preferred_name: str,
+        signals: dict,
+        onboarding_completed: int = 1,
+    ):
+        import json
+        signals_json = json.dumps(signals)
+        display_name = preferred_name
+        self.conn.execute(
+            """
+            UPDATE users
+            SET preferred_name = ?,
+                name = COALESCE(name, ?),
+                display_name = COALESCE(display_name, ?),
+                onboarding_signals = ?,
+                onboarding_completed = ?
+            WHERE id = ?
+            """,
+            (preferred_name, preferred_name, display_name, signals_json, onboarding_completed, user_id),
         )
 
     def get_user(self, user_id: str) -> Optional[dict]:

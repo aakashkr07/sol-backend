@@ -32,6 +32,7 @@ class ApiConfig {
   static String get preferencesUrl => '$baseUrl/api/me/preferences';
   static String get deviceTokenUrl => '$baseUrl/api/me/device-token';
   static String get proactivePendingUrl => '$baseUrl/api/me/proactive/pending';
+  static String get onboardingCompleteUrl => '$baseUrl/api/onboarding/complete';
   static String get healthUrl => '$baseUrl/health';
 
   static const Duration requestTimeout = Duration(seconds: 30);
@@ -826,6 +827,44 @@ class ApiService {
         .toList();
   }
 
+  static Future<OnboardingCompleteResponse?> completeOnboarding({
+    required String preferredName,
+    required String connectionStyle,
+    required String presenceFrequency,
+    required String depthPreference,
+    required String behavioralGuardrail,
+  }) async {
+    try {
+      final response = await _client
+          .post(
+            Uri.parse(ApiConfig.onboardingCompleteUrl),
+            headers: await _defaultHeaders(),
+            body: jsonEncode({
+              'preferred_name': preferredName,
+              'connection_style': connectionStyle,
+              'presence_frequency': presenceFrequency,
+              'depth_preference': depthPreference,
+              'behavioral_guardrail': behavioralGuardrail,
+            }),
+          )
+          .timeout(ApiConfig.requestTimeout);
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        return OnboardingCompleteResponse.fromJson(json);
+      }
+      throw ChatException(_parseError(response), response.statusCode);
+    } on SocketException {
+      throw const ChatException('No connection to server. Is the backend running?', 0);
+    } on TimeoutException {
+      throw const ChatException('Onboarding took too long to complete. Try again.', 408);
+    } on ChatException {
+      rethrow;
+    } catch (e) {
+      throw ChatException('Unexpected error: $e', -1);
+    }
+  }
+
   static Future<Map<String, String>> _defaultHeaders() async {
     final token = await AuthService.getIdToken();
     return {
@@ -889,4 +928,38 @@ class ChatException implements Exception {
 
   @override
   String toString() => 'ChatException($statusCode): $message';
+}
+
+class OnboardingCompleteResponse {
+  final String companionId;
+  final String companionName;
+  final String companionSummary;
+  final List<String> humanizingDetails;
+  final String conversationalVibe;
+  final String openingLine;
+  final String pairId;
+
+  const OnboardingCompleteResponse({
+    required this.companionId,
+    required this.companionName,
+    required this.companionSummary,
+    required this.humanizingDetails,
+    required this.conversationalVibe,
+    required this.openingLine,
+    required this.pairId,
+  });
+
+  factory OnboardingCompleteResponse.fromJson(Map<String, dynamic> json) {
+    return OnboardingCompleteResponse(
+      companionId: json['companion_id'] as String? ?? '',
+      companionName: json['companion_name'] as String? ?? '',
+      companionSummary: json['companion_summary'] as String? ?? '',
+      humanizingDetails: (json['humanizing_details'] as List<dynamic>? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      conversationalVibe: json['conversational_vibe'] as String? ?? '',
+      openingLine: json['opening_line'] as String? ?? '',
+      pairId: json['pair_id'] as String? ?? '',
+    );
+  }
 }
