@@ -46,4 +46,14 @@ class NotificationHooksService {
       // Notification hooks are optional; missing platform config should not break chat.
     }
   }
+
+  static Future<void> setForegroundNotificationOptions({required bool active}) async {
+    try {
+      await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+        alert: !active,
+        badge: !active,
+        sound: !active,
+      );
+    } catch (_) {}
+  }
 }

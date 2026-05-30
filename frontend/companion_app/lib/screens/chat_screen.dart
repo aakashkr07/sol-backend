@@ -58,6 +58,7 @@ import '../services/notification_hooks_service.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/session_bootstrap_service.dart';
+import '../services/burst_playback_service.dart';
 import 'profile_screen.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/typing_indicator.dart';
@@ -114,11 +115,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    NotificationHooksService.setForegroundNotificationOptions(active: true);
     _initialize();
   }
 
   @override
   void dispose() {
+    NotificationHooksService.setForegroundNotificationOptions(active: false);
     _cancelAssistantPlayback(clearTyping: false);
     WidgetsBinding.instance.removeObserver(this);
     _inputController.dispose();
@@ -167,6 +170,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           openingBursts = session.openingBursts.isNotEmpty
               ? session.openingBursts
               : [ChatBurst.single(session.openingMessage)];
+          
+          if (_pairId != null) {
+            await BurstPlaybackService.saveBursts(_pairId!, openingBursts);
+          }
         }
       }
     } catch (_) {
@@ -181,9 +188,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         setState(() => _isInitializing = false);
       }
     }
-    if (mounted && _messages.isEmpty && openingBursts.isNotEmpty) {
-      await _playCompanionBursts(openingBursts);
+
+    List<ChatBurst> burstsToPlay = const [];
+    if (mounted && _pairId != null) {
+      final hasUnplayed = await BurstPlaybackService.hasUnplayedBursts(_pairId!);
+      if (hasUnplayed) {
+        burstsToPlay = await BurstPlaybackService.getStoredBurstsAsChatBursts(_pairId!);
+      } else if (_messages.isEmpty && openingBursts.isNotEmpty) {
+        burstsToPlay = openingBursts;
+      }
     }
+
+    if (mounted && burstsToPlay.isNotEmpty) {
+      await _playCompanionBursts(burstsToPlay);
+    }
+
     await _loadPendingProactiveEvents(silent: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -242,8 +261,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       });
     }
 
+    final stored = _pairId != null
+        ? await BurstPlaybackService.getStoredBursts(_pairId!)
+        : const <Map<String, dynamic>>[];
+
     for (var i = 0; i < plannedBursts.length; i++) {
       if (!mounted || playbackId != _assistantPlaybackGeneration) return;
+
+      if (stored.isNotEmpty && i < stored.length && stored[i]['is_played'] == true) {
+        continue;
+      }
 
       final burst = plannedBursts[i];
       final thinkDelayMs = i == 0
@@ -278,6 +305,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         );
       });
       _scrollToBottom();
+
+      if (_pairId != null) {
+        await BurstPlaybackService.markBurstPlayed(_pairId!, i);
+      }
     }
 
     if (mounted && playbackId == _assistantPlaybackGeneration) {
@@ -405,6 +436,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       });
 
       if (response != null) {
+        if (_pairId != null) {
+          await BurstPlaybackService.saveBursts(
+            _pairId!,
+            response.bursts.isNotEmpty
+                ? response.bursts
+                : [ChatBurst.single(response.reply)],
+          );
+        }
         await _playCompanionBursts(
           response.bursts.isNotEmpty
               ? response.bursts
@@ -475,6 +514,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _conversationId = event.conversationId;
         }
         if (event.bursts.isNotEmpty) {
+          if (_pairId != null) {
+            await BurstPlaybackService.saveBursts(_pairId!, event.bursts);
+          }
           await _playCompanionBursts(event.bursts);
         }
       }
