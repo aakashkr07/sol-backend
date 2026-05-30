@@ -18,6 +18,19 @@ class OnboardingCompleteRequest(BaseModel):
     depth_preference: str
     behavioral_guardrail: str
 
+@router.get("/onboarding/status")
+async def get_onboarding_status(
+    identity: AuthenticatedIdentity = Depends(get_authenticated_identity),
+):
+    try:
+        user = db.get_user(identity.uid)
+        if not user:
+            return {"onboarding_completed": False}
+        return {"onboarding_completed": bool(user.get("onboarding_completed", 0))}
+    except Exception as e:
+        logger.exception("Failed to get onboarding status for user %s", identity.uid)
+        raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
+
 @router.post("/onboarding/complete")
 async def complete_onboarding(
     payload: OnboardingCompleteRequest,

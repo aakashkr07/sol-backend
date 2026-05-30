@@ -73,6 +73,7 @@ async def get_my_profile(
             "timezone": user.get("timezone"),
             "total_sessions": user.get("total_sessions", 0),
             "total_messages": user.get("total_messages", 0),
+            "onboarding_completed": bool(user.get("onboarding_completed", 0)),
         },
         "preferences": preferences,
         "pairs": pairs,

@@ -33,6 +33,7 @@ class ApiConfig {
   static String get deviceTokenUrl => '$baseUrl/api/me/device-token';
   static String get proactivePendingUrl => '$baseUrl/api/me/proactive/pending';
   static String get onboardingCompleteUrl => '$baseUrl/api/onboarding/complete';
+  static String get onboardingStatusUrl => '$baseUrl/api/onboarding/status';
   static String get healthUrl => '$baseUrl/health';
 
   static const Duration requestTimeout = Duration(seconds: 30);
@@ -862,6 +863,31 @@ class ApiService {
       rethrow;
     } catch (e) {
       throw ChatException('Unexpected error: $e', -1);
+    }
+  }
+
+  static Future<bool> checkOnboardingStatus() async {
+    try {
+      final response = await _client
+          .get(
+            Uri.parse(ApiConfig.onboardingStatusUrl),
+            headers: await _defaultHeaders(),
+          )
+          .timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        return json['onboarding_completed'] as bool? ?? false;
+      }
+      throw ChatException(_parseError(response), response.statusCode);
+    } on SocketException {
+      throw const ChatException('No connection to server. Is the backend running?', 0);
+    } on TimeoutException {
+      throw const ChatException('Onboarding status check timed out.', 408);
+    } on ChatException {
+      rethrow;
+    } catch (e) {
+      throw ChatException('Unexpected status check error: $e', -1);
     }
   }
 

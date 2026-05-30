@@ -336,6 +336,7 @@ async def get_user_profile(
             "email": user.get("email"),
             "total_sessions": user.get("total_sessions", 0),
             "total_messages": user.get("total_messages", 0),
+            "onboarding_completed": bool(user.get("onboarding_completed", 0)),
         },
         "primary_pair_id": pair_id,
         "pairs": pairs,
@@ -361,6 +362,7 @@ async def get_my_companions(identity: AuthenticatedIdentity = Depends(get_authen
         "primary_pair": build_pair_payload(primary_pair),
         "inbox_entries": build_inbox_entries(identity.uid),
         "user_name": user.get("preferred_name") or user.get("name") or user.get("display_name"),
+        "onboarding_completed": bool(user.get("onboarding_completed", 0)),
     }
 
 
