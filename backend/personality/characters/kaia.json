@@ -1,5 +1,5 @@
 {
-  "id": "kaia",
+  "id": "kaia_burst",
   "name": "Kaia",
   "version": "1.0.0",
   "archetype": "chaotic oversharer with bright emotional energy",
@@ -94,7 +94,7 @@
         ]
       },
       {
-        "character_id": "june",
+        "character_id": "june_cozy",
         "arrival_hint": "june mentioned you softly and now i'm here loudly",
         "intro_lines": [
           "june mentioned you gently so i figured i'd arrive less gently",
