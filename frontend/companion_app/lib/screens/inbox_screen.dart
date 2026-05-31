@@ -11,7 +11,10 @@ import '../services/notification_hooks_service.dart';
 import '../services/session_bootstrap_service.dart';
 import '../widgets/atmosphere_background.dart';
 import 'chat_screen.dart';
-import 'profile_screen.dart';
+import 'privacy_screen.dart';
+import 'memory_vault_screen.dart';
+import 'settings_screen.dart';
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Palette — Sol Design System
@@ -176,17 +179,85 @@ class _InboxScreenState extends State<InboxScreen>
     }
   }
 
-  Future<void> _openProfile() async {
-    final selectedPairId = _roster?.primaryCompanion?.pairId;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ProfileScreen(initialPairId: selectedPairId),
-      ),
+
+
+  Future<void> _signOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierColor: _ink.withOpacity(0.80),
+      builder: (context) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: AlertDialog(
+            backgroundColor: _surfaceUp,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+              side: BorderSide(color: _cream.withOpacity(0.06), width: 0.6),
+            ),
+            title: Text(
+              'sign out?',
+              style: GoogleFonts.plusJakartaSans(
+                color: _cream.withOpacity(0.92),
+                fontSize: 17,
+                fontWeight: FontWeight.w500,
+                letterSpacing: -0.2,
+              ),
+            ),
+            content: Text(
+              'your memories stay saved. we will keep presence here for you.',
+              style: GoogleFonts.jost(
+                color: _sand.withOpacity(0.72),
+                fontSize: 14,
+                height: 1.55,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(
+                  'cancel',
+                  style: GoogleFonts.jost(
+                    color: _sand.withOpacity(0.55),
+                    fontSize: 13.5,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(
+                  'sign out',
+                  style: GoogleFonts.jost(
+                    color: const Color(0xFFE07070).withOpacity(0.85),
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
-    if (mounted) await _load(silent: true);
+    if (confirmed == true) {
+      await AuthService.signOut();
+    }
   }
 
-  Future<void> _signOut() async => AuthService.signOut();
+  PopupMenuItem<String> _popupItem(String label, String value) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Text(
+        label,
+        style: GoogleFonts.jost(
+          color: _cream.withOpacity(0.82),
+          fontSize: 13.5,
+          fontWeight: FontWeight.w400,
+          letterSpacing: 0.1,
+        ),
+      ),
+    );
+  }
+
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   String? _firstName() {
@@ -371,10 +442,59 @@ class _InboxScreenState extends State<InboxScreen>
             ),
           ),
           const SizedBox(width: 10),
-          // Icon buttons — glass morphism style
-          _iconBtn(Icons.tune_rounded, _openProfile),
-          const SizedBox(width: 8),
-          _iconBtn(Icons.logout_rounded, _signOut),
+          PopupMenuButton<String>(
+            icon: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _surface.withOpacity(0.70),
+                border: Border.all(
+                  color: _cream.withOpacity(0.08),
+                  width: 0.6,
+                ),
+              ),
+              child: Icon(
+                Icons.more_vert_rounded,
+                size: 16,
+                color: _sand.withOpacity(0.72),
+              ),
+            ),
+            padding: EdgeInsets.zero,
+            color: const Color(0xFF10131A),
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: _cream.withOpacity(0.07),
+                width: 0.6,
+              ),
+            ),
+            onSelected: (val) {
+              if (val == 'privacy') {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const PrivacyScreen()),
+                );
+              } else if (val == 'memories') {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MemoryVaultScreen()),
+                );
+              } else if (val == 'settings') {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              } else if (val == 'logout') {
+                _signOut();
+              }
+            },
+            itemBuilder: (context) => [
+              _popupItem('privacy.', 'privacy'),
+              _popupItem('your memories.', 'memories'),
+              _popupItem('settings.', 'settings'),
+              _popupItem('logout.', 'logout'),
+            ],
+          ),
+
         ],
       ),
     );
@@ -550,30 +670,7 @@ class _InboxScreenState extends State<InboxScreen>
     );
   }
 
-  // ── Icon button — glassmorphic ─────────────────────────────────────────────
-  Widget _iconBtn(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: _surface.withOpacity(0.70),
-          border: Border.all(
-            color: _cream.withOpacity(0.08),
-            width: 0.6,
-          ),
-        ),
-        child: Icon(
-          icon,
-          size: 15,
-          color: _sand.withOpacity(0.72),
-        ),
-      ),
-    );
-  }
+
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -628,7 +725,7 @@ LinearGradient _getAvatarGradient(String name, bool isArrival) {
 class _PresenceDot extends StatefulWidget {
   final bool isTyping;
   final bool isArrival;
-  const _PresenceDot({super.key, required this.isTyping, this.isArrival = false});
+  const _PresenceDot({required this.isTyping, this.isArrival = false});
 
   @override
   State<_PresenceDot> createState() => _PresenceDotState();
@@ -700,7 +797,7 @@ class _PresenceDotState extends State<_PresenceDot>
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _BouncingDots extends StatefulWidget {
-  const _BouncingDots({super.key});
+  const _BouncingDots();
 
   @override
   State<_BouncingDots> createState() => _BouncingDotsState();
@@ -760,7 +857,7 @@ class _BouncingDotsState extends State<_BouncingDots>
 
 class _PresenceAvatar extends StatefulWidget {
   final InboxEntrySummary entry;
-  const _PresenceAvatar({super.key, required this.entry});
+  const _PresenceAvatar({required this.entry});
 
   @override
   State<_PresenceAvatar> createState() => _PresenceAvatarState();

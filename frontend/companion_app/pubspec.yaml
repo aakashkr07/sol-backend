@@ -22,6 +22,9 @@ dependencies:
   # Persistent local storage
   shared_preferences: ^2.2.2
 
+  # Biometric native authentication
+  local_auth: ^2.1.8
+
   # UUID generation
   uuid: ^4.3.3
 

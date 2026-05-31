@@ -9,7 +9,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../services/onboarding_service.dart';
 import '../widgets/atmosphere_background.dart';
-import 'inbox_screen.dart';
 
 // Sol Design System Constants
 const Color _bgDeep = Color(0xFF080A0E);
@@ -1002,7 +1001,7 @@ class _BreathingSilhouettesState extends State<_BreathingSilhouettes>
 
 class _CyclingLoadingText extends StatefulWidget {
   final VoidCallback onFinished;
-  const _CyclingLoadingText({super.key, required this.onFinished});
+  const _CyclingLoadingText({required this.onFinished});
 
   @override
   State<_CyclingLoadingText> createState() => _CyclingLoadingTextState();

@@ -206,6 +206,8 @@ class CompanionSummary {
   final String summary;
   final bool isPrimary;
   final int totalSessions;
+  final String currentStage;
+  final int totalMessages;
 
   const CompanionSummary({
     required this.id,
@@ -214,6 +216,8 @@ class CompanionSummary {
     required this.summary,
     required this.isPrimary,
     required this.totalSessions,
+    required this.currentStage,
+    required this.totalMessages,
   });
 
   factory CompanionSummary.fromJson(Map<String, dynamic> json) {
@@ -224,6 +228,8 @@ class CompanionSummary {
       summary: json['companion_summary'] as String? ?? json['summary'] as String? ?? '',
       isPrimary: _asBool(json['is_primary'], false),
       totalSessions: json['total_sessions'] as int? ?? 0,
+      currentStage: json['current_stage'] as String? ?? 'new',
+      totalMessages: json['total_messages'] as int? ?? 0,
     );
   }
 }

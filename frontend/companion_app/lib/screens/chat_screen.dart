@@ -59,8 +59,11 @@ import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/session_bootstrap_service.dart';
 import '../services/burst_playback_service.dart';
-import 'profile_screen.dart';
+import 'privacy_screen.dart';
+import 'memory_vault_screen.dart';
+import 'settings_screen.dart';
 import '../widgets/atmosphere_background.dart';
+
 import '../widgets/message_bubble.dart';
 import '../widgets/typing_indicator.dart';
 
@@ -86,7 +89,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   static const Color _violet = Color(0xFFA78BFA); // depth / vulnerability
   static const Color _cream = Color(0xFFE8DDD0); // typography
   static const Color _sand = Color(0xFF9A8C78); // secondary text
-  static const Color _dusty = Color(0xFF5A5568); // de-emphasised icons
   static const Color _dustRose = Color(0xFFBB7070); // error tint only
   static const Color _borderFaint = Color(0x0DFFFFFF); // white 5%
 
@@ -180,7 +182,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           openingBursts = session.openingBursts.isNotEmpty
               ? session.openingBursts
               : [ChatBurst.single(session.openingMessage)];
-          
+
           if (_pairId != null) {
             await BurstPlaybackService.saveBursts(_pairId!, openingBursts);
           }
@@ -201,9 +203,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     List<ChatBurst> burstsToPlay = const [];
     if (mounted && _pairId != null) {
-      final hasUnplayed = await BurstPlaybackService.hasUnplayedBursts(_pairId!);
+      final hasUnplayed =
+          await BurstPlaybackService.hasUnplayedBursts(_pairId!);
       if (hasUnplayed) {
-        burstsToPlay = await BurstPlaybackService.getStoredBurstsAsChatBursts(_pairId!);
+        burstsToPlay =
+            await BurstPlaybackService.getStoredBurstsAsChatBursts(_pairId!);
       } else if (_messages.isEmpty && openingBursts.isNotEmpty) {
         burstsToPlay = openingBursts;
       }
@@ -280,7 +284,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     for (var i = 0; i < plannedBursts.length; i++) {
       if (!mounted || playbackId != _assistantPlaybackGeneration) return;
 
-      if (stored.isNotEmpty && i < stored.length && stored[i]['is_played'] == true) {
+      if (stored.isNotEmpty &&
+          i < stored.length &&
+          stored[i]['is_played'] == true) {
         continue;
       }
 
@@ -384,7 +390,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
     if (confirmed == true && mounted) {
       await AuthService.signOut();
+      Navigator.of(context).popUntil((route) => route.isFirst);
     }
+  }
+
+  PopupMenuItem<String> _popupItem(String label, String value) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Text(
+        label,
+        style: GoogleFonts.jost(
+          color: _cream.withOpacity(0.82),
+          fontSize: 13.5,
+          fontWeight: FontWeight.w400,
+          letterSpacing: 0.1,
+        ),
+      ),
+    );
   }
 
   Future<void> _sendMessage() async {
@@ -507,15 +529,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return null;
   }
 
-  Future<void> _openProfile() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ProfileScreen(initialPairId: _pairId),
-      ),
-    );
-    if (mounted) await _loadPendingProactiveEvents(silent: true);
-  }
-
   Future<void> _loadPendingProactiveEvents({required bool silent}) async {
     try {
       final events = await ApiService.getPendingProactiveEvents();
@@ -608,8 +621,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return 'Yesterday';
     } else {
       final months = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December'
       ];
       return '${months[date.month - 1]} ${date.day}, ${date.year}';
     }
@@ -621,12 +644,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     for (int i = 0; i < _messages.length; i++) {
       final msg = _messages[i];
       items.add(MessageItem(msg, _isFirstInGroup(i), _isLastInGroup(i)));
-      final msgDate = DateTime(msg.timestamp.year, msg.timestamp.month, msg.timestamp.day);
+      final msgDate =
+          DateTime(msg.timestamp.year, msg.timestamp.month, msg.timestamp.day);
       if (i == _messages.length - 1) {
         items.add(DateHeaderItem(_formatDateHeader(msg.timestamp)));
       } else {
         final nextMsg = _messages[i + 1];
-        final nextMsgDate = DateTime(nextMsg.timestamp.year, nextMsg.timestamp.month, nextMsg.timestamp.day);
+        final nextMsgDate = DateTime(nextMsg.timestamp.year,
+            nextMsg.timestamp.month, nextMsg.timestamp.day);
         if (msgDate != nextMsgDate) {
           items.add(DateHeaderItem(_formatDateHeader(msg.timestamp)));
         }
@@ -744,22 +769,57 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             const SizedBox(width: 8),
           ],
 
-          // ── Profile ───────────────────────────────────────────────────────
-          _IconButton(
-            icon: Icons.tune_rounded,
-            size: 17,
-            onTap: _openProfile,
-            opacity: 0.42,
-          ),
-          const SizedBox(width: 6),
-
-          // ── Sign out — de-emphasised ───────────────────────────────────────
-          _IconButton(
-            icon: Icons.logout_rounded,
-            size: 16,
-            onTap: _signOut,
-            opacity: 0.28,
-            tint: _dusty,
+          PopupMenuButton<String>(
+            icon: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _surface.withOpacity(0.70),
+                border: Border.all(
+                  color: _cream.withOpacity(0.08),
+                  width: 0.6,
+                ),
+              ),
+              child: Icon(
+                Icons.more_vert_rounded,
+                size: 15,
+                color: _sand.withOpacity(0.72),
+              ),
+            ),
+            padding: EdgeInsets.zero,
+            color: const Color(0xFF10131A),
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: _cream.withOpacity(0.07),
+                width: 0.6,
+              ),
+            ),
+            onSelected: (val) {
+              if (val == 'privacy') {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const PrivacyScreen()),
+                );
+              } else if (val == 'memories') {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MemoryVaultScreen()),
+                );
+              } else if (val == 'settings') {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              } else if (val == 'logout') {
+                _signOut();
+              }
+            },
+            itemBuilder: (context) => [
+              _popupItem('privacy.', 'privacy'),
+              _popupItem('your memories.', 'memories'),
+              _popupItem('settings.', 'settings'),
+              _popupItem('logout.', 'logout'),
+            ],
           ),
         ],
       ),
@@ -891,7 +951,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.04),
                   border: Border.all(
@@ -1119,18 +1180,16 @@ class _IconButton extends StatelessWidget {
     required this.size,
     required this.onTap,
     this.opacity = 0.45,
-    this.tint,
   });
 
   final IconData icon;
   final double size;
   final VoidCallback onTap;
   final double opacity;
-  final Color? tint; // if null, defaults to white
 
   @override
   Widget build(BuildContext context) {
-    final baseColor = tint ?? Colors.white;
+    const baseColor = Colors.white;
     return Material(
       color: Colors.transparent,
       child: InkWell(
