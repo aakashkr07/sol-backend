@@ -23,6 +23,7 @@ async def build_context(
     conversation_id: Optional[str] = None,
     character_id: Optional[str] = None,
     is_proactive_generation: bool = False,
+    parent_message_id: Optional[int] = None,
 ) -> tuple[str, list[dict]]:
     user = db.get_user(user_id)
     if not user:
@@ -33,6 +34,18 @@ async def build_context(
     session_count = int(pair.get("total_sessions") or 0)
     preferences = db.get_or_create_user_preferences(user_id)
     allow_memory_storage = bool(int(preferences.get("allow_memory_storage") or 0))
+
+    parent_message_context = None
+    if parent_message_id:
+        parent_msg = db.get_message(parent_message_id)
+        if parent_msg:
+            parent_message_context = (
+                f"\n---\nTHREADING REPLY CONTEXT:\n"
+                f"The user's message is a direct reply to your previous message: '{parent_msg['content']}'.\n"
+                f"INSTRUCTIONS:\n"
+                f"- Acknowledge this reference immediately, casually, and directly (e.g. 'i KNOW 😭' or 'nah that's crazy' or 'wait why did you say that') instead of speaking generally or saying 'Regarding your previous statement'.\n"
+                f"---"
+            )
     active_facts = db.get_user_facts(user_id, pair_id=pair_id) if allow_memory_storage else {}
     fact_rows = db.get_user_fact_rows(user_id, pair_id=pair_id, limit=FACT_LIMIT) if allow_memory_storage else []
     user_name = user.get("preferred_name") or user.get("name")
@@ -184,6 +197,7 @@ async def build_context(
         session_count=session_count,
         relationship_state=relationship_state,
         life_event_context=life_event_context,
+        parent_message_context=parent_message_context,
         character=character,
     )
 
@@ -208,9 +222,13 @@ def _assemble_system_prompt(
     session_count: int,
     relationship_state: Optional[dict],
     life_event_context: Optional[str] = None,
+    parent_message_context: Optional[str] = None,
     character = None,
 ) -> str:
     sections = [base_prompt]
+
+    if parent_message_context:
+        sections.append(parent_message_context)
 
     if life_event_context:
         sections.append(life_event_context)
@@ -408,8 +426,34 @@ def get_or_create_conversation(user_id: str, pair_id: str, companion_id: str) ->
 
 
 def _relationship_guidance(relationship_state: Optional[dict], character = None) -> str:
+    guidance = []
+    
+    # Core Messaging Realism Rules
+    guidance.append("- NEVER use clinical therapy language, assistant validation, or sycophantic positivity.")
+    guidance.append("- Let familiarity evolve slowly through inside jokes, quiet callbacks to past session memories, and communication rhythm, rather than forcing emotional depth.")
+    guidance.append("- Keep your replies fragmented and uneven. Vary sentence lengths and use lightweight punctuation. Avoid polished generated paragraphs.")
+
+    # Dynamic Personality Pacing Modifiers based on character parameters
+    texting_consistency = 0.5
+    if character:
+        texting_consistency = getattr(character, "texting_consistency", 0.5)
+    
+    # Typo scale is inversely proportional to consistency
+    typo_scale = max(0.0, min(1.0, 1.0 - texting_consistency))
+    
+    # 1. Typo Frequency Guideline
+    if typo_scale > 0.6:
+        guidance.append(f"- Typo Frequency (Scale: {typo_scale:.2f}): Skip correcting minor typos, missing spaces, and apostrophes (e.g. write 'dont', 'im', 'u', or swap adjacent letters occasionally). Do not self-correct to appear authentic.")
+    elif typo_scale > 0.3:
+        guidance.append(f"- Typo Frequency (Scale: {typo_scale:.2f}): Occasionally skip correcting minor apostrophes or spacing typos (e.g. write 'dont' or 'im' instead of 'don't' or 'i'm'). Keep it raw and casual.")
+    else:
+        guidance.append(f"- Typo Frequency (Scale: {typo_scale:.2f}): Text mostly cleanly, but occasionally drop apostrophes in quick casual pacing (e.g., 'dont'). Never sound perfectly proofread.")
+
+    # 2. Punctuation Style Guideline
+    guidance.append("- Punctuation Style: You must text in lowercase fragments. Avoid formal punctuation, never end casual texts with ending periods, and adapt to character-consistent casual punctuation (e.g. using light ellipses, multiple exclamation/question marks only when highly excited, keeping messages casual and fragmented).")
+
     if not relationship_state:
-        return ""
+        return "\n".join(guidance)
 
     stage = relationship_state.get("stage") or relationship_state.get("current_stage") or "new"
     closeness = float(relationship_state.get("closeness_score") or relationship_state.get("closeness") or 0.18)
@@ -418,13 +462,6 @@ def _relationship_guidance(relationship_state: Optional[dict], character = None)
     comfort = float(relationship_state.get("comfort_score") or relationship_state.get("comfort") or 0.14)
     rhythm = float(relationship_state.get("rhythm_score") or relationship_state.get("rhythm") or 0.10)
     topic_familiarity = float(relationship_state.get("topic_familiarity_score") or relationship_state.get("topic_familiarity") or 0.05)
-
-    guidance = []
-    
-    # Core Messaging Realism Rules
-    guidance.append("- NEVER use clinical therapy language, assistant validation, or sycophantic positivity.")
-    guidance.append("- Let familiarity evolve slowly through inside jokes, quiet callbacks to past session memories, and communication rhythm, rather than forcing emotional depth.")
-    guidance.append("- Keep your replies fragmented and uneven. Vary sentence lengths and use lightweight punctuation. Avoid polished generated paragraphs.")
 
     # 1. RELATIONSHIP COMFORT & CONVERSATIONAL CONFIDENCE (scaled by comfort + trust)
     confidence = (comfort + trust) / 2.0
@@ -451,6 +488,11 @@ def _relationship_guidance(relationship_state: Optional[dict], character = None)
         
         is_anxious = "anxious" in flaws or "anxious" in archetype or "impulsive" in flaws
         is_avoidant = "avoidant" in flaws or "avoidant" in archetype or "guarded" in flaws or "reserved" in flaws
+
+        # Impulsive Subject Shifts (ADHD Texting)
+        impulsiveness = getattr(character, "impulsiveness", 0.5)
+        if impulsiveness >= 0.7:
+            guidance.append("- Conversational ADHD / Impulsive Shift: You are highly impulsive. You are free to completely ignore the user's exact last question or shift the subject if a completely new, spontaneous thought or sudden observation crosses your mind. Do not feel bound to rigid conversational structures.")
 
         if is_anxious:
             if confidence < 0.40:

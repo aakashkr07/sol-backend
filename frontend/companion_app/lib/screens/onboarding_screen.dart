@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../services/api_service.dart';
 import '../services/onboarding_service.dart';
+import 'inbox_screen.dart';
 
 // Sol Design System Constants
 const Color _bgDeep = Color(0xFF080A0E);
@@ -52,6 +53,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   OnboardingCompleteResponse? _matchedResponse;
   bool _isStarting = false;
   String? _error;
+  bool _apiSuccess = false;
+  bool _cycleFinished = false;
 
   @override
   void initState() {
@@ -90,10 +93,57 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     super.dispose();
   }
 
+  Future<void> _checkRedirect() async {
+    if (_apiSuccess && _cycleFinished) {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        await OnboardingService.markComplete(uid);
+      }
+      
+      final dummySession = SessionStartResponse(
+        conversationId: '',
+        userName: '',
+        sessionNumber: 1,
+        memoryCount: 0,
+        isFirstSession: true,
+        pairId: '',
+        companionId: '',
+        companionName: '',
+        companionSummary: '',
+        openingMessage: '',
+        openingBursts: const [],
+        resumedExisting: false,
+        historyMessages: const [],
+      );
+      await widget.onComplete(dummySession);
+
+      if (!mounted) return;
+      
+      Navigator.of(context).pushAndRemoveUntil(
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) => const InboxScreen(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(
+              opacity: CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              ),
+              child: child,
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 800),
+        ),
+        (route) => false,
+      );
+    }
+  }
+
   Future<void> _submitOnboarding() async {
     setState(() {
       _currentStep = 5; // Finding your people loading state
       _error = null;
+      _apiSuccess = false;
+      _cycleFinished = false;
     });
 
     try {
@@ -109,14 +159,12 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         throw const ChatException('Failed to match you. Try again.', -1);
       }
 
-      // Pause for a short bit to let the user enjoy the ambient silhouettes animation
-      await Future.delayed(const Duration(milliseconds: 2800));
-
       if (!mounted) return;
       setState(() {
         _matchedResponse = response;
-        _currentStep = 6; // Intro card step
+        _apiSuccess = true;
       });
+      _checkRedirect();
     } on ChatException catch (e) {
       setState(() {
         _error = e.message;
@@ -457,15 +505,15 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           // Subtle animated profile silhouettes
           const _BreathingSilhouettes(),
           const SizedBox(height: 48),
-          Text(
-            'Finding your people...',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.plusJakartaSans(
-              color: _cream.withOpacity(0.92),
-              fontSize: 22,
-              fontWeight: FontWeight.w400,
-              letterSpacing: -0.3,
-            ),
+          _CyclingLoadingText(
+            onFinished: () {
+              if (mounted) {
+                setState(() {
+                  _cycleFinished = true;
+                });
+                _checkRedirect();
+              }
+            },
           ),
           const SizedBox(height: 8),
           Text(
@@ -1111,5 +1159,70 @@ class _CosCurve extends Curve {
   @override
   double transformInternal(double t) {
     return (math.cos(t * math.pi * 2) + 1.0) / 2.0;
+  }
+}
+
+class _CyclingLoadingText extends StatefulWidget {
+  final VoidCallback onFinished;
+  const _CyclingLoadingText({super.key, required this.onFinished});
+
+  @override
+  State<_CyclingLoadingText> createState() => _CyclingLoadingTextState();
+}
+
+class _CyclingLoadingTextState extends State<_CyclingLoadingText> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  int _phaseIndex = 0;
+  final List<String> _phases = [
+    "connecting to the grid...",
+    "finding people around you...",
+    "gathering presence...",
+  ];
+  Timer? _phaseTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+
+    _phaseTimer = Timer.periodic(const Duration(milliseconds: 1800), (timer) {
+      if (_phaseIndex < _phases.length - 1) {
+        setState(() {
+          _phaseIndex++;
+        });
+      } else {
+        timer.cancel();
+        widget.onFinished();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _phaseTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.35, end: 1.0).animate(
+        CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+      ),
+      child: Text(
+        _phases[_phaseIndex],
+        textAlign: TextAlign.center,
+        style: GoogleFonts.plusJakartaSans(
+          color: _cream.withOpacity(0.92),
+          fontSize: 22,
+          fontWeight: FontWeight.w400,
+          letterSpacing: -0.3,
+        ),
+      ),
+    );
   }
 }

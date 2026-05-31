@@ -48,6 +48,18 @@ CREATE TABLE IF NOT EXISTS companions (
     relationship_label    TEXT DEFAULT 'friend',
     match_weight          INTEGER DEFAULT 1,
     sort_order            INTEGER DEFAULT 0,
+    proactive_frequency   TEXT DEFAULT 'medium',
+    impulsiveness         REAL DEFAULT 0.5,
+    attachment_speed      REAL DEFAULT 0.5,
+    boredom_threshold     REAL DEFAULT 0.5,
+    loneliness_tolerance  REAL DEFAULT 0.5,
+    emotional_openness    REAL DEFAULT 0.5,
+    social_confidence     REAL DEFAULT 0.5,
+    texting_consistency   REAL DEFAULT 0.5,
+    disappearance_tendency REAL DEFAULT 0.5,
+    late_night_probability REAL DEFAULT 0.5,
+    double_text_probability REAL DEFAULT 0.5,
+    emotional_volatility  REAL DEFAULT 0.5,
     created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -204,7 +216,8 @@ CREATE TABLE IF NOT EXISTS messages (
     draft_duration_ms     INTEGER,
     reply_latency_ms      INTEGER,
     text_length           INTEGER,
-    memory_extracted      INTEGER DEFAULT 0
+    memory_extracted      INTEGER DEFAULT 0,
+    parent_message_id     INTEGER REFERENCES messages(id)
 );
 
 

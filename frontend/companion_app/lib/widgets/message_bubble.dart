@@ -48,10 +48,9 @@ class MessageBubble extends StatefulWidget {
   final bool isFirst;
   final bool isLast;
   final bool showAvatar;
-
-  // companionName is needed to render the initial letter in the avatar.
-  // Defaults to empty string — shows '?' if truly unknown.
   final String companionName;
+  final Message? parentMessage;
+  final ValueChanged<Message>? onSwiped;
 
   const MessageBubble({
     super.key,
@@ -61,6 +60,8 @@ class MessageBubble extends StatefulWidget {
     this.isLast = true,
     this.showAvatar = true,
     this.companionName = '',
+    this.parentMessage,
+    this.onSwiped,
   });
 
   @override
@@ -72,6 +73,9 @@ class _MessageBubbleState extends State<MessageBubble>
   late final AnimationController _entranceCtrl;
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
+
+  double _dragOffset = 0.0;
+  bool _hasTriggeredHaptic = false;
 
   @override
   void initState() {
@@ -129,8 +133,6 @@ class _MessageBubbleState extends State<MessageBubble>
     final isUser = widget.message.isUser;
     final screenWidth = MediaQuery.of(context).size.width;
 
-    // ClipRect prevents the SlideTransition from painting above the item's
-    // layout rect during entrance — this was the source of the 52px overflow.
     return ClipRect(
       child: FadeTransition(
         opacity: _fade,
@@ -143,28 +145,77 @@ class _MessageBubbleState extends State<MessageBubble>
               top: widget.isFirst ? 8 : 2,
               bottom: widget.isLast ? 3 : 0,
             ),
-            child: Column(
-              crossAxisAlignment:
-                  isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment:
-                      isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (!isUser) _buildCompanionAvatar(),
-                    if (!isUser) const SizedBox(width: 6),
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: screenWidth * 0.65,
-                        minWidth: 54,
+            child: GestureDetector(
+              onHorizontalDragUpdate: (details) {
+                // Dragging from left to right (dx > 0)
+                if (details.delta.dx > 0) {
+                  setState(() {
+                    _dragOffset = (_dragOffset + details.delta.dx).clamp(0.0, 70.0);
+                  });
+                  if (_dragOffset >= 50.0 && !_hasTriggeredHaptic) {
+                    HapticFeedback.lightImpact();
+                    _hasTriggeredHaptic = true;
+                  }
+                }
+              },
+              onHorizontalDragEnd: (details) {
+                if (_dragOffset >= 50.0) {
+                  widget.onSwiped?.call(widget.message);
+                }
+                setState(() {
+                  _dragOffset = 0.0;
+                  _hasTriggeredHaptic = false;
+                });
+              },
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: -40,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 100),
+                        opacity: _dragOffset > 20 ? (_dragOffset / 70.0).clamp(0.0, 1.0) : 0.0,
+                        child: const Icon(
+                          Icons.reply_rounded,
+                          color: _blue,
+                          size: 22,
+                        ),
                       ),
-                      child: _buildBubble(isUser),
                     ),
-                  ],
-                ),
-                if (widget.isLast) _buildTimestamp(isUser),
-              ],
+                  ),
+                  AnimatedContainer(
+                    duration: Duration(milliseconds: _dragOffset == 0 ? 180 : 0),
+                    curve: Curves.easeOutCubic,
+                    transform: Matrix4.translationValues(_dragOffset, 0, 0),
+                    child: Column(
+                      crossAxisAlignment:
+                          isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment:
+                              isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (!isUser) _buildCompanionAvatar(),
+                            if (!isUser) const SizedBox(width: 6),
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: screenWidth * 0.65,
+                                minWidth: 54,
+                              ),
+                              child: _buildBubble(isUser),
+                            ),
+                          ],
+                        ),
+                        if (widget.isLast) _buildTimestamp(isUser),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -175,7 +226,6 @@ class _MessageBubbleState extends State<MessageBubble>
   // ── Companion avatar — initial letter, blue ring ────────────────────────────
   Widget _buildCompanionAvatar() {
     if (!widget.showAvatar) {
-      // Placeholder preserves horizontal alignment for grouped messages
       return const SizedBox(width: 28);
     }
 
@@ -214,12 +264,57 @@ class _MessageBubbleState extends State<MessageBubble>
     );
   }
 
+  // ── Parent Message Preview ──────────────────────────────────────────────────
+  Widget _buildParentMessagePreview(bool isUser) {
+    final parent = widget.parentMessage;
+    if (parent == null) return const SizedBox.shrink();
+
+    final senderName = parent.isUser ? "You" : (widget.companionName.isNotEmpty ? widget.companionName : "Companion");
+    final accentColor = parent.isUser ? _blue : const Color(0xFFA78BFA);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(8),
+        border: Border(
+          left: BorderSide(color: accentColor, width: 3.0),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            senderName,
+            style: GoogleFonts.plusJakartaSans(
+              color: accentColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            parent.text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.plusJakartaSans(
+              color: isUser ? Colors.white.withOpacity(0.70) : _cream.withOpacity(0.70),
+              fontSize: 13,
+              height: 1.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Bubble ───────────────────────────────────────────────────────────────────
   Widget _buildBubble(bool isUser) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        // User: blue gradient. Companion: dark surface with hairline border.
         gradient: isUser
             ? const LinearGradient(
                 begin: Alignment.topLeft,
@@ -245,18 +340,24 @@ class _MessageBubbleState extends State<MessageBubble>
           ),
         ],
       ),
-      child: Text(
-        widget.message.text,
-        style: GoogleFonts.plusJakartaSans(
-          // User text: white on blue. Companion text: cream.
-          color: isUser
-              ? Colors.white.withOpacity(0.95)
-              : _cream.withOpacity(0.88),
-          fontSize: 15,
-          height: 1.45,
-          fontWeight: isUser ? FontWeight.w500 : FontWeight.w400,
-          letterSpacing: -0.1,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (widget.parentMessage != null) _buildParentMessagePreview(isUser),
+          Text(
+            widget.message.text,
+            style: GoogleFonts.plusJakartaSans(
+              color: isUser
+                  ? Colors.white.withOpacity(0.95)
+                  : _cream.withOpacity(0.88),
+              fontSize: 15,
+              height: 1.45,
+              fontWeight: isUser ? FontWeight.w500 : FontWeight.w400,
+              letterSpacing: -0.1,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -294,7 +395,6 @@ class _MessageBubbleState extends State<MessageBubble>
   // ── Status ticks ──────────────────────────────────────────────────────────────
   Widget _buildTicks(MessageStatus status) {
     const double iconSize = 13;
-    // All tick colours in-palette: sand for unread, blue for read
     const Color tickGrey = _sand;
     const Color tickRead = _blue;
 
@@ -320,9 +420,13 @@ class _MessageBubbleState extends State<MessageBubble>
       child: Stack(
         children: [
           Positioned(
-              left: 0, child: Icon(Icons.check, size: size, color: color)),
+            left: 0,
+            child: Icon(Icons.check, size: size, color: color),
+          ),
           Positioned(
-              left: 5, child: Icon(Icons.check, size: size, color: color)),
+            left: 5,
+            child: Icon(Icons.check, size: size, color: color),
+          ),
         ],
       ),
     );

@@ -35,6 +35,7 @@ class ChatRequest(BaseModel):
     client_sent_at: Optional[str] = None
     draft_duration_ms: Optional[int] = Field(default=None, ge=0, le=600000)
     reply_latency_ms: Optional[int] = Field(default=None, ge=0, le=86400000)
+    parent_message_id: Optional[int] = None
 
 
 class BurstPayload(BaseModel):
@@ -62,9 +63,11 @@ class SessionStartRequest(BaseModel):
 
 
 class SessionHistoryMessage(BaseModel):
+    id: Optional[int] = None
     role: str
     content: str
     created_at: Optional[str] = None
+    parent_message_id: Optional[int] = None
 
 
 class SessionStartResponse(BaseModel):
@@ -157,6 +160,7 @@ async def chat(
                     client_sent_at=request.client_sent_at,
                     draft_duration_ms=request.draft_duration_ms,
                     reply_latency_ms=request.reply_latency_ms,
+                    parent_message_id=request.parent_message_id,
                 )
                 on_message_saved(pair["id"], "user", request.message)
         except Exception as e:
@@ -181,6 +185,7 @@ async def chat(
                 current_message=request.message,
                 conversation_id=conversation_id,
                 character_id=pair["companion_id"],
+                parent_message_id=request.parent_message_id,
             )
         except Exception as exc:
             logger.error("Context building failed for pair %s: %s", pair["id"], exc, exc_info=True)
@@ -215,6 +220,82 @@ async def chat(
             user_message=request.message,
             relationship_state=pair_state,
         )
+
+        import random
+        import uuid
+        import json
+        from datetime import datetime, timedelta
+
+        disappearance_tendency = getattr(companion, "disappearance_tendency", 0.5)
+        texting_consistency = getattr(companion, "texting_consistency", 0.5)
+        
+        disappeared = False
+        
+        # 1. Disappearance check: high disappearance tendency has a low probability check
+        if disappearance_tendency >= 0.40 and random.random() < (disappearance_tendency * 0.15):
+            disappeared = True
+            logger.info("Companion %s rolled a mid-conversation disappearance!", companion.id)
+            
+        # 2. Texting consistency check: extremely low consistency randomly adds a massive latency offset
+        elif texting_consistency < 0.50 and random.random() > texting_consistency and random.random() < 0.25:
+            disappeared = True
+            logger.info("Companion %s got distracted due to low texting consistency!", companion.id)
+            
+        if disappeared:
+            # Hold the message back as a pending proactive event!
+            delay_hours = random.randint(2, 6)
+            scheduled_time = (datetime.utcnow() + timedelta(hours=delay_hours)).isoformat(timespec="milliseconds")
+            event_id = str(uuid.uuid4())
+            payload = {
+                "bursts": [
+                    {
+                        "text": burst.text,
+                        "pre_burst_delay_ms": burst.pre_burst_delay_ms,
+                        "typing_duration_ms": burst.typing_duration_ms,
+                        "pause_intensity": burst.pause_intensity,
+                        "is_follow_up": burst.is_follow_up,
+                    }
+                    for burst in burst_plan.bursts
+                ],
+                "companion_name": companion.name,
+                "conversation_id": conversation_id,
+                "pair_id": pair["id"],
+                "reason": "distracted_double_text",
+            }
+            
+            try:
+                with db.transaction():
+                    db.log_proactive_event(
+                        event_id=event_id,
+                        user_id=identity.uid,
+                        pair_id=pair["id"],
+                        companion_id=pair["companion_id"],
+                        conversation_id=conversation_id,
+                        reason="distracted_double_text",
+                        message_text=burst_plan.combined_text,
+                        payload_json=json.dumps(payload),
+                        notification_status="pending",
+                        scheduled_for=scheduled_time,
+                    )
+                    
+                    # Resolve active life event anyway so we don't block
+                    active_event = db.get_latest_unresolved_life_event(pair["id"])
+                    if active_event:
+                        db.mark_life_event_resolved(active_event["id"])
+            except Exception as e:
+                logger.error("Failed to save distracted double text event: %s", e)
+            
+            mem_count = get_memory_count(pair_id=pair["id"], user_id=identity.uid)
+            return ChatResponse(
+                reply="",
+                bursts=[],
+                conversation_id=conversation_id,
+                memory_count=mem_count,
+                pair_id=pair["id"],
+                companion_id=companion.id,
+                companion_name=companion.name,
+            )
+
         try:
             with db.transaction():
                 for burst in burst_plan.bursts:
@@ -318,9 +399,11 @@ async def start_session(
             resumed_existing=True,
             history_messages=[
                 SessionHistoryMessage(
+                    id=message.get("id"),
                     role=message.get("role") or "assistant",
                     content=message.get("content") or "",
                     created_at=message.get("created_at"),
+                    parent_message_id=message.get("parent_message_id"),
                 )
                 for message in history_messages
                 if (message.get("content") or "").strip()

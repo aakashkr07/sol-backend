@@ -10,6 +10,7 @@ class Message {
   final bool isNew;
   final MessageStatus status;
   final bool startsNewGroup;
+  final int? parentMessageId;
 
   const Message({
     required this.id,
@@ -19,6 +20,7 @@ class Message {
     this.isNew = false,
     this.status = MessageStatus.read,
     this.startsNewGroup = false,
+    this.parentMessageId,
   });
 
   bool get isUser => role == MessageRole.user;
@@ -31,7 +33,7 @@ class Message {
     return '$hour:$minute $suffix';
   }
 
-  factory Message.fromCompanion(String content, {bool startsNewGroup = false}) {
+  factory Message.fromCompanion(String content, {bool startsNewGroup = false, int? parentMessageId}) {
     return Message(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       role: MessageRole.assistant,
@@ -40,6 +42,7 @@ class Message {
       isNew: true,
       status: MessageStatus.read,
       startsNewGroup: startsNewGroup,
+      parentMessageId: parentMessageId,
     );
   }
 
@@ -49,6 +52,7 @@ class Message {
     required String role,
     required String content,
     required String? createdAt,
+    int? parentMessageId,
   }) {
     return Message(
       id: '${role}_${createdAt ?? DateTime.now().microsecondsSinceEpoch}_${content.hashCode}',
@@ -58,10 +62,11 @@ class Message {
       isNew: false,
       status: MessageStatus.read,
       startsNewGroup: false,
+      parentMessageId: parentMessageId,
     );
   }
 
-  factory Message.fromUser(String content) {
+  factory Message.fromUser(String content, {int? parentMessageId}) {
     return Message(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       role: MessageRole.user,
@@ -70,6 +75,7 @@ class Message {
       isNew: true,
       status: MessageStatus.sending,
       startsNewGroup: false,
+      parentMessageId: parentMessageId,
     );
   }
 
@@ -79,6 +85,7 @@ class Message {
     bool? isNew,
     MessageStatus? status,
     bool? startsNewGroup,
+    int? parentMessageId,
   }) {
     return Message(
       id: id,
@@ -88,6 +95,7 @@ class Message {
       isNew: isNew ?? this.isNew,
       status: status ?? this.status,
       startsNewGroup: startsNewGroup ?? this.startsNewGroup,
+      parentMessageId: parentMessageId ?? this.parentMessageId,
     );
   }
 }

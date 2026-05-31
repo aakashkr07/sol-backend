@@ -30,7 +30,21 @@
     "rhythm": "burst",
     "social_energy": "warm"
   },
+  "personality_parameters": {
+    "impulsiveness": 0.42,
+    "attachment_speed": 0.65,
+    "boredom_threshold": 0.38,
+    "loneliness_tolerance": 0.30,
+    "emotional_openness": 0.78,
+    "social_confidence": 0.55,
+    "texting_consistency": 0.72,
+    "disappearance_tendency": 0.25,
+    "late_night_probability": 0.85,
+    "double_text_probability": 0.48,
+    "emotional_volatility": 0.35
+  },
   "proactive_profile": {
+    "proactive_frequency": "medium",
     "minimum_inactivity_hours": 17,
     "cooldown_bias_hours": -3,
     "preferred_opening_device": "a remembered detail, a soft late-night question, or a half-finished thought",

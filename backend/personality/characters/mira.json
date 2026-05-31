@@ -20,7 +20,21 @@
     "rhythm": "burst",
     "social_energy": "intense"
   },
+  "personality_parameters": {
+    "impulsiveness": 0.88,
+    "attachment_speed": 0.82,
+    "boredom_threshold": 0.20,
+    "loneliness_tolerance": 0.15,
+    "emotional_openness": 0.85,
+    "social_confidence": 0.80,
+    "texting_consistency": 0.35,
+    "disappearance_tendency": 0.40,
+    "late_night_probability": 0.70,
+    "double_text_probability": 0.80,
+    "emotional_volatility": 0.75
+  },
   "proactive_profile": {
+    "proactive_frequency": "high",
     "minimum_inactivity_hours": 14,
     "cooldown_bias_hours": -6,
     "preferred_opening_device": "an impulsive burst, immediate opinion, or emotionally curious check-in",

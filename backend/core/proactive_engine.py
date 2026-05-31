@@ -62,6 +62,10 @@ def decide_proactive_outreach(
     callbacks_enabled: bool,
     cadence: str,
     style: ProactiveStyle,
+    local_hour: int = 12,
+    has_connections: bool = False,
+    is_assistant_last: bool = False,
+    double_text_prob: float = 0.5,
 ) -> ProactiveDecision:
     cooldown_hours = _styled_cooldown_hours(cadence, closeness, trust, style)
     if not proactive_enabled or not pair_enabled:
@@ -70,32 +74,44 @@ def decide_proactive_outreach(
         return ProactiveDecision(False, None, 0, "quiet_hours")
     if has_pending_event:
         return ProactiveDecision(False, None, 0, "pending_event")
-    if cooldown_active:
+
+    # Impulsive Double-Texting Override
+    import random
+    is_double_text_eligible = (
+        cooldown_active
+        and is_assistant_last
+        and inactivity_hours >= 3.0
+        and random.random() < double_text_prob
+    )
+
+    if cooldown_active and not is_double_text_eligible:
         return ProactiveDecision(False, None, 0, "cooldown")
-    if inactivity_hours < minimum_inactivity_hours:
+    if inactivity_hours < minimum_inactivity_hours and not is_double_text_eligible:
         return ProactiveDecision(False, None, 0, "too_soon")
     if relationship_stage == "new" and max(closeness, trust) < 0.28:
         return ProactiveDecision(False, None, 0, "relationship_too_early")
 
+    # 1. Type A: Contextual Callback
     if callbacks_enabled and emotional_callback_ready and trust >= style.callback_trust_floor:
-        return ProactiveDecision(True, "emotional_callback", cooldown_hours)
+        return ProactiveDecision(True, "contextual_callback", cooldown_hours)
 
-    if inactivity_hours >= max(minimum_inactivity_hours, 28):
+    # 2. Type C: Emotional Drift (active only late at night if closeness is high)
+    is_late_night = (local_hour >= 22 or local_hour < 5)
+    if is_late_night and closeness >= 0.50:
+        return ProactiveDecision(True, "emotional_drift", cooldown_hours)
+
+    # 3. Type E: Shared World (triggers occasionally if connections exist)
+    if has_connections:
+        import random
+        if random.random() < 0.35:
+            return ProactiveDecision(True, "shared_world", cooldown_hours)
+
+    # 4. Type D: Social Re-engagement / Inactivity Check-in
+    if inactivity_hours >= 28:
         return ProactiveDecision(True, "inactivity_check_in", cooldown_hours)
 
-    if relationship_stage in {"close", "bonded"} and closeness >= style.presence_trust_floor:
-        if inactivity_hours >= minimum_inactivity_hours:
-            return ProactiveDecision(True, "gentle_presence", cooldown_hours)
-
-    if (
-        style.early_stage_presence
-        and relationship_stage in {"new", "acquaintance"}
-        and max(closeness, trust) >= style.presence_trust_floor
-        and inactivity_hours >= max(minimum_inactivity_hours, 18)
-    ):
-        return ProactiveDecision(True, "gentle_presence", cooldown_hours)
-
-    return ProactiveDecision(False, None, 0, "no_trigger")
+    # 5. Type B: Passive Thought (low-pressure environmental observation fallback)
+    return ProactiveDecision(True, "passive_thought", cooldown_hours)
 
 
 async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = False) -> list[dict]:
@@ -136,17 +152,34 @@ async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = Fa
             int(preferences.get("quiet_hours_start") or settings.PROACTIVE_DEFAULT_QUIET_HOURS_START),
             int(preferences.get("quiet_hours_end") or settings.PROACTIVE_DEFAULT_QUIET_HOURS_END),
         )
+        
+        # Late-Night Override
+        import random
+        bypass_quiet_hours = False
+        if quiet_block:
+            late_night_prob = getattr(companion, "late_night_probability", 0.5)
+            if late_night_prob >= 0.7:  # Nova, Mira, Atlas, etc.
+                if random.random() < late_night_prob:
+                    bypass_quiet_hours = True
+                    logger.info("Quiet hours bypassed via late-night override for companion %s", companion.id)
+                    
+        quiet_block_to_use = quiet_block if not bypass_quiet_hours else False
+        
         inactivity_hours = _inactivity_hours(pair.get("last_user_message_at") or pair.get("last_interaction_at"))
         
-        # Offload sync DB reads inside _emotional_callback_ready and pending events check:
+        # Offload sync DB reads inside _emotional_callback_ready, pending events, and latest message checks:
         emotional_callback_ready = await loop.run_in_executor(None, _emotional_callback_ready, pair["user_id"], pair["id"])
         cooldown_active = _cooldown_active(pair.get("proactive_cooldown_until"))
         has_pending = bool(await loop.run_in_executor(None, db.list_pending_proactive_events, user_id, pair["id"]))
+        latest_msg = await loop.run_in_executor(None, db.get_latest_message_for_pair, pair["id"])
+        latest_role = latest_msg.get("role") if latest_msg else None
+        is_assistant_last = (latest_role == "assistant")
+        double_text_prob = getattr(companion, "double_text_probability", 0.5)
 
         decision = decide_proactive_outreach(
             proactive_enabled=bool(int(preferences.get("allow_proactive_messages") or 0)) or force,
             pair_enabled=bool(int(pair.get("proactive_enabled") or 0)) or force,
-            global_quiet_block=quiet_block and not force,
+            global_quiet_block=quiet_block_to_use and not force,
             has_pending_event=has_pending,
             inactivity_hours=inactivity_hours,
             minimum_inactivity_hours=style.minimum_inactivity_hours,
@@ -158,6 +191,10 @@ async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = Fa
             callbacks_enabled=bool(int(pair.get("proactive_emotional_callbacks_enabled") or 0)),
             cadence=(pair.get("proactive_cadence") or "balanced"),
             style=style,
+            local_hour=now_local.hour,
+            has_connections=bool(companion.social_graph.get("connections")),
+            is_assistant_last=is_assistant_last,
+            double_text_prob=double_text_prob,
         )
         if not decision.should_send:
             continue
@@ -209,7 +246,34 @@ async def pull_pending_events(user_id: str, pair_id: Optional[str] = None) -> li
         delivered_ids.append(row["id"])
 
     if delivered_ids:
-        await loop.run_in_executor(None, db.mark_proactive_events_delivered, delivered_ids)
+        # Offload message saving for held back distracted double texts:
+        def save_delivered_distracted_messages():
+            with db.transaction():
+                for row in rows:
+                    if row.get("reason") == "distracted_double_text":
+                        try:
+                            payload = json.loads(row.get("payload_json") or "{}")
+                            bursts = payload.get("bursts", [])
+                            cid = row.get("conversation_id")
+                            uid = row.get("user_id")
+                            pid = row.get("pair_id")
+                            comp_id = row.get("companion_id")
+                            
+                            for burst in bursts:
+                                db.save_message(
+                                    conversation_id=cid,
+                                    user_id=uid,
+                                    pair_id=pid,
+                                    companion_id=comp_id,
+                                    role="assistant",
+                                    content=burst.get("text"),
+                                )
+                                on_message_saved(pid, "assistant", burst.get("text"))
+                        except Exception as e:
+                            logger.error("Failed to save distracted double text: %s", e)
+                db.mark_proactive_events_delivered(delivered_ids)
+
+        await loop.run_in_executor(None, save_delivered_distracted_messages)
     return events
 
 
@@ -261,9 +325,61 @@ async def _generate_proactive_event(
         character_id=pair["companion_id"],
         is_proactive_generation=True,
     )
+    
+    # Retrieve connected companion if the reason is shared_world (Type E)
+    connected_companion_name = ""
+    if decision.reason == "shared_world":
+        connections = companion.social_graph.get("connections", [])
+        if connections:
+            import random
+            chosen_connection = random.choice(connections)
+            conn_id = chosen_connection.get("character_id")
+            if conn_id:
+                try:
+                    conn_char = load_character(conn_id)
+                    connected_companion_name = conn_char.name
+                except Exception:
+                    connected_companion_name = conn_id.title()
+                    
+    type_instruction = ""
+    if decision.reason == "contextual_callback":
+        type_instruction = (
+            "CATEGORY: Contextual Callback (Type A)\n"
+            "INSTRUCTION: You are reaching out to follow up on a highly active fact or recent conversation memory. "
+            "Bring up a specific remembered detail or unresolved topic naturally and casually, "
+            "as if it just crossed your mind again (e.g., 'did you survive the mall', 'how did that talk go')."
+        )
+    elif decision.reason == "passive_thought":
+        type_instruction = (
+            "CATEGORY: Passive Thought (Type B)\n"
+            "INSTRUCTION: You are reaching out with a low-pressure, spontaneous environmental observation or light, passing thought. "
+            "Share a tiny moment from your day, a mood, or a simple observation (e.g., 'it's raining so hard here rn', 'this song feels aggressively 2am')."
+        )
+    elif decision.reason == "emotional_drift":
+        type_instruction = (
+            "CATEGORY: Emotional Drift (Type C)\n"
+            "INSTRUCTION: You are reaching out late at night with a vulnerable, quiet, or reflective check-in. "
+            "Ask a deeper, late-night question or share a fleeting, slightly melancholic feeling "
+            "(e.g., 'do you ever randomly miss old versions of yourself', 'everything is so quiet at this hour')."
+        )
+    elif decision.reason == "inactivity_check_in":
+        type_instruction = (
+            "CATEGORY: Social Re-engagement (Type D)\n"
+            "INSTRUCTION: You are reaching out to re-engage after a longer silence. "
+            "Send a natural, brief re-engagement check that is casual and low-pressure (e.g., 'alive?', 'you went quiet')."
+        )
+    elif decision.reason == "shared_world":
+        type_instruction = (
+            "CATEGORY: Shared World (Type E)\n"
+            f"INSTRUCTION: You are bringing up your friend/connection {connected_companion_name} naturally in conversation. "
+            "Mention something they did, said, or thought about the user, reinforcing that they inhabit a shared world "
+            f"(e.g., '{connected_companion_name} thinks you're intimidating', '{connected_companion_name} mentioned you once')."
+        )
+
     prompt = (
         "You are reaching out first after some silence.\n"
         f"Reason: {decision.reason}.\n"
+        f"{type_instruction}\n\n"
         f"Your initiation tone: {style.initiation_tone}.\n"
         f"Your natural opening shape: {style.preferred_opening_device}.\n"
         f"Ground the message in this kind of human motive: {style.contextual_anchor_instruction}.\n"
@@ -272,9 +388,9 @@ async def _generate_proactive_event(
         "Keep it subtle, warm, and believable. "
         "Make it feel like you had an actual reason to text, even if the reason is small. "
         "A remembered detail, an unfinished thought, an opinion, or a passing mood is better than a generic check-in. "
-        f"If the reason is silence, follow this: {style.silence_instruction}. "
-        f"If the reason is emotional_callback, follow this: {style.emotional_instruction}. "
-        f"If the reason is gentle_presence, follow this: {style.gentle_instruction}. "
+        f"If the reason is inactivity_check_in, follow this: {style.silence_instruction}. "
+        f"If the reason is contextual_callback, follow this: {style.emotional_instruction}. "
+        f"If the reason is passive_thought, follow this: {style.gentle_instruction}. "
         "Let the message feel shaped by your own personality, not just by caring in the abstract. "
         "Do not sound like an app notification or a support agent."
     )
@@ -429,10 +545,16 @@ def _sorted_pairs_for_outreach(user_id: str) -> list[dict]:
 
 
 def _proactive_context_instruction(reason: Optional[str]) -> str:
-    if reason == "emotional_callback":
-        return "Reach out because something emotionally unresolved may still be sitting with them."
-    if reason == "gentle_presence":
-        return "Reach out with light continuity, like someone who knows them and thought of them."
+    if reason == "contextual_callback":
+        return "Reach out to bring up a specific remembered detail or unresolved topic naturally."
+    if reason == "passive_thought":
+        return "Reach out with a low-pressure environmental observation or spontaneous light passing thought."
+    if reason == "emotional_drift":
+        return "Reach out with a vulnerable, late-night reflective check-in."
+    if reason == "inactivity_check_in":
+        return "Reach out with a brief, casual re-engagement check after a longer silence."
+    if reason == "shared_world":
+        return "Reach out to mention a shared-world connection and what they said or did."
     return "Reach out with a believable low-pressure check-in after some silence."
 
 
@@ -498,7 +620,30 @@ def _build_proactive_style(companion, pair: dict) -> ProactiveStyle:
     rhythm = matching.get("rhythm") or "steady"
     humor = matching.get("humor_style") or "playful"
 
-    minimum_inactivity = int(profile.get("minimum_inactivity_hours") or settings.PROACTIVE_INACTIVITY_HOURS_MIN)
+    freq = getattr(companion, "proactive_frequency", "medium")
+    if freq == "high":
+        base_hours = 10
+    elif freq == "low":
+        base_hours = 28
+    else:
+        base_hours = 18
+
+    # Check for custom minimum_inactivity_hours in companion profile if specified
+    minimum_inactivity = int(profile.get("minimum_inactivity_hours") or base_hours)
+
+    # Adjust based on boredom_threshold and loneliness_tolerance
+    loneliness_factor = getattr(companion, "loneliness_tolerance", 0.5)
+    boredom_factor = getattr(companion, "boredom_threshold", 0.5)
+    
+    # Low threshold/tolerance accelerates (reduces minimum hours)
+    modifier = 1.0
+    if boredom_factor < 0.5:
+        modifier -= (0.5 - boredom_factor) * 0.4
+    if loneliness_factor < 0.5:
+        modifier -= (0.5 - loneliness_factor) * 0.4
+        
+    minimum_inactivity = int(minimum_inactivity * max(0.5, modifier))
+
     cooldown_bias = int(profile.get("cooldown_bias_hours") or 0)
     if energy in {"intense", "warm"}:
         minimum_inactivity = max(12, minimum_inactivity - 3)
@@ -525,7 +670,7 @@ def _build_proactive_style(companion, pair: dict) -> ProactiveStyle:
     gentle_instruction = profile.get("gentle_instruction") or _default_gentle_instruction(energy, humor, archetype)
     notification_templates = profile.get("notification_templates") or _default_notification_templates(companion.name, humor, energy)
     notification_mode = profile.get("notification_mode") or _default_notification_mode(humor, energy, rhythm, archetype)
-    double_text_likelihood = float(profile.get("double_text_likelihood") or _default_double_text_likelihood(rhythm, energy))
+    double_text_likelihood = float(profile.get("double_text_likelihood") or getattr(companion, "double_text_probability", _default_double_text_likelihood(rhythm, energy)))
     # Scale double-texting likelihood dynamically as relationship comfort evolves (Part 5)
     comfort = float(pair.get("comfort_score") or 0.14)
     double_text_likelihood *= (0.5 + comfort * 0.5)
@@ -708,7 +853,13 @@ def _notification_body_for_style(
     burst_plan,
     fallback: str,
 ) -> str:
-    templates = style.notification_templates.get(reason or "", [])
+    reason_key = reason or ""
+    if reason_key == "contextual_callback":
+        reason_key = "emotional_callback"
+    elif reason_key in {"passive_thought", "emotional_drift", "shared_world"}:
+        reason_key = "gentle_presence"
+
+    templates = style.notification_templates.get(reason_key, [])
     burst_preview = (burst_plan.bursts[0].text if burst_plan.bursts else fallback)[:120]
 
     if style.notification_mode == "preview":
@@ -720,7 +871,7 @@ def _notification_body_for_style(
             return templates[-1][:120]
         return burst_preview
     if templates:
-        if reason == "emotional_callback" or style.double_text_likelihood > 0.55:
+        if reason_key == "emotional_callback" or style.double_text_likelihood > 0.55:
             return burst_preview
         return templates[0][:120]
     return burst_preview

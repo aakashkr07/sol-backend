@@ -14,16 +14,18 @@ from memory.store import db
 logger = logging.getLogger(__name__)
 
 EXTRACTION_SYSTEM_PROMPT = """You are the memory extraction engine for a deeply relational AI companion.
+You are parsing casual, natural human texts and conversations (which are often messy, informal, full of slang, and emotionally rich).
+Understand the user's implicit context, environment, and physical/emotional state.
 Analyze the conversation and return ONLY valid JSON.
 
 Return this shape exactly:
 {
   "facts": [
     {
-      "category": "identity|relationships|work|health|preferences|goals|struggles",
+      "category": "identity|relationships|work|health|preferences|goals|struggles|context",
       "key": "snake_case_key",
-      "value": "fact value",
-      "confidence": 0.0
+      "value": "natural human-like fact summary",
+      "confidence": 0.8
     }
   ],
   "companion_facts": [
@@ -31,7 +33,7 @@ Return this shape exactly:
       "category": "preferences|routine|history|opinion|relation_to_other_bots|other",
       "key": "snake_case_key",
       "value": "fact value about the companion character revealed by them in their response",
-      "confidence": 0.0
+      "confidence": 0.8
     }
   ],
   "entities": [
@@ -83,7 +85,21 @@ Return this shape exactly:
 
 Rules:
 - Extract only information grounded in the conversation.
-- Facts should be durable things worth remembering, not momentary mood.
+- **User Facts Key-Value Redesign & Grounding**:
+  * Extract user facts in a highly structured key-value fashion.
+  * Instead of storing generic or robotic database strings, force the extraction of rich, multi-dimensional semantic and contextual details about the user's current situation:
+    - **Environment/Location Type**: e.g., `location_type: mall`, `location: library` (implicit or explicit).
+    - **Current Activity**: e.g., `activity: waiting for friend`, `current_activity: watching movie`.
+    - **Social Context**: e.g., `social_state: alone`, `social_context: with family`, `social_context: with friend`.
+    - **Emotional Implications/Fatigue/Sleep**: e.g., `emotional_implication: solitude/comfort`, `sleep_status: insomnia/3 days`, `sleep_deficit: 3 days`, `energy_level: exhausted`.
+  * **No Robotic Strings**: Prevent writing robotic database-like statements.
+  * **Clean Keys**: Keys must be clean, semantic, and written in snake_case (e.g. `location_type`, `social_context`, `current_activity`, `sleep_deficit`, `emotional_implication`).
+  * **Human Values**: Values must be natural, human-like summaries representing the dimension.
+  * **Examples**:
+    - User says: "i'm at the mall waiting for my friend"
+      -> Extract `location_type: mall`, `current_activity: waiting for friend`, `social_context: with friend`.
+    - User says: "i haven't slept properly in like 3 days"
+      -> Extract `sleep_deficit: 3 days`, `emotional_implication: fatigue/stress`.
 - Companion facts should capture durable self-disclosed preferences, routines, opinions, or personal history revealed by the Companion (labeled as 'Companion:' in text) in their responses.
 - Entities should only include important people, places, organizations, concepts, or events.
 - Emotions should reflect the user, not the assistant.

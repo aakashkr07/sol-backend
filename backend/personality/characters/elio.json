@@ -18,6 +18,22 @@
     "rhythm": "steady",
     "social_energy": "quiet"
   },
+  "personality_parameters": {
+    "impulsiveness": 0.50,
+    "attachment_speed": 0.60,
+    "boredom_threshold": 0.40,
+    "loneliness_tolerance": 0.45,
+    "emotional_openness": 0.65,
+    "social_confidence": 0.70,
+    "texting_consistency": 0.75,
+    "disappearance_tendency": 0.15,
+    "late_night_probability": 0.25,
+    "double_text_probability": 0.30,
+    "emotional_volatility": 0.18
+  },
+  "proactive_profile": {
+    "proactive_frequency": "medium"
+  },
   "discovery": {
     "mode": "feels like someone smart enough to know better still reaching out anyway",
     "first_session_openers": [

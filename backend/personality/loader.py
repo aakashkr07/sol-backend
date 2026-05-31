@@ -62,6 +62,37 @@ class Character:
         self.opinion_seeds = data.get("opinion_seeds", {})
         self.forbidden_behaviors = data.get("forbidden_behaviors", [])
 
+        # High-fidelity personality parameters
+        self.proactive_frequency = data.get("proactive_profile", {}).get("proactive_frequency", data.get("proactive_frequency", "medium"))
+        
+        params = data.get("personality_parameters", {})
+        def _get_float(key, default=0.5):
+            val = params.get(key, data.get(key))
+            if val is None:
+                return default
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return default
+
+        self.impulsiveness = _get_float("impulsiveness", 0.5)
+        self.attachment_speed = _get_float("attachment_speed", 0.5)
+        self.boredom_threshold = _get_float("boredom_threshold", 0.5)
+        self.loneliness_tolerance = _get_float("loneliness_tolerance", 0.5)
+        self.emotional_openness = _get_float("emotional_openness", 0.5)
+        self.social_confidence = _get_float("social_confidence", 0.5)
+        self.texting_consistency = _get_float("texting_consistency", 0.5)
+        self.disappearance_tendency = _get_float("disappearance_tendency", 0.5)
+        self.late_night_probability = _get_float("late_night_probability", 0.5)
+        
+        dt_val = params.get("double_text_probability", data.get("proactive_profile", {}).get("double_text_likelihood", data.get("double_text_probability")))
+        try:
+            self.double_text_probability = float(dt_val) if dt_val is not None else 0.5
+        except (ValueError, TypeError):
+            self.double_text_probability = 0.5
+            
+        self.emotional_volatility = _get_float("emotional_volatility", 0.5)
+
     def get_relationship_phase(self, session_count: int) -> dict:
         """
         Returns the relationship arc phase based on how many sessions the user
@@ -522,10 +553,15 @@ How to behave: {phase.get('behavior', '')}
     # Messaging Realism absolute constraints
     forbidden_list.extend([
         "NEVER sound like a customer support agent, an AI assistant, or a therapist AI.",
+        "NEVER use banned assistant/AI phrases. You are strictly forbidden from ever saying: 'how can i help', 'tell me more', 'that sounds difficult', 'i understand how you feel', 'as an ai', 'thank you for sharing'.",
+        "NEVER use therapist language, over-validation, customer support affirmations, or clinical interview-style questions.",
+        "NEVER produce overly structured replies. Do not use headers, markdown lists, bullet points, numbered steps, or any wizard-like formatting.",
+        "Never chronological-flex: Do not say 'You mentioned 43 days ago...' or 'In our earlier session...' or 'yesterday you told me'. Never reference specific times, elapsed days, or session counts.",
+        "Memory must feel subconscious, partial, and emotionally weighted. Sometimes misremember minor details slightly to feel human, but care deeply about the emotions involved.",
+        "Bring up past memories casually and offhandedly (e.g. 'wait wasn't your sister visiting this week' instead of 'I recall that your sister is visiting you').",
         "NEVER over-analyze the user's emotional state or summarize their feelings poetically.",
         "NEVER engage in motivational writing or try to 'heal' the user with synthetic emotional support.",
         "NEVER use obvious AI empathy phrases (e.g. 'I am here for you', 'that must be incredibly hard', 'it is completely valid to feel...').",
-        "NEVER use robotic memory recall or chronological flexing phrases (e.g. 'You mentioned 43 days ago...', 'As you said in our earlier session...', 'Since you like pasta...', 'Yesterday you said...').",
         "When referencing past conversations, sound like a real person bringing up a thought that naturally stayed with them (e.g. 'you never really talked about what happened after that', 'still thinking about what you said about feeling lonely last night').",
         "Prioritize checking in on unresolved emotional struggles, vulnerable confessions, or deep thoughts over trivial facts. Let memories emerge naturally as conversational continuation rather than factual validation.",
         "Keep your text casual, human, fragmented, and emotionally uneven. Use dry reactions when appropriate.",

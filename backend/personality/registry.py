@@ -20,6 +20,18 @@ def sync_companion_registry() -> None:
             relationship_label=character.relationship_defaults.get("relationship_label", "friend"),
             match_weight=int(character.matching_profile.get("weight", 1) or 1),
             sort_order=sort_order,
+            proactive_frequency=getattr(character, "proactive_frequency", "medium"),
+            impulsiveness=getattr(character, "impulsiveness", 0.5),
+            attachment_speed=getattr(character, "attachment_speed", 0.5),
+            boredom_threshold=getattr(character, "boredom_threshold", 0.5),
+            loneliness_tolerance=getattr(character, "loneliness_tolerance", 0.5),
+            emotional_openness=getattr(character, "emotional_openness", 0.5),
+            social_confidence=getattr(character, "social_confidence", 0.5),
+            texting_consistency=getattr(character, "texting_consistency", 0.5),
+            disappearance_tendency=getattr(character, "disappearance_tendency", 0.5),
+            late_night_probability=getattr(character, "late_night_probability", 0.5),
+            double_text_probability=getattr(character, "double_text_probability", 0.5),
+            emotional_volatility=getattr(character, "emotional_volatility", 0.5),
         )
 
 
@@ -45,6 +57,16 @@ def choose_companion_for_user(user_id: str) -> Character:
     chemistry = _build_user_chemistry_profile(user_id)
     ranked = _rank_characters_for_user(user_id, available, chemistry)
     return ranked[0]
+
+
+def rank_companions_for_user(user_id: str) -> list[Character]:
+    available = [load_character(character_id) for character_id in sorted(list_characters())]
+    if not available:
+        raise ValueError("No companion characters are available")
+
+    chemistry = _build_user_chemistry_profile(user_id)
+    return _rank_characters_for_user(user_id, available, chemistry)
+
 
 
 def resolve_or_assign_primary_pair(
@@ -95,7 +117,26 @@ def resolve_or_assign_primary_pair(
 def build_opening_line(character: Character, session_count: int = 1) -> str:
     discovery = character.discovery or {}
     if session_count <= 1:
-        openers = discovery.get("first_session_openers") or discovery.get("openers") or []
+        custom_openers = discovery.get("first_session_openers") or discovery.get("openers") or []
+        
+        # Curated casual, accidental, observational first-session openers
+        default_openers = [
+            "u awake",
+            "okay wait i think i opened your profile by accident earlier",
+            "why is everyone awake rn",
+            "random but hi",
+            "you awake too?",
+        ]
+        
+        # Filter out formal AI introductions from character json
+        formal_words = ["assistant", "ai", "virtual", "chat", "help you", "hello, i am", "how can i help"]
+        casual_custom = [
+            o for o in custom_openers 
+            if not any(w in o.lower() for w in formal_words)
+        ]
+        
+        # Merge default low-pressure/accidental openers with casual custom ones
+        openers = default_openers + casual_custom
     else:
         openers = discovery.get("returning_openers") or discovery.get("openers") or []
 
@@ -153,20 +194,62 @@ def _build_pair_inbox_entry(pair: dict, unread_count: int) -> dict:
     companion = load_character(pair["companion_id"])
     latest_message = db.get_latest_message_for_pair(pair["id"])
     latest_role = latest_message.get("role") if latest_message else None
-    waiting_on_user = bool(unread_count) or latest_role == "assistant"
-    preview_text = (
-        latest_message["content"].strip()
-        if latest_message and (latest_message.get("content") or "").strip()
-        else companion.summary or build_opening_line(companion, session_count=1)
-    )
-    preview_at = (
-        latest_message.get("created_at")
-        if latest_message
-        else pair.get("last_interaction_at")
-        or pair.get("last_session_started_at")
-        or pair.get("updated_at")
-        or pair.get("created_at")
-    )
+    
+    # If a pair has no message history (inactive threads)
+    if not latest_message:
+        waiting_on_user = False
+        unread_count = 0
+        
+        # Stable dynamic social presence
+        presence_options = ["active 12m ago", "online tonight", "quiet for now"]
+        digest = hashlib.sha256(pair["id"].encode("utf-8")).hexdigest()
+        presence_idx = int(digest[:8], 16) % len(presence_options)
+        social_presence = presence_options[presence_idx]
+        
+        preview_text = companion.summary or build_opening_line(companion, session_count=1)
+        preview_at = (
+            pair.get("last_interaction_at")
+            or pair.get("last_session_started_at")
+            or pair.get("updated_at")
+            or pair.get("created_at")
+        )
+        
+        # Check social graph connections for active companion references
+        arrival_hint = ""
+        status_text = _status_text_for_pair(pair)
+        
+        # Find active companions (other pairs with messages or primary status)
+        user_pairs = db.list_pairs_for_user(pair["user_id"])
+        active_companion_ids = {
+            p["companion_id"] for p in user_pairs
+            if p["id"] != pair["id"] and (p.get("is_primary") or int(p.get("total_messages") or 0) > 0)
+        }
+        
+        related_ids = [item.get("character_id") for item in companion.social_graph.get("connections", [])]
+        connected_active_id = next((cid for cid in related_ids if cid in active_companion_ids), None)
+        if connected_active_id:
+            active_name = load_character(connected_active_id).name
+            arrival_hint = f"{active_name} mentioned you"
+            status_text = f"{active_name} mentioned you"
+    else:
+        waiting_on_user = bool(unread_count) or latest_role == "assistant"
+        preview_text = (
+            latest_message["content"].strip()
+            if (latest_message.get("content") or "").strip()
+            else companion.summary or build_opening_line(companion, session_count=1)
+        )
+        preview_at = (
+            latest_message.get("created_at")
+            if latest_message
+            else pair.get("last_interaction_at")
+            or pair.get("last_session_started_at")
+            or pair.get("updated_at")
+            or pair.get("created_at")
+        )
+        social_presence = _social_presence_for_pair(pair, latest_role, unread_count)
+        arrival_hint = ""
+        status_text = _status_text_for_pair(pair)
+
     conversation_id = db.get_current_conversation(pair["user_id"], pair_id=pair["id"])
 
     return {
@@ -177,7 +260,7 @@ def _build_pair_inbox_entry(pair: dict, unread_count: int) -> dict:
         "companion_summary": companion.summary or companion.core_identity.get("vibe", ""),
         "preview_text": preview_text,
         "preview_at": preview_at,
-        "status_text": _status_text_for_pair(pair),
+        "status_text": status_text,
         "status_priority": 2 if unread_count else 1,
         "current_conversation_id": conversation_id,
         "is_primary": bool(pair.get("is_primary")),
@@ -185,8 +268,8 @@ def _build_pair_inbox_entry(pair: dict, unread_count: int) -> dict:
         "unread_count": unread_count,
         "latest_role": latest_role,
         "waiting_on_user": waiting_on_user,
-        "social_presence": _social_presence_for_pair(pair, latest_role, unread_count),
-        "arrival_hint": "",
+        "social_presence": social_presence,
+        "arrival_hint": arrival_hint,
         "relationship_stage": pair.get("current_stage") or "new",
         "total_sessions": int(pair.get("total_sessions") or 0),
     }

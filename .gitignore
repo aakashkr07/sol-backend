@@ -53,4 +53,7 @@ Desktop.ini
 .DS_Store
 .agents/
 
-echo backend/firebase_credentials.json >> .gitignore
+backend/firebase_credentials.json
+backend/verify_step2.py
+backend/verify_step3.py
+backend/verify_step4.py

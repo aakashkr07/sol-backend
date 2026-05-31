@@ -709,6 +709,18 @@ class Database:
                 "relationship_label TEXT DEFAULT 'friend'",
                 "match_weight INTEGER DEFAULT 1",
                 "sort_order INTEGER DEFAULT 0",
+                "proactive_frequency TEXT DEFAULT 'medium'",
+                "impulsiveness REAL DEFAULT 0.5",
+                "attachment_speed REAL DEFAULT 0.5",
+                "boredom_threshold REAL DEFAULT 0.5",
+                "loneliness_tolerance REAL DEFAULT 0.5",
+                "emotional_openness REAL DEFAULT 0.5",
+                "social_confidence REAL DEFAULT 0.5",
+                "texting_consistency REAL DEFAULT 0.5",
+                "disappearance_tendency REAL DEFAULT 0.5",
+                "late_night_probability REAL DEFAULT 0.5",
+                "double_text_probability REAL DEFAULT 0.5",
+                "emotional_volatility REAL DEFAULT 0.5",
                 "created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
                 "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",
             ],
@@ -768,6 +780,7 @@ class Database:
                 "reply_latency_ms INTEGER",
                 "text_length INTEGER",
                 "memory_extracted INTEGER DEFAULT 0",
+                "parent_message_id INTEGER",
             ],
             "user_facts": [
                 "pair_id TEXT",
@@ -1092,14 +1105,29 @@ class Database:
         relationship_label: str = "friend",
         match_weight: int = 1,
         sort_order: int = 0,
+        proactive_frequency: str = "medium",
+        impulsiveness: float = 0.5,
+        attachment_speed: float = 0.5,
+        boredom_threshold: float = 0.5,
+        loneliness_tolerance: float = 0.5,
+        emotional_openness: float = 0.5,
+        social_confidence: float = 0.5,
+        texting_consistency: float = 0.5,
+        disappearance_tendency: float = 0.5,
+        late_night_probability: float = 0.5,
+        double_text_probability: float = 0.5,
+        emotional_volatility: float = 0.5,
     ):
         now = _utcnow_iso()
         self.conn.execute(
             """
             INSERT INTO companions
                 (id, name, status, archetype, summary, introduction_style, relationship_label,
-                 match_weight, sort_order, created_at, updated_at)
-            VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)
+                 match_weight, sort_order, proactive_frequency, impulsiveness, attachment_speed,
+                 boredom_threshold, loneliness_tolerance, emotional_openness, social_confidence,
+                 texting_consistency, disappearance_tendency, late_night_probability,
+                 double_text_probability, emotional_volatility, created_at, updated_at)
+            VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 status = 'active',
@@ -1109,6 +1137,18 @@ class Database:
                 relationship_label = COALESCE(excluded.relationship_label, companions.relationship_label),
                 match_weight = excluded.match_weight,
                 sort_order = excluded.sort_order,
+                proactive_frequency = excluded.proactive_frequency,
+                impulsiveness = excluded.impulsiveness,
+                attachment_speed = excluded.attachment_speed,
+                boredom_threshold = excluded.boredom_threshold,
+                loneliness_tolerance = excluded.loneliness_tolerance,
+                emotional_openness = excluded.emotional_openness,
+                social_confidence = excluded.social_confidence,
+                texting_consistency = excluded.texting_consistency,
+                disappearance_tendency = excluded.disappearance_tendency,
+                late_night_probability = excluded.late_night_probability,
+                double_text_probability = excluded.double_text_probability,
+                emotional_volatility = excluded.emotional_volatility,
                 updated_at = excluded.updated_at
             """,
             (
@@ -1120,6 +1160,18 @@ class Database:
                 relationship_label,
                 max(1, int(match_weight)),
                 sort_order,
+                proactive_frequency,
+                impulsiveness,
+                attachment_speed,
+                boredom_threshold,
+                loneliness_tolerance,
+                emotional_openness,
+                social_confidence,
+                texting_consistency,
+                disappearance_tendency,
+                late_night_probability,
+                double_text_probability,
+                emotional_volatility,
                 now,
                 now,
             ),
@@ -1807,6 +1859,7 @@ class Database:
         client_sent_at: Optional[str] = None,
         draft_duration_ms: Optional[int] = None,
         reply_latency_ms: Optional[int] = None,
+        parent_message_id: Optional[int] = None,
     ) -> int:
         with self.transaction():
             now = datetime.utcnow()
@@ -1816,8 +1869,8 @@ class Database:
                 INSERT INTO messages
                     (conversation_id, user_id, pair_id, companion_id, role, content, created_at,
                      emotional_tone, emotional_intensity, topics, hour_of_day, day_of_week,
-                     client_sent_at, draft_duration_ms, reply_latency_ms, text_length)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     client_sent_at, draft_duration_ms, reply_latency_ms, text_length, parent_message_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     conversation_id,
@@ -1836,6 +1889,7 @@ class Database:
                     draft_duration_ms,
                     reply_latency_ms,
                     text_length,
+                    parent_message_id,
                 ),
             )
             self.conn.execute(
@@ -1918,6 +1972,13 @@ class Database:
             ).fetchall()
 
         return [self._normalize_message_row(row) for row in reversed(rows)]
+
+    def get_message(self, message_id: int) -> Optional[dict]:
+        row = self.conn.execute(
+            "SELECT * FROM messages WHERE id = ? LIMIT 1",
+            (message_id,),
+        ).fetchone()
+        return self._normalize_message_row(row) if row else None
 
     def get_latest_message_for_pair(self, pair_id: str) -> Optional[dict]:
         row = self.conn.execute(

@@ -5,6 +5,7 @@ class OnboardingService {
   OnboardingService._();
 
   static const String _prefix = 'sol_onboarding_complete';
+  static void Function()? onboardingSuccessCallback;
 
   static String _keyForUser(String userId) => '$_prefix:$userId';
 
@@ -28,6 +29,7 @@ class OnboardingService {
   static Future<void> markComplete(String userId) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyForUser(userId), true);
+    onboardingSuccessCallback?.call();
   }
 
   static Future<void> clear(String userId) async {

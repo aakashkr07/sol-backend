@@ -976,7 +976,7 @@ class _InboxTileState extends State<_InboxTile>
     _entrySlide = Tween<Offset>(
       begin: const Offset(0, 0.04),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut));
+    ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
 
     // Staggered entrance
     Future.delayed(Duration(milliseconds: widget.index * 55), () {
@@ -984,6 +984,20 @@ class _InboxTileState extends State<_InboxTile>
     });
 
     _initTypingSimulation();
+
+    // Flash typing indicator shortly after mount for premium micro-interaction!
+    if (widget.entry.isPrimary) {
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (mounted && !widget.opening && !_isTyping) {
+          setState(() => _isTyping = true);
+          Timer(const Duration(milliseconds: 3800), () {
+            if (mounted) {
+              setState(() => _isTyping = false);
+            }
+          });
+        }
+      });
+    }
   }
 
   void _initTypingSimulation() {
@@ -1029,220 +1043,229 @@ class _InboxTileState extends State<_InboxTile>
       child: SlideTransition(
         position: _entrySlide,
         child: GestureDetector(
-          onTapDown: (_) => setState(() => _pressed = true),
+          onTapDown: (_) {
+            if (!widget.opening) {
+              HapticFeedback.lightImpact();
+              setState(() => _pressed = true);
+            }
+          },
           onTapUp: (_) {
             setState(() => _pressed = false);
             if (!widget.opening) widget.onTap();
           },
           onTapCancel: () => setState(() => _pressed = false),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            margin: arrival
-                ? const EdgeInsets.symmetric(horizontal: 14, vertical: 6)
-                : EdgeInsets.zero,
-            padding: arrival ? const EdgeInsets.only(right: 6) : EdgeInsets.zero,
-            decoration: BoxDecoration(
-              color: _pressed
-                  ? _cream.withOpacity(0.018)
-                  : arrival
-                      ? _surfaceUp.withOpacity(0.24)
-                      : unread
-                          ? _surfaceUp.withOpacity(0.38)
-                          : Colors.transparent,
-              border: arrival
-                  ? Border.all(
-                      color: _violet.withOpacity(0.08),
-                      width: 0.8,
-                    )
-                  : null,
-              borderRadius: arrival ? BorderRadius.circular(16) : null,
-              boxShadow: arrival
-                  ? [
-                      BoxShadow(
-                        color: _violet.withOpacity(0.025),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: AnimatedScale(
+              scale: _pressed ? 0.970 : 1.0,
+              duration: const Duration(milliseconds: 90),
+              curve: Curves.easeOut,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: _pressed
+                          ? _cream.withOpacity(0.025)
+                          : (unread
+                              ? _surfaceUp.withOpacity(0.48)
+                              : _surface.withOpacity(0.26)),
+                      border: Border.all(
+                        color: unread
+                            ? (arrival
+                                ? _violetSoft.withOpacity(0.22)
+                                : _blueSoft.withOpacity(0.22))
+                            : _cream.withOpacity(0.07),
+                        width: 0.6,
                       ),
-                    ]
-                  : null,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // ── Left accent bar ──────────────────────────────
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        width: arrival ? 0.0 : 2.0,
-                        decoration: BoxDecoration(
-                          gradient: unread
-                              ? LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    _blue.withOpacity(0.70),
-                                    _blue.withOpacity(0.20),
-                                  ],
-                                )
-                              : null,
-                          color: unread ? null : Colors.transparent,
-                        ),
-                      ),
-
-                      // ── Content ──────────────────────────────────────
-                      Expanded(
-                        child: Padding(
-                          padding: EdgeInsets.fromLTRB(arrival ? 16 : 20, 16, 18, 16),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: unread
+                          ? [
+                              BoxShadow(
+                                color: arrival
+                                    ? _violet.withOpacity(0.04)
+                                    : _blue.withOpacity(0.04),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IntrinsicHeight(
                           child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              _buildAvatar(unread, arrival),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    // Name + timestamp
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.baseline,
-                                      textBaseline: TextBaseline.alphabetic,
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            widget.entry.companionName,
-                                            style: GoogleFonts.plusJakartaSans(
-                                              color: _cream.withOpacity(
-                                                unread ? 0.96 : 0.78,
-                                              ),
-                                              fontSize: 15,
-                                              fontWeight: unread
-                                                  ? FontWeight.w600
-                                                  : FontWeight.w400,
-                                              letterSpacing: -0.1,
-                                              height: 1.15,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          _timeLabel(),
-                                          style: GoogleFonts.jost(
-                                            color: unread
-                                                ? (arrival
-                                                    ? _violet.withOpacity(0.65)
-                                                    : _blue.withOpacity(0.60))
-                                                : _sand.withOpacity(0.30),
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w400,
-                                            letterSpacing: 0.1,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-
-                                    // Social presence / mood line
-                                    if (widget
-                                            .entry.socialPresence.isNotEmpty ||
-                                        widget.entry.statusText.isNotEmpty) ...[
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        widget.entry.socialPresence.isNotEmpty
-                                            ? widget.entry.socialPresence
-                                            : widget.entry.statusText,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.jost(
-                                          color: (unread || arrival)
-                                              ? (arrival
-                                                  ? _violetSoft
-                                                      .withOpacity(0.52)
-                                                  : _amber.withOpacity(0.52))
-                                              : _sand.withOpacity(0.46),
-                                          fontSize: 11.5,
-                                          fontWeight: FontWeight.w400,
-                                          letterSpacing: 0.15,
-                                          fontStyle: FontStyle.italic,
-                                        ),
-                                      ),
-                                    ],
-
-                                    const SizedBox(height: 5),
-
-                                    // Preview text or Typing indicator
-                                    if (_isTyping)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 2.0),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          crossAxisAlignment: CrossAxisAlignment.center,
-                                          children: [
-                                            Text(
-                                              'typing',
-                                              style: GoogleFonts.jost(
-                                                color: _blueSoft.withOpacity(0.85),
-                                                fontSize: 13.5,
-                                                fontWeight: FontWeight.w500,
-                                                letterSpacing: 0.2,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 5),
-                                            const _BouncingDots(),
-                                          ],
-                                        ),
-                                      )
-                                    else
-                                      Text(
-                                        _getFormattedPreviewText(),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.jost(
-                                          color: _cream.withOpacity(
-                                            unread ? 0.78 : 0.52,
-                                          ),
-                                          fontSize: 13.5,
-                                          fontWeight: FontWeight.w400,
-                                          height: 1.45,
-                                          letterSpacing: 0.1,
-                                        ),
-                                      ),
-                                  ],
+                              // ── Left accent bar ──────────────────────────────
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 300),
+                                width: 3.0,
+                                decoration: BoxDecoration(
+                                  gradient: unread
+                                      ? LinearGradient(
+                                          begin: Alignment.topCenter,
+                                          end: Alignment.bottomCenter,
+                                          colors: arrival
+                                              ? [
+                                                  _violet.withOpacity(0.85),
+                                                  _violet.withOpacity(0.20),
+                                                ]
+                                              : [
+                                                  _blue.withOpacity(0.85),
+                                                  _blue.withOpacity(0.20),
+                                                ],
+                                        )
+                                      : null,
+                                  color: unread ? null : Colors.transparent,
                                 ),
                               ),
 
-                              // Unread badge
-                              if (widget.entry.unreadCount > 0) ...[
-                                const SizedBox(width: 10),
-                                _buildBadge(widget.entry.unreadCount, arrival),
-                              ],
+                              // ── Content ──────────────────────────────────────
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 16, 18, 16),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      _buildAvatar(unread, arrival),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            // Name + timestamp
+                                            Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.baseline,
+                                              textBaseline: TextBaseline.alphabetic,
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    widget.entry.companionName,
+                                                    style: GoogleFonts.plusJakartaSans(
+                                                      color: _cream.withOpacity(
+                                                        unread ? 0.96 : 0.78,
+                                                      ),
+                                                      fontSize: 15,
+                                                      fontWeight: unread
+                                                          ? FontWeight.w600
+                                                          : FontWeight.w500,
+                                                      letterSpacing: -0.1,
+                                                      height: 1.15,
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  _timeLabel(),
+                                                  style: GoogleFonts.jost(
+                                                    color: unread
+                                                        ? (arrival
+                                                            ? _violet.withOpacity(0.65)
+                                                            : _blue.withOpacity(0.60))
+                                                        : _sand.withOpacity(0.40),
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w400,
+                                                    letterSpacing: 0.1,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+
+                                            // Dynamic Presence/Activity Subtitle
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              _isTyping
+                                                  ? "typing..."
+                                                  : (widget.entry.isPrimary
+                                                      ? "online now"
+                                                      : (widget.entry.arrivalHint.isNotEmpty
+                                                          ? widget.entry.arrivalHint
+                                                          : (widget.entry.socialPresence.isNotEmpty
+                                                              ? widget.entry.socialPresence
+                                                              : (widget.entry.statusText.isNotEmpty
+                                                                  ? widget.entry.statusText
+                                                                  : "quiet for now")))),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: GoogleFonts.jost(
+                                                color: _isTyping
+                                                    ? _violetSoft
+                                                    : (widget.entry.isPrimary
+                                                        ? _blueSoft
+                                                        : (widget.entry.arrivalHint.isNotEmpty
+                                                            ? _violetSoft.withOpacity(0.85)
+                                                            : _sand.withOpacity(0.65))),
+                                                fontSize: 12.0,
+                                                fontWeight: FontWeight.w400,
+                                                letterSpacing: 0.15,
+                                              ),
+                                            ),
+
+                                            const SizedBox(height: 6),
+
+                                            // Preview text or Typing indicator
+                                            if (_isTyping)
+                                              Padding(
+                                                padding: const EdgeInsets.only(top: 4.0),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                                  children: [
+                                                    Text(
+                                                      'typing',
+                                                      style: GoogleFonts.jost(
+                                                        color: _violetSoft.withOpacity(0.9),
+                                                        fontSize: 13,
+                                                        fontWeight: FontWeight.w400,
+                                                        letterSpacing: 0.2,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    const _BouncingDots(),
+                                                  ],
+                                                ),
+                                              )
+                                            else
+                                              Text(
+                                                _getFormattedPreviewText(),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: GoogleFonts.jost(
+                                                  color: _cream.withOpacity(
+                                                    unread ? 0.78 : 0.52,
+                                                  ),
+                                                  fontSize: 13.5,
+                                                  fontWeight: FontWeight.w400,
+                                                  height: 1.45,
+                                                  letterSpacing: 0.1,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+
+                                      // Unread badge
+                                      if (widget.entry.unreadCount > 0) ...[
+                                        const SizedBox(width: 10),
+                                        _buildBadge(widget.entry.unreadCount, arrival),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Hairline separator
-                if (!widget.isLast && !arrival)
-                  Container(
-                    height: 0.4,
-                    margin: const EdgeInsets.only(left: 86),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          _cream.withOpacity(0.055),
-                          Colors.transparent,
-                        ],
-                      ),
+                      ],
                     ),
                   ),
-              ],
+                ),
+              ),
             ),
           ),
         ),

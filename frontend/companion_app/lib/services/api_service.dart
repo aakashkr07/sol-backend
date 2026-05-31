@@ -138,21 +138,27 @@ class SessionStartResponse {
 }
 
 class SessionHistoryMessage {
+  final int? id;
   final String role;
   final String content;
   final String createdAt;
+  final int? parentMessageId;
 
   const SessionHistoryMessage({
+    this.id,
     required this.role,
     required this.content,
     required this.createdAt,
+    this.parentMessageId,
   });
 
   factory SessionHistoryMessage.fromJson(Map<String, dynamic> json) {
     return SessionHistoryMessage(
+      id: json['id'] as int?,
       role: json['role'] as String? ?? 'assistant',
       content: json['content'] as String? ?? '',
       createdAt: json['created_at'] as String? ?? '',
+      parentMessageId: json['parent_message_id'] as int?,
     );
   }
 }
@@ -556,6 +562,7 @@ class ApiService {
   ApiService._();
 
   static final http.Client _client = http.Client();
+  static void Function()? onboardingSuccessCallback;
 
   static String get _userId {
     final uid = AuthService.currentUserId;
@@ -570,6 +577,7 @@ class ApiService {
     String? clientSentAt,
     int? draftDurationMs,
     int? replyLatencyMs,
+    int? parentMessageId,
   }) async {
     try {
       final response = await _client
@@ -584,6 +592,7 @@ class ApiService {
               'client_sent_at': clientSentAt,
               'draft_duration_ms': draftDurationMs,
               'reply_latency_ms': replyLatencyMs,
+              'parent_message_id': parentMessageId,
             }),
           )
           .timeout(ApiConfig.requestTimeout);
@@ -852,6 +861,7 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
+        onboardingSuccessCallback?.call();
         return OnboardingCompleteResponse.fromJson(json);
       }
       throw ChatException(_parseError(response), response.statusCode);

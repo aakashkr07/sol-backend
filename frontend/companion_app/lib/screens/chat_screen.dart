@@ -159,6 +159,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   role: message.role,
                   content: message.content,
                   createdAt: message.createdAt,
+                  parentMessageId: message.parentMessageId,
                 ),
               )
               .toList();
