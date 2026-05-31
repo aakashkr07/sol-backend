@@ -199,6 +199,7 @@ async def build_context(
         life_event_context=life_event_context,
         parent_message_context=parent_message_context,
         character=character,
+        fact_conflicts=fact_conflicts,
     )
 
     messages = _format_history_as_messages(history_messages)
@@ -224,6 +225,7 @@ def _assemble_system_prompt(
     life_event_context: Optional[str] = None,
     parent_message_context: Optional[str] = None,
     character = None,
+    fact_conflicts: list[dict] = None,
 ) -> str:
     sections = [base_prompt]
 
@@ -232,6 +234,26 @@ def _assemble_system_prompt(
 
     if life_event_context:
         sections.append(life_event_context)
+
+    if fact_conflicts:
+        conflict_directives = []
+        for item in fact_conflicts:
+            conflict_directives.append(
+                f"- Mismatch in facts: they previously told you '{item['previous_value']}' for key '{item['fact_key']}', "
+                f"but now claim '{item['current_value']}'."
+            )
+        
+        if conflict_directives:
+            conflict_prompt = (
+                "\n---\nFACT CONFLICT RESOLUTION DIRECTIVE:\n"
+                "You noticed a contradiction in details the user shared:\n"
+                + "\n".join(conflict_directives) + "\n"
+                "Instead of ignoring it, find a natural, casual, and slightly playful/dry way to ask them about it "
+                "in your next replies (e.g., 'wait, didn't you tell me X earlier? or is my brain lagging today haha'). "
+                "Never sound like a database check—make it a casual observation of a detail you actually remembered."
+                "\n---"
+            )
+            sections.append(conflict_prompt)
 
     if layered_memory_block:
         sections.append(

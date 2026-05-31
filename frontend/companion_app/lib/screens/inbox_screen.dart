@@ -9,6 +9,7 @@ import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/notification_hooks_service.dart';
 import '../services/session_bootstrap_service.dart';
+import '../widgets/atmosphere_background.dart';
 import 'chat_screen.dart';
 import 'profile_screen.dart';
 
@@ -58,33 +59,14 @@ class _InboxScreenState extends State<InboxScreen>
   String? _error;
 
   // ── Animation controllers ─────────────────────────────────────────────────
-  late AnimationController _breatheCtrl;
   late AnimationController _fadeInCtrl;
-  late Animation<double> _breatheAnim;
   late Animation<double> _fadeInAnim;
-
-  late final Animation<double> _blueOpacity;
-  late final Animation<double> _violetOpacity;
-  late final Animation<double> _amberOpacity;
 
   // ── Lifecycle (untouched) ─────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-
-    _breatheCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 6),
-    )..repeat(reverse: true);
-    _breatheAnim = CurvedAnimation(
-      parent: _breatheCtrl,
-      curve: Curves.easeInOut,
-    );
-
-    _blueOpacity = Tween<double>(begin: 0.028, end: 0.046).animate(_breatheAnim);
-    _violetOpacity = Tween<double>(begin: 0.038, end: 0.022).animate(_breatheAnim);
-    _amberOpacity = Tween<double>(begin: 0.014, end: 0.024).animate(_breatheAnim);
 
     _fadeInCtrl = AnimationController(
       vsync: this,
@@ -101,7 +83,6 @@ class _InboxScreenState extends State<InboxScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _breatheCtrl.dispose();
     _fadeInCtrl.dispose();
     super.dispose();
   }
@@ -219,93 +200,11 @@ class _InboxScreenState extends State<InboxScreen>
 
     return Scaffold(
       backgroundColor: _bgDeep,
-      body: Stack(
-        children: [
-          // ── Atmospheric breathing background ──────────────────────────
-          _buildAtmosphere(),
-
-          // ── Global glassmorphic blur overlay ──────────────────────────
-          Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: const SizedBox.shrink(),
-            ),
-          ),
-
-          // ── Main content ──────────────────────────────────────────────
-          SafeArea(
-            child: _isLoading ? _buildLoader() : _buildBody(),
-          ),
-        ],
+      body: AtmosphereBackground(
+        child: SafeArea(
+          child: _isLoading ? _buildLoader() : _buildBody(),
+        ),
       ),
-    );
-  }
-
-  // ── Atmospheric background — subtle breathing gradient orbs ───────────────
-  Widget _buildAtmosphere() {
-    return Stack(
-      children: [
-        // Base deep background fill
-        Positioned.fill(
-          child: Container(
-            color: const Color(0xFF080A0E),
-          ),
-        ),
-        // Orb 1 — presence blue (top-left)
-        Positioned.fill(
-          child: FadeTransition(
-            opacity: _blueOpacity,
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: RadialGradient(
-                  center: FractionalOffset(0.15, 0.12),
-                  radius: 0.65,
-                  colors: [
-                    Color(0xFF7DA2FF),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        // Orb 2 — warm violet (bottom-right)
-        Positioned.fill(
-          child: FadeTransition(
-            opacity: _violetOpacity,
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: RadialGradient(
-                  center: FractionalOffset(0.88, 0.72),
-                  radius: 0.75,
-                  colors: [
-                    Color(0xFFA78BFA),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        // Orb 3 — center-bottom, human warmth (bottom-center)
-        Positioned.fill(
-          child: FadeTransition(
-            opacity: _amberOpacity,
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: RadialGradient(
-                  center: FractionalOffset(0.50, 0.95),
-                  radius: 0.55,
-                  colors: [
-                    Color(0xFFF2B8A0),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -970,7 +869,7 @@ class _InboxTileState extends State<_InboxTile>
     super.initState();
     _entryCtrl = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: 500 + widget.index * 40),
+      duration: const Duration(milliseconds: 600),
     );
     _entryFade = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut);
     _entrySlide = Tween<Offset>(

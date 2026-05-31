@@ -123,7 +123,7 @@ class Settings:
 
     # ── Proactive messaging (future feature) ──────────────────────────────
     # Whether Nova can initiate messages. Disabled for MVP, enable post-launch.
-    PROACTIVE_MESSAGES_ENABLED: bool = os.getenv("PROACTIVE_MESSAGES_ENABLED", "false").lower() == "true"
+    PROACTIVE_MESSAGES_ENABLED: bool = os.getenv("PROACTIVE_MESSAGES_ENABLED", "true").lower() == "true"
     PROACTIVE_MAX_PER_RUN: int = int(os.getenv("PROACTIVE_MAX_PER_RUN", "4"))
     PROACTIVE_DEFAULT_QUIET_HOURS_START: int = int(os.getenv("PROACTIVE_DEFAULT_QUIET_HOURS_START", "23"))
     PROACTIVE_DEFAULT_QUIET_HOURS_END: int = int(os.getenv("PROACTIVE_DEFAULT_QUIET_HOURS_END", "8"))

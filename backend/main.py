@@ -116,8 +116,11 @@ async def lifespan(app: FastAPI):
         initialize_firebase_auth()
         logger.info("Firebase auth verification ready")
     except Exception as e:
-        logger.critical(f"Failed to initialize Firebase auth: {e}")
-        sys.exit(1)
+        if not settings.FIREBASE_SERVICE_ACCOUNT_PATH or not settings.FIREBASE_SERVICE_ACCOUNT_PATH.strip():
+            logger.warning(f"Firebase service account path is missing or empty. Gracefully degrading for local testing. Error: {e}")
+        else:
+            logger.critical(f"Failed to initialize Firebase auth: {e}")
+            sys.exit(1)
 
     # 6. Sync companion registry from personality assets
     try:

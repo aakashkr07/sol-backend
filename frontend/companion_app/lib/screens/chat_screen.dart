@@ -60,6 +60,7 @@ import '../services/auth_service.dart';
 import '../services/session_bootstrap_service.dart';
 import '../services/burst_playback_service.dart';
 import 'profile_screen.dart';
+import '../widgets/atmosphere_background.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/typing_indicator.dart';
 
@@ -635,14 +636,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         backgroundColor: _bg,
         // Scaffold handles keyboard insets — no manual AnimatedPadding needed
         resizeToAvoidBottomInset: true,
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xFF101827), Color(0xFF0A0E1A)],
-            ),
-          ),
+        body: AtmosphereBackground(
           child: SafeArea(
             child: Column(
               children: [
@@ -873,6 +867,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               '$_assistantPlaybackGeneration',
             ),
             spec: _typingSpec!,
+            companionName: _companionName,
           );
         }
 
