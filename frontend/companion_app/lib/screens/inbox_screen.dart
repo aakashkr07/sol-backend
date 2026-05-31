@@ -79,6 +79,8 @@ class _InboxScreenState extends State<InboxScreen>
 
     _load();
 
+    NotificationHooksService.onNotificationReceived.addListener(_onNotificationReceived);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final pending = SessionBootstrapService.peek();
       if (pending != null) {
@@ -95,9 +97,16 @@ class _InboxScreenState extends State<InboxScreen>
 
   @override
   void dispose() {
+    NotificationHooksService.onNotificationReceived.removeListener(_onNotificationReceived);
     WidgetsBinding.instance.removeObserver(this);
     _fadeInCtrl.dispose();
     super.dispose();
+  }
+
+  void _onNotificationReceived() {
+    if (mounted) {
+      _load(silent: true);
+    }
   }
 
   @override
@@ -618,7 +627,8 @@ LinearGradient _getAvatarGradient(String name, bool isArrival) {
 
 class _PresenceDot extends StatefulWidget {
   final bool isTyping;
-  const _PresenceDot({super.key, required this.isTyping});
+  final bool isArrival;
+  const _PresenceDot({super.key, required this.isTyping, this.isArrival = false});
 
   @override
   State<_PresenceDot> createState() => _PresenceDotState();
@@ -647,7 +657,9 @@ class _PresenceDotState extends State<_PresenceDot>
 
   @override
   Widget build(BuildContext context) {
-    final color = widget.isTyping ? _violetSoft : _blueSoft;
+    final color = widget.isArrival
+        ? _violetSoft
+        : (widget.isTyping ? _violetSoft : _blueSoft);
     return RepaintBoundary(
       child: AnimatedBuilder(
         animation: _pulse,
@@ -1194,7 +1206,7 @@ class _InboxTileState extends State<_InboxTile>
             : _cream.withOpacity(0.07);
 
     final ringWidth = (arrival || unread) ? 1.3 : 0.6;
-    final isOnline = !arrival && (widget.entry.waitingOnUser || _isTyping || widget.entry.unreadCount > 0);
+    final isOnline = arrival || (!arrival && (widget.entry.waitingOnUser || _isTyping || widget.entry.unreadCount > 0));
 
     return Stack(
       clipBehavior: Clip.none,
@@ -1235,7 +1247,7 @@ class _InboxTileState extends State<_InboxTile>
           Positioned(
             right: -1,
             bottom: -1,
-            child: _PresenceDot(isTyping: _isTyping),
+            child: _PresenceDot(isTyping: _isTyping, isArrival: arrival),
           ),
       ],
     );

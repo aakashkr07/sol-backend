@@ -1,5 +1,4 @@
 import 'dart:ui';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -73,9 +72,12 @@ class _ProfileScreenState extends State<ProfileScreen>
       curve: Curves.easeInOut,
     );
 
-    _violetOpacity = Tween<double>(begin: 0.028, end: 0.046).animate(_breatheAnim);
-    _blueOpacity = Tween<double>(begin: 0.030, end: 0.018).animate(_breatheAnim);
-    _amberOpacity = Tween<double>(begin: 0.012, end: 0.020).animate(_breatheAnim);
+    _violetOpacity =
+        Tween<double>(begin: 0.028, end: 0.046).animate(_breatheAnim);
+    _blueOpacity =
+        Tween<double>(begin: 0.030, end: 0.018).animate(_breatheAnim);
+    _amberOpacity =
+        Tween<double>(begin: 0.012, end: 0.020).animate(_breatheAnim);
 
     _fadeInCtrl = AnimationController(
       vsync: this,
@@ -1349,8 +1351,6 @@ class _SolActionButtonState extends State<_SolActionButton> {
 // ─────────────────────────────────────────────────────────────────────────────
 // _AtmospherePainter — identical to InboxScreen
 // ─────────────────────────────────────────────────────────────────────────────
-
-
 
 extension on String {
   String ifEmpty(String fallback) => trim().isEmpty ? fallback : this;

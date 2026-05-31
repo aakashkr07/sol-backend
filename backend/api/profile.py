@@ -59,10 +59,22 @@ async def get_my_profile(
 
     selected_pair = None
     memory_count = 0
+    relationship_state = None
+    what_sol_knows = {}
+    fact_rows = []
+    fact_conflicts = []
+    memories = []
+    current_narrative = None
 
     if pair:
         selected_pair = build_pair_payload(pair)
         memory_count = get_memory_count(pair["id"], user_id=identity.uid)
+        relationship_state = db.get_relationship_state_snapshot(pair["id"])
+        what_sol_knows = db.get_user_facts(identity.uid, pair_id=pair["id"])
+        fact_rows = db.get_user_fact_rows(identity.uid, pair_id=pair["id"], limit=40)
+        fact_conflicts = db.get_fact_conflicts(pair["id"], limit=10)
+        memories = db.list_pair_memories(pair["id"], limit=40)
+        current_narrative = db.get_current_narrative(identity.uid, pair_id=pair["id"])
 
     return {
         "user": {
@@ -79,6 +91,12 @@ async def get_my_profile(
         "pairs": pairs,
         "selected_pair": selected_pair,
         "memory_count": memory_count,
+        "relationship_state": relationship_state,
+        "what_sol_knows": what_sol_knows,
+        "fact_rows": fact_rows,
+        "fact_conflicts": fact_conflicts,
+        "memories": memories,
+        "current_narrative": current_narrative,
     }
 
 
@@ -116,6 +134,7 @@ async def update_pair_preferences(
 
 
 @router.post("/me/device-token")
+@router.post("/profile/device")
 async def register_device_token(
     payload: DeviceTokenRegistration,
     identity: AuthenticatedIdentity = Depends(get_authenticated_identity),
@@ -147,14 +166,16 @@ async def reset_pair_data(
 ):
     pair = _resolve_owned_pair(identity, pair_id)
     clear_all_memories(pair["id"])
-    cleared = db.reset_pair_memory(pair["id"])
-    db.log_system_event(
-        "pair_memory_reset",
-        "info",
-        user_id=identity.uid,
-        pair_id=pair["id"],
-        payload={"cleared": cleared},
-    )
+    
+    with db.transaction():
+        cleared = db.reset_pair_memory(pair["id"])
+        db.log_system_event(
+            "pair_memory_reset",
+            "info",
+            user_id=identity.uid,
+            pair_id=pair["id"],
+            payload={"cleared": cleared},
+        )
     return {"reset": True, "cleared": cleared}
 
 
@@ -163,14 +184,16 @@ async def delete_my_account(
     identity: AuthenticatedIdentity = Depends(get_authenticated_identity),
 ):
     pairs = db.list_pairs_for_user(identity.uid)
-    db.log_system_event(
-        "account_deleted",
-        "warning",
-        user_id=identity.uid,
-        payload={"pair_count": len(pairs)},
-    )
-    for pair in pairs:
-        clear_all_memories(pair["id"])
+    
+    with db.transaction():
+        db.log_system_event(
+            "account_deleted",
+            "warning",
+            user_id=identity.uid,
+            payload={"pair_count": len(pairs)},
+        )
+        for pair in pairs:
+            clear_all_memories(pair["id"])
 
-    deleted = db.delete_user_account(identity.uid)
+        deleted = db.delete_user_account(identity.uid)
     return {"deleted": True, "counts": deleted}

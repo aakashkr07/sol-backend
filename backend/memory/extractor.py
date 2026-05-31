@@ -135,26 +135,27 @@ async def extract_and_save(user_id: str, pair_id: str, companion_id: str, conver
         topics = _normalize_topics(conversation_meta.get("topics_discussed") or [])
         primary_emotion = (extracted.get("emotions") or [{}])[0]
 
-        if latest_user_message_id:
-            db.annotate_message(
-                latest_user_message_id,
-                emotional_tone=primary_emotion.get("emotion"),
-                emotional_intensity=_safe_float(primary_emotion.get("intensity")),
-                topics=topics,
-            )
+        with db.transaction():
+            if latest_user_message_id:
+                db.annotate_message(
+                    latest_user_message_id,
+                    emotional_tone=primary_emotion.get("emotion"),
+                    emotional_intensity=_safe_float(primary_emotion.get("intensity")),
+                    topics=topics,
+                )
 
-        _save_facts(user_id, pair_id, companion_id, extracted.get("facts") or [], latest_user_message_id)
-        _save_companion_facts(user_id, pair_id, companion_id, extracted.get("companion_facts") or [], latest_user_message_id)
-        entity_name_to_id = _save_entities(user_id, pair_id, companion_id, extracted.get("entities") or [])
-        _save_relationships(user_id, pair_id, companion_id, entity_name_to_id, extracted.get("relationships") or [])
-        _save_emotions(user_id, pair_id, companion_id, latest_user_message_id, extracted.get("emotions") or [])
-        _save_behavioral_patterns(user_id, pair_id, companion_id, extracted.get("behavioral_patterns") or [])
-        db.save_conversation_insights(
-            conversation_id=conversation_id,
-            emotional_arc=conversation_meta.get("emotional_arc"),
-            topics_discussed=topics,
-            session_summary=conversation_meta.get("session_summary"),
-        )
+            _save_facts(user_id, pair_id, companion_id, extracted.get("facts") or [], latest_user_message_id)
+            _save_companion_facts(user_id, pair_id, companion_id, extracted.get("companion_facts") or [], latest_user_message_id)
+            entity_name_to_id = _save_entities(user_id, pair_id, companion_id, extracted.get("entities") or [])
+            _save_relationships(user_id, pair_id, companion_id, entity_name_to_id, extracted.get("relationships") or [])
+            _save_emotions(user_id, pair_id, companion_id, latest_user_message_id, extracted.get("emotions") or [])
+            _save_behavioral_patterns(user_id, pair_id, companion_id, extracted.get("behavioral_patterns") or [])
+            db.save_conversation_insights(
+                conversation_id=conversation_id,
+                emotional_arc=conversation_meta.get("emotional_arc"),
+                topics_discussed=topics,
+                session_summary=conversation_meta.get("session_summary"),
+            )
 
         memories = extracted.get("episodic_memories") or extracted.get("memories") or []
         if memories:
@@ -167,10 +168,11 @@ async def extract_and_save(user_id: str, pair_id: str, companion_id: str, conver
                 source_message_ids=message_ids,
             )
 
-        detect_behavioral_patterns(user_id, pair_id, companion_id)
-        refresh_after_extraction(pair_id, conversation_id=conversation_id)
-        await maybe_consolidate_narrative(user_id, pair_id, companion_id)
-        db.mark_messages_extracted(message_ids)
+        with db.transaction():
+            detect_behavioral_patterns(user_id, pair_id, companion_id)
+            refresh_after_extraction(pair_id, conversation_id=conversation_id)
+            await maybe_consolidate_narrative(user_id, pair_id, companion_id)
+            db.mark_messages_extracted(message_ids)
 
         logger.info(
             "Extraction complete for %s: %s facts, %s entities, %s emotions, %s memories",

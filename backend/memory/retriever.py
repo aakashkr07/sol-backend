@@ -174,7 +174,7 @@ def _derive_title(document: str) -> str:
 
 
 def _collection_name_for_pair(pair_id: str) -> str:
-    digest = hashlib.sha1(pair_id.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(pair_id.encode("utf-8")).hexdigest()
     return f"pair-{digest[:24]}"
 
 

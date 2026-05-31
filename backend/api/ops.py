@@ -1,7 +1,8 @@
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
+from auth.firebase import AuthenticatedIdentity, get_authenticated_identity
 from config import settings
 from core.proactive_engine import maybe_generate_for_user
 from memory.store import db
@@ -18,7 +19,10 @@ def _require_ops_access(x_admin_token: Optional[str] = Header(default=None)) -> 
 
 
 @router.get("/ops/summary")
-async def get_ops_summary(x_admin_token: Optional[str] = Header(default=None)):
+async def get_ops_summary(
+    x_admin_token: Optional[str] = Header(default=None),
+    identity: AuthenticatedIdentity = Depends(get_authenticated_identity),
+):
     _require_ops_access(x_admin_token)
     return {
         "users": len(db.list_users(limit=100000)),
@@ -38,13 +42,18 @@ async def get_ops_summary(x_admin_token: Optional[str] = Header(default=None)):
 async def debug_users(
     limit: int = Query(default=25, ge=1, le=200),
     x_admin_token: Optional[str] = Header(default=None),
+    identity: AuthenticatedIdentity = Depends(get_authenticated_identity),
 ):
     _require_ops_access(x_admin_token)
     return {"users": db.list_users(limit=limit)}
 
 
 @router.get("/ops/debug/pair/{pair_id}")
-async def debug_pair(pair_id: str, x_admin_token: Optional[str] = Header(default=None)):
+async def debug_pair(
+    pair_id: str,
+    x_admin_token: Optional[str] = Header(default=None),
+    identity: AuthenticatedIdentity = Depends(get_authenticated_identity),
+):
     _require_ops_access(x_admin_token)
     pair = db.get_pair_by_id(pair_id)
     if not pair:
@@ -66,6 +75,7 @@ async def ops_events(
     severity: Optional[str] = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     x_admin_token: Optional[str] = Header(default=None),
+    identity: AuthenticatedIdentity = Depends(get_authenticated_identity),
 ):
     _require_ops_access(x_admin_token)
     return {"events": db.list_system_events(limit=limit, kind=kind, severity=severity)}
@@ -77,6 +87,7 @@ async def run_proactive_job(
     force: bool = Query(default=False),
     limit: int = Query(default=4, ge=1, le=20),
     x_admin_token: Optional[str] = Header(default=None),
+    identity: AuthenticatedIdentity = Depends(get_authenticated_identity),
 ):
     _require_ops_access(x_admin_token)
 

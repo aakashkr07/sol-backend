@@ -66,7 +66,6 @@ const Color _amber =
     Color(0xFFF2B8A0); // Human Warmth (login uses this as primary bloom)
 const Color _amberAcc =
     Color(0xFFF0952A); // Amber accent (button glow, shimmer)
-const Color _amberSft = Color(0xFFF5B86A);
 const Color _cream = Color(0xFFE8DDD0); // Sol _cream
 const Color _sand = Color(0xFF9A8C78); // Sol _sand
 const Color _ink = Color(0xFF060810); // Sol _ink

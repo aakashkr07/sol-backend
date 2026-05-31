@@ -1477,6 +1477,10 @@ class Database:
         return new_id
 
     def get_user_facts(self, user_id: str, pair_id: Optional[str] = None) -> dict[str, str]:
+        if not pair_id:
+            primary = self.get_primary_pair(user_id)
+            pair_id = primary["id"] if primary else None
+        
         if pair_id:
             rows = self.conn.execute(
                 """
@@ -1487,19 +1491,14 @@ class Database:
                 """,
                 (pair_id,),
             ).fetchall()
-        else:
-            rows = self.conn.execute(
-                """
-                SELECT fact_key, fact_value
-                FROM user_facts
-                WHERE user_id = ? AND is_outdated = 0
-                ORDER BY updated_at DESC
-                """,
-                (user_id,),
-            ).fetchall()
-        return {row["fact_key"]: row["fact_value"] for row in rows}
+            return {row["fact_key"]: row["fact_value"] for row in rows}
+        return {}
 
     def get_user_fact_rows(self, user_id: str, pair_id: Optional[str] = None, limit: int = 12) -> list[dict]:
+        if not pair_id:
+            primary = self.get_primary_pair(user_id)
+            pair_id = primary["id"] if primary else None
+
         if pair_id:
             rows = self.conn.execute(
                 """
@@ -1511,18 +1510,8 @@ class Database:
                 """,
                 (pair_id, limit),
             ).fetchall()
-        else:
-            rows = self.conn.execute(
-                """
-                SELECT *
-                FROM user_facts
-                WHERE user_id = ? AND is_outdated = 0
-                ORDER BY confidence DESC, updated_at DESC
-                LIMIT ?
-                """,
-                (user_id, limit),
-            ).fetchall()
-        return [dict(row) for row in rows]
+            return [dict(row) for row in rows]
+        return []
 
     def get_fact_conflicts(self, pair_id: str, limit: int = 8) -> list[dict]:
         rows = self.conn.execute(
@@ -1554,6 +1543,10 @@ class Database:
         category: str,
         pair_id: Optional[str] = None,
     ) -> dict[str, str]:
+        if not pair_id:
+            primary = self.get_primary_pair(user_id)
+            pair_id = primary["id"] if primary else None
+
         if pair_id:
             rows = self.conn.execute(
                 """
@@ -1564,17 +1557,8 @@ class Database:
                 """,
                 (pair_id, category),
             ).fetchall()
-        else:
-            rows = self.conn.execute(
-                """
-                SELECT fact_key, fact_value
-                FROM user_facts
-                WHERE user_id = ? AND category = ? AND is_outdated = 0
-                ORDER BY updated_at DESC
-                """,
-                (user_id, category),
-            ).fetchall()
-        return {row["fact_key"]: row["fact_value"] for row in rows}
+            return {row["fact_key"]: row["fact_value"] for row in rows}
+        return {}
 
     def save_companion_fact(
         self,
@@ -2426,6 +2410,10 @@ class Database:
         return int(cursor.lastrowid)
 
     def get_current_narrative(self, user_id: str, pair_id: Optional[str] = None) -> Optional[dict]:
+        if not pair_id:
+            primary = self.get_primary_pair(user_id)
+            pair_id = primary["id"] if primary else None
+
         if pair_id:
             row = self.conn.execute(
                 """
@@ -2437,22 +2425,12 @@ class Database:
                 """,
                 (pair_id,),
             ).fetchone()
-        else:
-            row = self.conn.execute(
-                """
-                SELECT *
-                FROM narrative_summaries
-                WHERE user_id = ?
-                ORDER BY created_at DESC
-                LIMIT 1
-                """,
-                (user_id,),
-            ).fetchone()
-        if not row:
-            return None
-        payload = dict(row)
-        payload["themes"] = self._deserialize_topics(payload.get("themes"))
-        return payload
+            if not row:
+                return None
+            payload = dict(row)
+            payload["themes"] = self._deserialize_topics(payload.get("themes"))
+            return payload
+        return None
 
     # ------------------------------------------------------------------
     # Episodic memory bookkeeping
@@ -2662,66 +2640,68 @@ class Database:
         )
 
     def reset_pair_memory(self, pair_id: str) -> dict[str, int]:
-        counts = {}
-        for table_name in (
-            "user_facts",
-            "companion_facts",
-            "entities",
-            "entity_relationships",
-            "emotional_events",
-            "behavioral_patterns",
-            "narrative_summaries",
-            "memory_index",
-            "proactive_events",
-            "companion_life_events",
-        ):
-            cursor = self.conn.execute(
-                f"DELETE FROM {table_name} WHERE pair_id = ?",
-                (pair_id,),
-            )
-            counts[table_name] = int(cursor.rowcount or 0)
+        with self.transaction():
+            counts = {}
+            for table_name in (
+                "user_facts",
+                "companion_facts",
+                "entities",
+                "entity_relationships",
+                "emotional_events",
+                "behavioral_patterns",
+                "narrative_summaries",
+                "memory_index",
+                "proactive_events",
+                "companion_life_events",
+            ):
+                cursor = self.conn.execute(
+                    f"DELETE FROM {table_name} WHERE pair_id = ?",
+                    (pair_id,),
+                )
+                counts[table_name] = int(cursor.rowcount or 0)
 
-        self.conn.execute(
-            """
-            UPDATE relationship_pairs
-            SET closeness_score = 0.18,
-                trust_score = 0.18,
-                openness_score = 0.12,
-                comfort_score = 0.14,
-                rhythm_score = 0.10,
-                topic_familiarity_score = 0.05,
-                memory_count = 0,
-                current_stage = 'new',
-                proactive_last_sent_at = NULL,
-                proactive_last_reason = NULL,
-                proactive_cooldown_until = NULL,
-                updated_at = ?
-            WHERE id = ?
-            """,
-            (_utcnow_iso(), pair_id),
-        )
-        return counts
+            self.conn.execute(
+                """
+                UPDATE relationship_pairs
+                SET closeness_score = 0.18,
+                    trust_score = 0.18,
+                    openness_score = 0.12,
+                    comfort_score = 0.14,
+                    rhythm_score = 0.10,
+                    topic_familiarity_score = 0.05,
+                    memory_count = 0,
+                    current_stage = 'new',
+                    proactive_last_sent_at = NULL,
+                    proactive_last_reason = NULL,
+                    proactive_cooldown_until = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (_utcnow_iso(), pair_id),
+            )
+            return counts
 
     def delete_user_account(self, user_id: str) -> dict[str, int]:
-        rows = self.conn.execute(
-            "SELECT id FROM relationship_pairs WHERE user_id = ?",
-            (user_id,),
-        ).fetchall()
-        pair_ids = [row["id"] for row in rows]
-        for pair_id in pair_ids:
-            self.reset_pair_memory(pair_id)
-
-        counts = {}
-        for table_name in ("device_registrations", "user_preferences", "system_events"):
-            cursor = self.conn.execute(
-                f"DELETE FROM {table_name} WHERE user_id = ?",
+        with self.transaction():
+            rows = self.conn.execute(
+                "SELECT id FROM relationship_pairs WHERE user_id = ?",
                 (user_id,),
-            )
-            counts[table_name] = int(cursor.rowcount or 0)
+            ).fetchall()
+            pair_ids = [row["id"] for row in rows]
+            for pair_id in pair_ids:
+                self.reset_pair_memory(pair_id)
 
-        cursor = self.conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
-        counts["users"] = int(cursor.rowcount or 0)
-        return counts
+            counts = {}
+            for table_name in ("device_registrations", "user_preferences", "system_events"):
+                cursor = self.conn.execute(
+                    f"DELETE FROM {table_name} WHERE user_id = ?",
+                    (user_id,),
+                )
+                counts[table_name] = int(cursor.rowcount or 0)
+
+            cursor = self.conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            counts["users"] = int(cursor.rowcount or 0)
+            return counts
 
     def log_proactive_event(
         self,

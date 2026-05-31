@@ -10,6 +10,7 @@ from firebase_admin import auth as firebase_auth
 from firebase_admin import credentials
 
 from config import settings
+from memory.store import db
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +69,39 @@ def verify_id_token(id_token: str) -> AuthenticatedIdentity:
     if not uid:
         raise HTTPException(status_code=401, detail="Firebase token missing uid")
 
+    email = decoded.get("email")
+    display_name = decoded.get("name")
+
+    # Immediate User Creation upon verification / first-time login
+    try:
+        with db.transaction():
+            db.get_or_create_user(
+                user_id=uid,
+                display_name=display_name,
+                email=email,
+            )
+            # Ensure user preferences row exists
+            db.get_or_create_user_preferences(user_id=uid)
+    except Exception as db_exc:
+        logger.exception("Failed immediate user creation / registration for uid %s", uid)
+        try:
+            db.log_system_event(
+                "auth_registration_failed",
+                "error",
+                user_id=uid,
+                payload={"error": str(db_exc), "email": email, "display_name": display_name}
+            )
+        except Exception as log_err:
+            logger.error("Failed to log auth_registration_failed to system_events: %s", log_err)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database synchronization failed during authentication: {str(db_exc)}"
+        )
+
     return AuthenticatedIdentity(
         uid=uid,
-        email=decoded.get("email"),
-        display_name=decoded.get("name"),
+        email=email,
+        display_name=display_name,
     )
 
 

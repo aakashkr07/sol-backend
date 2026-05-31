@@ -1,5 +1,6 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'api_service.dart';
 
@@ -7,6 +8,10 @@ class NotificationHooksService {
   NotificationHooksService._();
 
   static bool _initialized = false;
+
+  /// Global notifier that broadcasts FCM message data to active screens in real-time.
+  static final ValueNotifier<Map<String, dynamic>?> onNotificationReceived =
+      ValueNotifier<Map<String, dynamic>?>(null);
 
   static Future<void> initialize() async {
     if (_initialized) {
@@ -42,6 +47,16 @@ class NotificationHooksService {
           );
         } catch (_) {}
       });
+
+      // Hook foreground message capture
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        _handleMessage(message.data);
+      });
+
+      // Hook background message click / application open
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        _handleMessage(message.data);
+      });
     } catch (_) {
       // Notification hooks are optional; missing platform config should not break chat.
     }
@@ -55,5 +70,25 @@ class NotificationHooksService {
         sound: !active,
       );
     } catch (_) {}
+  }
+
+  /// Processes FCM data payloads, playing premium chimes and triggering micro-vibrations
+  static void _handleMessage(Map<String, dynamic> data) {
+    if (data.isEmpty) return;
+
+    try {
+      // Premium atmospheric Sol notification click sound & haptics
+      SystemSound.play(SystemSoundType.click);
+      HapticFeedback.mediumImpact();
+    } catch (_) {}
+
+    // Broadcast message to the inbox screen for real-time updates
+    onNotificationReceived.value = data;
+  }
+
+  /// Exposes a mock trigger to easily test hooks, badging, and sounds in unit tests
+  @visibleForTesting
+  static void mockIncomingNotification(Map<String, dynamic> data) {
+    _handleMessage(data);
   }
 }

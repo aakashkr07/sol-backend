@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 
 /// Unified, slowly breathing atmospheric background for the Sol app.
@@ -43,9 +42,9 @@ class _AtmosphereBackgroundState extends State<AtmosphereBackground>
     );
 
     // Fade bounds tailored to keep the background deep, atmospheric, and legible
-    _blueOpacity = Tween<double>(begin: 0.028, end: 0.046).animate(_breatheAnim);
-    _violetOpacity = Tween<double>(begin: 0.038, end: 0.022).animate(_breatheAnim);
-    _amberOpacity = Tween<double>(begin: 0.014, end: 0.024).animate(_breatheAnim);
+    _blueOpacity = Tween<double>(begin: 0.6, end: 1.0).animate(_breatheAnim);
+    _violetOpacity = Tween<double>(begin: 0.95, end: 0.55).animate(_breatheAnim);
+    _amberOpacity = Tween<double>(begin: 0.55, end: 0.95).animate(_breatheAnim);
   }
 
   @override
@@ -74,12 +73,12 @@ class _AtmosphereBackgroundState extends State<AtmosphereBackground>
                   child: FadeTransition(
                     opacity: _blueOpacity,
                     child: Container(
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         gradient: RadialGradient(
-                          center: FractionalOffset(0.15, 0.12),
-                          radius: 0.65,
+                          center: const FractionalOffset(0.15, 0.12),
+                          radius: 0.85,
                           colors: [
-                            Color(0xFF7DA2FF),
+                            const Color(0xFF7DA2FF).withOpacity(0.08),
                             Colors.transparent,
                           ],
                         ),
@@ -92,12 +91,12 @@ class _AtmosphereBackgroundState extends State<AtmosphereBackground>
                   child: FadeTransition(
                     opacity: _violetOpacity,
                     child: Container(
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         gradient: RadialGradient(
-                          center: FractionalOffset(0.88, 0.72),
-                          radius: 0.75,
+                          center: const FractionalOffset(0.88, 0.72),
+                          radius: 0.95,
                           colors: [
-                            Color(0xFFA78BFA),
+                            const Color(0xFFA78BFA).withOpacity(0.08),
                             Colors.transparent,
                           ],
                         ),
@@ -110,12 +109,12 @@ class _AtmosphereBackgroundState extends State<AtmosphereBackground>
                   child: FadeTransition(
                     opacity: _amberOpacity,
                     child: Container(
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         gradient: RadialGradient(
-                          center: FractionalOffset(0.50, 0.95),
-                          radius: 0.55,
+                          center: const FractionalOffset(0.50, 0.95),
+                          radius: 0.80,
                           colors: [
-                            Color(0xFFF2B8A0),
+                            const Color(0xFFF2B8A0).withOpacity(0.05),
                             Colors.transparent,
                           ],
                         ),
@@ -128,16 +127,13 @@ class _AtmosphereBackgroundState extends State<AtmosphereBackground>
           ),
         ),
 
-        // ── Global glassmorphic blur overlay ──────────────────────────
-        Positioned.fill(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: const SizedBox.shrink(),
-          ),
-        ),
-
         // ── Main content floating on top ──────────────────────────────
-        if (widget.child != null) widget.child!,
+        if (widget.child != null)
+          Positioned.fill(
+            child: RepaintBoundary(
+              child: widget.child!,
+            ),
+          ),
       ],
     );
   }

@@ -108,6 +108,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   TypingIndicatorSpec? _typingSpec;
   int _assistantPlaybackGeneration = 0;
   DateTime? _draftStartedAt;
+  List<ChatItem> _cachedDisplayItems = [];
+
+  void _updateCachedDisplayItems() {
+    setState(() {
+      _cachedDisplayItems = _buildDisplayItems();
+    });
+  }
 
   bool get _isTyping => _typingSpec != null;
 
@@ -167,6 +174,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _messages
             ..clear()
             ..addAll(hist.reversed);
+          _updateCachedDisplayItems();
         } else if (session.openingBursts.isNotEmpty ||
             session.openingMessage.trim().isNotEmpty) {
           openingBursts = session.openingBursts.isNotEmpty
@@ -204,6 +212,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (mounted && burstsToPlay.isNotEmpty) {
       await _playCompanionBursts(burstsToPlay);
     }
+
+    _updateCachedDisplayItems();
 
     await _loadPendingProactiveEvents(silent: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -306,6 +316,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           Message.fromCompanion(burst.text, startsNewGroup: burst.isFollowUp),
         );
       });
+      _updateCachedDisplayItems();
       _scrollToBottom();
 
       if (_pairId != null) {
@@ -409,6 +420,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _typingSpec = TypingIndicatorSpec.network();
       _errorMessage = null;
     });
+    _updateCachedDisplayItems();
 
     _scrollToBottom();
     final requestStartedAt = DateTime.now();
@@ -559,6 +571,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final index = _messages.indexWhere((m) => m.id == id);
     if (index == -1) return;
     _messages[index] = _messages[index].copyWith(status: status, isNew: false);
+    _updateCachedDisplayItems();
   }
 
   void _scrollToBottom() {
@@ -846,7 +859,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       );
     }
 
-    final displayItems = _buildDisplayItems();
+    final displayItems = _cachedDisplayItems;
 
     return ListView.builder(
       controller: _scrollController,

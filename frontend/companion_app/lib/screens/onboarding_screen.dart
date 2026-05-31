@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../services/api_service.dart';
 import '../services/onboarding_service.dart';
+import '../widgets/atmosphere_background.dart';
 import 'inbox_screen.dart';
 
 // Sol Design System Constants
@@ -36,12 +36,7 @@ class OnboardingScreen extends StatefulWidget {
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen>
-    with TickerProviderStateMixin {
-  late final AnimationController _bgController;
-  late final Animation<double> _blueOpacity;
-  late final Animation<double> _violetOpacity;
-  late final Animation<double> _amberOpacity;
+class _OnboardingScreenState extends State<OnboardingScreen> {
 
   int _currentStep = 0;
   String _preferredName = '';
@@ -59,38 +54,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   @override
   void initState() {
     super.initState();
-    // 6-second slow breathing background oscillation
-    _bgController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 6),
-    )..repeat(reverse: true);
-
-    _blueOpacity = Tween<double>(begin: 0.02, end: 0.12).animate(
-      CurvedAnimation(
-        parent: _bgController,
-        curve: const _SinCurve(),
-      ),
-    );
-
-    _violetOpacity = Tween<double>(begin: 0.10, end: 0.01).animate(
-      CurvedAnimation(
-        parent: _bgController,
-        curve: const _SinCurve(),
-      ),
-    );
-
-    _amberOpacity = Tween<double>(begin: 0.01, end: 0.07).animate(
-      CurvedAnimation(
-        parent: _bgController,
-        curve: const _CosCurve(),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _bgController.dispose();
-    super.dispose();
   }
 
   Future<void> _submitOnboarding() async {
@@ -211,127 +174,52 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
     return Scaffold(
       backgroundColor: _bgDeep,
-      body: Stack(
-        children: [
-          // Ambient breathing background
-          Positioned.fill(
-            child: Stack(
-              children: [
-                // Presence Blue (top-left)
-                Positioned.fill(
-                  child: FadeTransition(
-                    opacity: _blueOpacity,
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        gradient: RadialGradient(
-                          center: Alignment.topLeft,
-                          radius: 1.2,
-                          colors: [
-                            _blue,
-                            Colors.transparent,
-                          ],
-                          stops: [0.0, 1.0],
-                        ),
+      body: AtmosphereBackground(
+        child: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
+                child: _buildBackButton(),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(22, 12, 22, 22),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 600),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) {
+                          final offset = Tween<Offset>(
+                            begin: const Offset(0.0, 0.06),
+                            end: Offset.zero,
+                          ).animate(animation);
+                          return FadeTransition(
+                            opacity: animation,
+                            child: SlideTransition(
+                              position: offset,
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: _buildCurrentStepWidget(),
                       ),
-                    ),
-                  ),
-                ),
-                // Warm Violet (bottom-right)
-                Positioned.fill(
-                  child: FadeTransition(
-                    opacity: _violetOpacity,
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        gradient: RadialGradient(
-                          center: Alignment.bottomRight,
-                          radius: 1.3,
-                          colors: [
-                            _violet,
-                            Colors.transparent,
-                          ],
-                          stops: [0.0, 1.0],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                // Human Warmth (bottom-center)
-                Positioned.fill(
-                  child: FadeTransition(
-                    opacity: _amberOpacity,
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        gradient: RadialGradient(
-                          center: Alignment.bottomCenter,
-                          radius: 1.0,
-                          colors: [
-                            _amber,
-                            Colors.transparent,
-                          ],
-                          stops: [0.0, 1.0],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Global glassmorphic blur overlay
-          Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: const SizedBox.shrink(),
-            ),
-          ),
-          
-          SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
-                  child: _buildBackButton(),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(22, 12, 22, 22),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 600),
-                          switchInCurve: Curves.easeOutCubic,
-                          switchOutCurve: Curves.easeInCubic,
-                          transitionBuilder: (child, animation) {
-                            final offset = Tween<Offset>(
-                              begin: const Offset(0.0, 0.06),
-                              end: Offset.zero,
-                            ).animate(animation);
-                            return FadeTransition(
-                              opacity: animation,
-                              child: SlideTransition(
-                                position: offset,
-                                child: child,
-                              ),
-                            );
-                          },
-                          child: _buildCurrentStepWidget(),
-                        ),
-                        if (_error != null && _currentStep < 5) ...[
-                          const SizedBox(height: 20),
-                          _buildErrorPanel(),
-                        ],
+                      if (_error != null && _currentStep < 5) ...[
+                        const SizedBox(height: 20),
+                        _buildErrorPanel(),
                       ],
-                    ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1110,21 +998,7 @@ class _BreathingSilhouettesState extends State<_BreathingSilhouettes>
   }
 }
 
-class _SinCurve extends Curve {
-  const _SinCurve();
-  @override
-  double transformInternal(double t) {
-    return (math.sin(t * math.pi * 2) + 1.0) / 2.0;
-  }
-}
 
-class _CosCurve extends Curve {
-  const _CosCurve();
-  @override
-  double transformInternal(double t) {
-    return (math.cos(t * math.pi * 2) + 1.0) / 2.0;
-  }
-}
 
 class _CyclingLoadingText extends StatefulWidget {
   final VoidCallback onFinished;

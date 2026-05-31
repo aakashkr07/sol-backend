@@ -44,6 +44,7 @@ class ProactiveStyle:
     callback_trust_floor: float
     presence_trust_floor: float
     early_stage_presence: bool
+    impulsiveness: float = 0.5
 
 
 def decide_proactive_outreach(
@@ -209,6 +210,7 @@ async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = Fa
                 allow_push=bool(int(preferences.get("allow_push_notifications") or 0)),
             )
         except Exception as exc:
+            exc_str = str(exc)
             await loop.run_in_executor(
                 None,
                 lambda: db.log_system_event(
@@ -216,10 +218,10 @@ async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = Fa
                     "error",
                     user_id=user_id,
                     pair_id=pair["id"],
-                    payload={"error": str(exc), "reason": decision.reason},
+                    payload={"error": exc_str, "reason": decision.reason},
                 )
             )
-            logger.error("Proactive generation failed for pair %s: %s", pair["id"], exc, exc_info=True)
+            logger.error("Proactive generation failed for pair %s: %s", pair["id"], exc_str, exc_info=True)
             continue
         if event:
             created.append(event)
@@ -714,6 +716,7 @@ def _build_proactive_style(companion, pair: dict) -> ProactiveStyle:
         callback_trust_floor=callback_trust_floor,
         presence_trust_floor=presence_trust_floor,
         early_stage_presence=early_stage_presence,
+        impulsiveness=getattr(companion, "impulsiveness", 0.5),
     )
 
 
@@ -843,7 +846,16 @@ def _default_double_text_likelihood(rhythm: str, energy: str) -> float:
 
 def _styled_cooldown_hours(cadence: str, closeness: float, trust: float, style: ProactiveStyle) -> int:
     base = _cadence_cooldown_hours(cadence, closeness, trust)
-    return max(12, base + style.cooldown_bias_hours)
+    impulsiveness = getattr(style, "impulsiveness", 0.5)
+    
+    # Cooldown multiplier: higher closeness and impulsiveness reduce the cooldown hours.
+    # Base cadence is multiplied by: (1.5 - impulsiveness) * (1.5 - closeness)
+    multiplier = (1.5 - impulsiveness) * (1.5 - closeness)
+    # Clamp multiplier between 0.3 and 1.8 to prevent extreme values
+    multiplier = max(0.3, min(1.8, multiplier))
+    
+    adjusted_cooldown = int(base * multiplier) + style.cooldown_bias_hours
+    return max(12, adjusted_cooldown)
 
 
 def _notification_body_for_style(

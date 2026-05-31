@@ -277,7 +277,11 @@ def _build_pair_inbox_entry(pair: dict, unread_count: int) -> dict:
 
 def _build_discovery_inbox_entry(user_id: str, character: Character, pairs: list[dict]) -> dict:
     related_ids = [item.get("character_id") for item in character.social_graph.get("connections", [])]
-    known_pair = next((pair for pair in pairs if pair["companion_id"] in related_ids), None)
+    active_pairs = [
+        pair for pair in pairs
+        if pair.get("is_primary") or int(pair.get("total_messages") or 0) > 0 or int(pair.get("total_sessions") or 0) > 0
+    ]
+    known_pair = next((pair for pair in active_pairs if pair["companion_id"] in related_ids), None)
     arrival_hint = _arrival_hint_for_character(character, known_pair)
     preview_text = _arrival_preview_for_character(character, known_pair)
     sort_anchor = known_pair.get("updated_at") if known_pair else None
