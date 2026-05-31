@@ -27,6 +27,7 @@
 //   · Timestamp and tick colours stay functionally identical, just in-palette.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../models/message_model.dart';
@@ -150,7 +151,8 @@ class _MessageBubbleState extends State<MessageBubble>
                 // Dragging from left to right (dx > 0)
                 if (details.delta.dx > 0) {
                   setState(() {
-                    _dragOffset = (_dragOffset + details.delta.dx).clamp(0.0, 70.0);
+                    _dragOffset =
+                        (_dragOffset + details.delta.dx).clamp(0.0, 70.0);
                   });
                   if (_dragOffset >= 50.0 && !_hasTriggeredHaptic) {
                     HapticFeedback.lightImpact();
@@ -177,7 +179,9 @@ class _MessageBubbleState extends State<MessageBubble>
                     child: Center(
                       child: AnimatedOpacity(
                         duration: const Duration(milliseconds: 100),
-                        opacity: _dragOffset > 20 ? (_dragOffset / 70.0).clamp(0.0, 1.0) : 0.0,
+                        opacity: _dragOffset > 20
+                            ? (_dragOffset / 70.0).clamp(0.0, 1.0)
+                            : 0.0,
                         child: const Icon(
                           Icons.reply_rounded,
                           color: _blue,
@@ -187,16 +191,19 @@ class _MessageBubbleState extends State<MessageBubble>
                     ),
                   ),
                   AnimatedContainer(
-                    duration: Duration(milliseconds: _dragOffset == 0 ? 180 : 0),
+                    duration:
+                        Duration(milliseconds: _dragOffset == 0 ? 180 : 0),
                     curve: Curves.easeOutCubic,
                     transform: Matrix4.translationValues(_dragOffset, 0, 0),
                     child: Column(
-                      crossAxisAlignment:
-                          isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                      crossAxisAlignment: isUser
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start,
                       children: [
                         Row(
-                          mainAxisAlignment:
-                              isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+                          mainAxisAlignment: isUser
+                              ? MainAxisAlignment.end
+                              : MainAxisAlignment.start,
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             if (!isUser) _buildCompanionAvatar(),
@@ -269,7 +276,11 @@ class _MessageBubbleState extends State<MessageBubble>
     final parent = widget.parentMessage;
     if (parent == null) return const SizedBox.shrink();
 
-    final senderName = parent.isUser ? "You" : (widget.companionName.isNotEmpty ? widget.companionName : "Companion");
+    final senderName = parent.isUser
+        ? "You"
+        : (widget.companionName.isNotEmpty
+            ? widget.companionName
+            : "Companion");
     final accentColor = parent.isUser ? _blue : const Color(0xFFA78BFA);
 
     return Container(
@@ -300,7 +311,9 @@ class _MessageBubbleState extends State<MessageBubble>
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.plusJakartaSans(
-              color: isUser ? Colors.white.withOpacity(0.70) : _cream.withOpacity(0.70),
+              color: isUser
+                  ? Colors.white.withOpacity(0.70)
+                  : _cream.withOpacity(0.70),
               fontSize: 13,
               height: 1.2,
             ),

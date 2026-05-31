@@ -78,6 +78,19 @@ class _InboxScreenState extends State<InboxScreen>
     );
 
     _load();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final pending = SessionBootstrapService.peek();
+      if (pending != null) {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const ChatScreen()),
+        ).then((_) {
+          if (mounted) {
+            _load(silent: true);
+          }
+        });
+      }
+    });
   }
 
   @override

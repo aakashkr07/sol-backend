@@ -93,51 +93,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     super.dispose();
   }
 
-  Future<void> _checkRedirect() async {
-    if (_apiSuccess && _cycleFinished) {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid != null) {
-        await OnboardingService.markComplete(uid);
-      }
-      
-      final dummySession = SessionStartResponse(
-        conversationId: '',
-        userName: '',
-        sessionNumber: 1,
-        memoryCount: 0,
-        isFirstSession: true,
-        pairId: '',
-        companionId: '',
-        companionName: '',
-        companionSummary: '',
-        openingMessage: '',
-        openingBursts: const [],
-        resumedExisting: false,
-        historyMessages: const [],
-      );
-      await widget.onComplete(dummySession);
-
-      if (!mounted) return;
-      
-      Navigator.of(context).pushAndRemoveUntil(
-        PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) => const InboxScreen(),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(
-              opacity: CurvedAnimation(
-                parent: animation,
-                curve: Curves.easeOutCubic,
-              ),
-              child: child,
-            );
-          },
-          transitionDuration: const Duration(milliseconds: 800),
-        ),
-        (route) => false,
-      );
-    }
-  }
-
   Future<void> _submitOnboarding() async {
     setState(() {
       _currentStep = 5; // Finding your people loading state
@@ -164,7 +119,12 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         _matchedResponse = response;
         _apiSuccess = true;
       });
-      _checkRedirect();
+      
+      if (_apiSuccess && _cycleFinished) {
+        setState(() {
+          _currentStep = 6;
+        });
+      }
     } on ChatException catch (e) {
       setState(() {
         _error = e.message;
@@ -511,7 +471,11 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                 setState(() {
                   _cycleFinished = true;
                 });
-                _checkRedirect();
+                if (_apiSuccess && _cycleFinished) {
+                  setState(() {
+                    _currentStep = 6;
+                  });
+                }
               }
             },
           ),
