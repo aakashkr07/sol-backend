@@ -140,12 +140,14 @@ class _InboxScreenState extends State<InboxScreen>
         _isLoading = false;
         _error = e.message;
       });
+      _fadeInCtrl.forward(from: 0);
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
         _error = 'couldn\'t load. pull to try again.';
       });
+      _fadeInCtrl.forward(from: 0);
     }
   }
 

@@ -29,7 +29,6 @@ import 'screens/inbox_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/vault_screen.dart';
-import 'services/api_service.dart';
 import 'services/onboarding_service.dart';
 import 'services/session_bootstrap_service.dart';
 import 'services/biometric_service.dart';
@@ -121,7 +120,7 @@ class _AuthGateState extends State<_AuthGate> {
     );
   }
 
-  Future<void> _finishOnboarding(SessionStartResponse session) async {
+  Future<void> _finishOnboarding() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
       return;
@@ -131,7 +130,7 @@ class _AuthGateState extends State<_AuthGate> {
       return;
     }
     setState(() {
-      SessionBootstrapService.stash(session);
+      SessionBootstrapService.clear();
       _decisionFuture = Future.value(
         _GateDecision(uid: uid, needsOnboarding: false, isVaultEnabled: false),
       );

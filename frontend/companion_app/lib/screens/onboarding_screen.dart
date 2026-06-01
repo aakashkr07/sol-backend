@@ -16,7 +16,6 @@ const Color _surface = Color(0xFF10131A);
 const Color _blue = Color(0xFF7DA2FF);
 const Color _blueSoft = Color(0xFF8BA8FF);
 const Color _violet = Color(0xFFA78BFA);
-const Color _violetSoft = Color(0xFFB69CFF);
 const Color _amber = Color(0xFFF2B8A0);
 const Color _cream = Color(0xFFE8DDD0);
 const Color _sand = Color(0xFF9A8C78);
@@ -24,7 +23,7 @@ const Color _dusty = Color(0xFF5A5568);
 const Color _ink = Color(0xFF060810);
 
 class OnboardingScreen extends StatefulWidget {
-  final Future<void> Function(SessionStartResponse session) onComplete;
+  final Future<void> Function() onComplete;
 
   const OnboardingScreen({
     super.key,
@@ -36,7 +35,6 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-
   int _currentStep = 0;
   String _preferredName = '';
   String _connectionStyle = '';
@@ -81,11 +79,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         _matchedResponse = response;
         _apiSuccess = true;
       });
-      
+
       if (_apiSuccess && _cycleFinished) {
-        setState(() {
-          _currentStep = 6;
-        });
+        _completeAndNavigate();
       }
     } on ChatException catch (e) {
       setState(() {
@@ -100,49 +96,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
-  Future<void> _beginEncounter() async {
-    if (_isStarting) return;
-
-    final companionId = _matchedResponse?.companionId;
-    if (companionId == null) {
-      setState(() => _error = 'No matched companion details found.');
-      return;
+  Future<void> _completeAndNavigate() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      await OnboardingService.markComplete(uid);
     }
-
-    HapticFeedback.lightImpact();
-    setState(() {
-      _isStarting = true;
-      _error = null;
-    });
-
-    try {
-      final session = await ApiService.startSession(characterId: companionId);
-      if (session == null) {
-        throw const ChatException('could not start the first thread.', -1);
-      }
-      
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid != null) {
-        await OnboardingService.markComplete(uid);
-      }
-      
-      await widget.onComplete(session);
-    } on ChatException catch (e) {
-      setState(() {
-        _isStarting = false;
-        _error = e.message;
-      });
-    } catch (_) {
-      setState(() {
-        _isStarting = false;
-        _error = 'Something interrupted the first message. Try again.';
-      });
-    }
+    widget.onComplete();
   }
 
   void _onOptionSelected(int step, String backendValue) {
     HapticFeedback.lightImpact();
-    
+
     // Assign values depending on step
     if (step == 1) _connectionStyle = backendValue;
     if (step == 2) _presenceFrequency = backendValue;
@@ -179,7 +143,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
                 child: _buildBackButton(),
               ),
               Expanded(
@@ -275,9 +240,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           options: const [
             _QuestionOption('They take their time.', 'takes_their_time'),
             _QuestionOption("They're easy to talk to.", 'easy_to_talk_to'),
-            _QuestionOption("They say exactly what's on their mind.", 'says_whats_on_mind'),
+            _QuestionOption(
+                "They say exactly what's on their mind.", 'says_whats_on_mind'),
             _QuestionOption('They make things fun.', 'makes_things_fun'),
-            _QuestionOption('They make conversations feel meaningful.', 'meaningful_conversations'),
+            _QuestionOption('They make conversations feel meaningful.',
+                'meaningful_conversations'),
           ],
           selectedValue: _connectionStyle,
           onSelected: (val) => _onOptionSelected(1, val),
@@ -303,9 +270,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           question: 'What feels right to you?',
           options: const [
             _QuestionOption('Let it happen naturally.', 'let_it_happen'),
-            _QuestionOption('A little honesty goes a long way.', 'little_honesty'),
-            _QuestionOption("I don't mind getting personal.", 'dont_mind_personal'),
-            _QuestionOption("I'd rather skip the small talk.", 'skip_small_talk'),
+            _QuestionOption(
+                'A little honesty goes a long way.', 'little_honesty'),
+            _QuestionOption(
+                "I don't mind getting personal.", 'dont_mind_personal'),
+            _QuestionOption(
+                "I'd rather skip the small talk.", 'skip_small_talk'),
           ],
           selectedValue: _depthPreference,
           onSelected: (val) => _onOptionSelected(3, val),
@@ -319,7 +289,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             _QuestionOption('Trying too hard.', 'trying_too_hard'),
             _QuestionOption('Being distant.', 'being_distant'),
             _QuestionOption('Talking too much.', 'talking_too_much'),
-            _QuestionOption('Reading into everything.', 'reading_into_everything'),
+            _QuestionOption(
+                'Reading into everything.', 'reading_into_everything'),
             _QuestionOption('Moving too fast.', 'moving_too_fast'),
           ],
           selectedValue: _behavioralGuardrail,
@@ -327,16 +298,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         );
       case 5:
         return _buildLoadingState();
-      case 6:
-        if (_matchedResponse != null) {
-          return _IntroCard(
-            key: const ValueKey('step-intro'),
-            match: _matchedResponse!,
-            isStarting: _isStarting,
-            onStart: _beginEncounter,
-          );
-        }
-        return const SizedBox.shrink();
+
       default:
         return const SizedBox.shrink();
     }
@@ -359,9 +321,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   _cycleFinished = true;
                 });
                 if (_apiSuccess && _cycleFinished) {
-                  setState(() {
-                    _currentStep = 6;
-                  });
+                  _completeAndNavigate();
                 }
               }
             },
@@ -479,7 +439,8 @@ class _NameInputCardState extends State<_NameInputCard> {
                 color: _dusty,
                 fontSize: 16,
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
               border: InputBorder.none,
             ),
             onSubmitted: (_) {
@@ -497,7 +458,9 @@ class _NameInputCardState extends State<_NameInputCard> {
             child: Opacity(
               opacity: _canSubmit ? 1.0 : 0.5,
               child: ElevatedButton(
-                onPressed: _canSubmit ? () => widget.onSubmitted(_controller.text.trim()) : null,
+                onPressed: _canSubmit
+                    ? () => widget.onSubmitted(_controller.text.trim())
+                    : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _blue,
                   foregroundColor: _ink,
@@ -620,7 +583,9 @@ class _OptionTileState extends State<_OptionTile> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
             decoration: BoxDecoration(
-              color: widget.selected ? _blue.withOpacity(0.15) : _surface.withOpacity(0.70),
+              color: widget.selected
+                  ? _blue.withOpacity(0.15)
+                  : _surface.withOpacity(0.70),
               border: Border.all(
                 color: widget.selected
                     ? _blueSoft.withOpacity(0.4)
@@ -637,191 +602,6 @@ class _OptionTileState extends State<_OptionTile> {
                 fontWeight: widget.selected ? FontWeight.w500 : FontWeight.w400,
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _IntroCard extends StatelessWidget {
-  final OnboardingCompleteResponse match;
-  final bool isStarting;
-  final VoidCallback onStart;
-
-  const _IntroCard({
-    super.key,
-    required this.match,
-    required this.isStarting,
-    required this.onStart,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Align(
-          alignment: Alignment.center,
-          child: _MatchedAvatar(initials: match.companionName[0]),
-        ),
-        const SizedBox(height: 24),
-        Align(
-          alignment: Alignment.center,
-          child: Column(
-            children: [
-              Text(
-                match.companionName,
-                style: GoogleFonts.plusJakartaSans(
-                  color: _cream,
-                  fontSize: 38,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.8,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                match.conversationalVibe.toUpperCase(),
-                style: GoogleFonts.jost(
-                  color: _violetSoft,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: 1.8,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 28),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            color: _surface.withOpacity(0.70),
-            border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                match.companionSummary,
-                style: GoogleFonts.plusJakartaSans(
-                  color: _cream.withOpacity(0.92),
-                  fontSize: 15,
-                  height: 1.45,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-              if (match.humanizingDetails.isNotEmpty) ...[
-                const SizedBox(height: 24),
-                ...match.humanizingDetails.map((detail) => Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: _cream.withOpacity(0.03),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _cream.withOpacity(0.05), width: 0.6),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.star_border, color: _violetSoft, size: 16),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              detail,
-                              style: GoogleFonts.jost(
-                                color: _cream.withOpacity(0.85),
-                                fontSize: 13.5,
-                                height: 1.35,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 40),
-        SizedBox(
-          width: double.infinity,
-          height: 56,
-          child: ElevatedButton(
-            onPressed: isStarting ? null : onStart,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _blue,
-              foregroundColor: _ink,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-            child: isStarting
-                ? _BreathingText(
-                    text: 'gathering presence…',
-                    style: GoogleFonts.jost(
-                      color: _ink,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  )
-                : Text(
-                    'Say hi',
-                    style: GoogleFonts.jost(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _MatchedAvatar extends StatelessWidget {
-  final String initials;
-  const _MatchedAvatar({required this.initials});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 100,
-      height: 100,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            _blue.withOpacity(0.8),
-            _violet.withOpacity(0.8),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: _blue.withOpacity(0.24),
-            blurRadius: 28,
-            spreadRadius: 2,
-          ),
-        ],
-        border: Border.all(
-          color: _cream.withOpacity(0.2),
-          width: 1.5,
-        ),
-      ),
-      child: Center(
-        child: Text(
-          initials,
-          style: GoogleFonts.plusJakartaSans(
-            color: _cream,
-            fontSize: 32,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.5,
           ),
         ),
       ),
@@ -997,8 +777,6 @@ class _BreathingSilhouettesState extends State<_BreathingSilhouettes>
   }
 }
 
-
-
 class _CyclingLoadingText extends StatefulWidget {
   final VoidCallback onFinished;
   const _CyclingLoadingText({required this.onFinished});
@@ -1007,7 +785,8 @@ class _CyclingLoadingText extends StatefulWidget {
   State<_CyclingLoadingText> createState() => _CyclingLoadingTextState();
 }
 
-class _CyclingLoadingTextState extends State<_CyclingLoadingText> with SingleTickerProviderStateMixin {
+class _CyclingLoadingTextState extends State<_CyclingLoadingText>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   int _phaseIndex = 0;
   final List<String> _phases = [
