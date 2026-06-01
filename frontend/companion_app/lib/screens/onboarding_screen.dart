@@ -42,8 +42,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   String _depthPreference = '';
   String _behavioralGuardrail = '';
 
-  OnboardingCompleteResponse? _matchedResponse;
-  bool _isStarting = false;
+
   String? _error;
   bool _apiSuccess = false;
   bool _cycleFinished = false;
@@ -76,7 +75,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
       if (!mounted) return;
       setState(() {
-        _matchedResponse = response;
         _apiSuccess = true;
       });
 
@@ -609,43 +607,6 @@ class _OptionTileState extends State<_OptionTile> {
   }
 }
 
-class _BreathingText extends StatefulWidget {
-  final String text;
-  final TextStyle style;
-
-  const _BreathingText({required this.text, required this.style});
-
-  @override
-  State<_BreathingText> createState() => _BreathingTextState();
-}
-
-class _BreathingTextState extends State<_BreathingText>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: Tween<double>(begin: 0.35, end: 1.0).animate(_ctrl),
-      child: Text(widget.text, style: widget.style),
-    );
-  }
-}
 
 class _BreathingSilhouettes extends StatefulWidget {
   const _BreathingSilhouettes();

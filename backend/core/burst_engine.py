@@ -268,7 +268,6 @@ def _delay_for_segment(
     character: Character,
     relationship_state: Optional[dict] = None,
 ) -> int:
-    closeness = float(relationship_state.get("closeness_score") or 0.18) if relationship_state else 0.18
     trust = float(relationship_state.get("trust_score") or 0.18) if relationship_state else 0.18
     comfort = float(relationship_state.get("comfort_score") or 0.14) if relationship_state else 0.14
     

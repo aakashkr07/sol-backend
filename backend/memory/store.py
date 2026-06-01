@@ -851,6 +851,15 @@ class Database:
                     self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
                     logger.info("Added column %s.%s", table, name)
 
+        # Backfill cadence migration to fix existing databases
+        try:
+            self.conn.execute(
+                "UPDATE relationship_pairs SET proactive_cadence = 'gentle' WHERE proactive_cadence = 'light';"
+            )
+            logger.info("Migrated legacy 'light' proactive_cadence values to 'gentle'")
+        except Exception as e:
+            logger.error("Failed to migrate legacy proactive_cadence values: %s", e)
+
     def _table_exists(self, table_name: str) -> bool:
         row = self.conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
@@ -945,7 +954,6 @@ class Database:
         signals: dict,
         onboarding_completed: int = 1,
     ):
-        import json
         signals_json = json.dumps(signals)
         display_name = preferred_name
         self.conn.execute(
@@ -1002,7 +1010,7 @@ class Database:
         return dict(row)
 
     def update_user_preferences(self, user_id: str, **updates) -> dict:
-        current = self.get_or_create_user_preferences(user_id)
+        self.get_or_create_user_preferences(user_id)
         allowed = {
             "allow_memory_storage",
             "show_memory_overview",

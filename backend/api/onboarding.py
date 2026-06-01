@@ -4,7 +4,6 @@ from pydantic import BaseModel
 
 from auth.firebase import AuthenticatedIdentity, get_authenticated_identity
 from memory.store import db
-from personality.loader import load_character
 from personality.registry import rank_companions_for_user, build_opening_line
 from core.burst_engine import plan_burst_response
 from memory.relationship_engine import on_message_saved, on_session_started
@@ -95,8 +94,8 @@ async def complete_onboarding(
             
             # 4. Set the proactive cadence for all three pairs in relationship_pairs
             cadence_map = {
-                "every_now_and_then": "light",
-                "when_it_matters": "light",
+                "every_now_and_then": "gentle",
+                "when_it_matters": "gentle",
                 "fairly_often": "balanced",
                 "always_around": "frequent",
             }

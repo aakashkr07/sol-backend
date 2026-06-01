@@ -477,13 +477,11 @@ def _relationship_guidance(relationship_state: Optional[dict], character = None)
     if not relationship_state:
         return "\n".join(guidance)
 
-    stage = relationship_state.get("stage") or relationship_state.get("current_stage") or "new"
     closeness = float(relationship_state.get("closeness_score") or relationship_state.get("closeness") or 0.18)
     trust = float(relationship_state.get("trust_score") or relationship_state.get("trust") or 0.18)
     openness = float(relationship_state.get("openness_score") or relationship_state.get("openness") or 0.12)
     comfort = float(relationship_state.get("comfort_score") or relationship_state.get("comfort") or 0.14)
     rhythm = float(relationship_state.get("rhythm_score") or relationship_state.get("rhythm") or 0.10)
-    topic_familiarity = float(relationship_state.get("topic_familiarity_score") or relationship_state.get("topic_familiarity") or 0.05)
 
     # 1. RELATIONSHIP COMFORT & CONVERSATIONAL CONFIDENCE (scaled by comfort + trust)
     confidence = (comfort + trust) / 2.0

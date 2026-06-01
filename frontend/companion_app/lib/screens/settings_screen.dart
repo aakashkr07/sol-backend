@@ -788,6 +788,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     required List<String> items,
     required ValueChanged<String?> onChanged,
   }) {
+    // Defensive check to avoid Flutter DropdownButton value assertion crashes
+    final safeValue = items.contains(value) ? value : 'balanced';
     return Container(
       decoration: BoxDecoration(
         color: _surfaceUp.withOpacity(0.70),
@@ -800,7 +802,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
-          value: value,
+          value: safeValue,
           dropdownColor: _surfaceUp,
           icon: Icon(
             Icons.keyboard_arrow_down_rounded,

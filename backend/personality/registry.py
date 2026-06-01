@@ -1,11 +1,14 @@
 import hashlib
+import logging
 import re
 from collections import Counter
 from datetime import datetime
 from typing import Optional
 
-from memory.store import db, make_pair_id
+from memory.store import db
 from personality.loader import Character, list_characters, load_character
+
+logger = logging.getLogger(__name__)
 
 
 def sync_companion_registry() -> None:
@@ -91,6 +94,32 @@ def resolve_or_assign_primary_pair(
             db.set_primary_pair(existing_pairs[0]["id"])
             return db.get_pair_by_id(existing_pairs[0]["id"]) or existing_pairs[0]
         character = choose_companion_for_user(user_id)
+
+    # Ensure the companion is registered in the database to satisfy the foreign key constraint
+    if not db.get_companion(character.id):
+        db.upsert_companion(
+            companion_id=character.id,
+            name=character.name,
+            archetype=character.archetype or character.core_identity.get("vibe", ""),
+            summary=character.summary or character.core_identity.get("vibe", ""),
+            introduction_style=character.introduction_style or character.discovery.get("mode", ""),
+            relationship_label=character.relationship_defaults.get("relationship_label", "friend"),
+            match_weight=int(character.matching_profile.get("weight", 1) or 1),
+            sort_order=999,  # Default sort order for dynamically registered variants
+            proactive_frequency=getattr(character, "proactive_frequency", "medium"),
+            impulsiveness=getattr(character, "impulsiveness", 0.5),
+            attachment_speed=getattr(character, "attachment_speed", 0.5),
+            boredom_threshold=getattr(character, "boredom_threshold", 0.5),
+            loneliness_tolerance=getattr(character, "loneliness_tolerance", 0.5),
+            emotional_openness=getattr(character, "emotional_openness", 0.5),
+            social_confidence=getattr(character, "social_confidence", 0.5),
+            texting_consistency=getattr(character, "texting_consistency", 0.5),
+            disappearance_tendency=getattr(character, "disappearance_tendency", 0.5),
+            late_night_probability=getattr(character, "late_night_probability", 0.5),
+            double_text_probability=getattr(character, "double_text_probability", 0.5),
+            emotional_volatility=getattr(character, "emotional_volatility", 0.5),
+        )
+        logger.info("Dynamically registered companion variant in DB: %s", character.id)
 
     pair = db.get_or_create_relationship_pair(
         user_id=user_id,
