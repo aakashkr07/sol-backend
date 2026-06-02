@@ -1,34 +1,42 @@
 import 'package:companion_app/services/notification_hooks_service.dart';
+import 'package:companion_app/services/notification_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('NotificationHooksService Tests', () {
-    test('broadcasts notifications via ValueNotifier', () {
-      Map<String, dynamic>? receivedData;
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    NotificationService.onNotificationReceived.value = null;
+  });
 
-      // Register listener
+  group('NotificationHooksService Tests', () {
+    test('broadcasts parsed notifications via ValueNotifier', () async {
+      SolNotification? receivedNotification;
+
       NotificationHooksService.onNotificationReceived.addListener(() {
-        receivedData = NotificationHooksService.onNotificationReceived.value;
+        receivedNotification = NotificationHooksService.onNotificationReceived.value;
       });
 
       final mockPayload = {
+        'notification_id': 'notif-987',
+        'sender_name': 'Nova',
+        'message_preview': 'still here?',
         'pair_id': 'user123::nova',
         'companion_id': 'nova',
         'event_id': 'evt_987',
         'reason': 'passive_thought',
       };
 
-      // Mock receiving notification
-      NotificationHooksService.mockIncomingNotification(mockPayload);
+      await NotificationHooksService.mockIncomingNotification(mockPayload);
 
-      // Verify the listener was triggered and received correct data
-      expect(receivedData, isNotNull);
-      expect(receivedData!['pair_id'], 'user123::nova');
-      expect(receivedData!['companion_id'], 'nova');
-      expect(receivedData!['event_id'], 'evt_987');
-      expect(receivedData!['reason'], 'passive_thought');
+      expect(receivedNotification, isNotNull);
+      expect(receivedNotification!.id, 'notif-987');
+      expect(receivedNotification!.sender, 'Nova');
+      expect(receivedNotification!.messagePreview, 'still here?');
+      expect(receivedNotification!.chatId, 'nova');
+      expect(receivedNotification!.payload['reason'], 'passive_thought');
     });
 
     test('exposes setForegroundNotificationOptions safely', () async {

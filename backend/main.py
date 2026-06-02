@@ -171,12 +171,7 @@ async def lifespan(app: FastAPI):
                 try:
                     start_batch_time = time.perf_counter()
                     loop = asyncio.get_running_loop()
-
-                    def get_all_user_ids():
-                        rows = db.conn.execute("SELECT id FROM users").fetchall()
-                        return [row["id"] for row in rows]
-
-                    user_ids = await loop.run_in_executor(None, get_all_user_ids)
+                    user_ids = await loop.run_in_executor(None, db.list_user_ids)
                     batch_size = len(user_ids)
 
                     if batch_size > 0:
@@ -343,7 +338,7 @@ async def health_check(deep: bool = Query(default=False)):
 
     # Check SQLite
     try:
-        database.conn.execute("SELECT 1").fetchone()
+        database.ping()
         health["subsystems"]["sqlite"] = "ok"
     except Exception as e:
         health["subsystems"]["sqlite"] = f"error: {e}"

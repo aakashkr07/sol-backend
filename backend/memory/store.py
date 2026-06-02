@@ -4,7 +4,7 @@ import sqlite3
 import threading
 import uuid
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -101,6 +101,9 @@ class Database:
         if self._conn:
             self._conn.close()
             logger.info("SQLite connection closed")
+
+    def ping(self) -> None:
+        self.conn.execute("SELECT 1").fetchone()
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -876,6 +879,11 @@ class Database:
                 """)
                 logger.info("Created table queued_notifications dynamically")
 
+            except Exception as e:
+                logger.error("Failed to dynamically create queued_notifications table: %s", e)
+
+        if self._table_exists("queued_notifications"):
+            try:
                 self.conn.execute("""
                     CREATE INDEX IF NOT EXISTS idx_queued_notifications_user_status
                     ON queued_notifications(user_id, status)
@@ -884,9 +892,9 @@ class Database:
                     CREATE INDEX IF NOT EXISTS idx_queued_notifications_timestamp
                     ON queued_notifications(timestamp DESC)
                 """)
-                logger.info("Created indexes for queued_notifications dynamically")
+                logger.info("Ensured indexes for queued_notifications")
             except Exception as e:
-                logger.error("Failed to dynamically create queued_notifications table: %s", e)
+                logger.error("Failed to dynamically create queued_notifications indexes: %s", e)
 
         for table, columns in required_columns.items():
             if not self._table_exists(table):
@@ -1145,6 +1153,10 @@ class Database:
         query += " ORDER BY updated_at DESC"
         rows = self.conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
+
+    def list_user_ids(self) -> list[str]:
+        rows = self.conn.execute("SELECT id FROM users").fetchall()
+        return [row["id"] for row in rows]
 
     # ------------------------------------------------------------------
     # Companion registry + relationship pairs
@@ -3072,6 +3084,54 @@ class Database:
             (notification_id,),
         ).fetchone()
         return dict(row)
+
+    def get_notification(self, notification_id: str) -> Optional[dict]:
+        row = self.conn.execute(
+            "SELECT * FROM queued_notifications WHERE id = ?",
+            (notification_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_recent_queued_notification_for_pair(
+        self,
+        pair_id: str,
+        *,
+        exclude_id: Optional[str] = None,
+        within_seconds: int = 15,
+    ) -> Optional[dict]:
+        since = (datetime.utcnow() - timedelta(seconds=within_seconds)).isoformat(timespec="milliseconds")
+        params: list[Any] = [pair_id, since]
+        query = """
+            SELECT *
+            FROM queued_notifications
+            WHERE pair_id = ?
+              AND datetime(timestamp) >= datetime(?)
+              AND status IN ('pending', 'sent', 'failed')
+        """
+        if exclude_id:
+            query += " AND id != ?"
+            params.append(exclude_id)
+        query += " ORDER BY timestamp DESC LIMIT 1"
+        row = self.conn.execute(query, params).fetchone()
+        return dict(row) if row else None
+
+    def update_queued_notification_payload(
+        self,
+        notification_id: str,
+        *,
+        message_preview: str,
+        payload_dict: dict,
+    ) -> Optional[dict]:
+        self.conn.execute(
+            """
+            UPDATE queued_notifications
+            SET message_preview = ?,
+                payload_json = ?
+            WHERE id = ?
+            """,
+            (message_preview, json.dumps(payload_dict or {}), notification_id),
+        )
+        return self.get_notification(notification_id)
 
     def get_pending_notifications(self, limit: int = 20) -> list[dict]:
         rows = self.conn.execute(

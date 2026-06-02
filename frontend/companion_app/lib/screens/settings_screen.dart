@@ -6,10 +6,12 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/biometric_service.dart';
+import '../services/notification_service.dart';
 import '../widgets/atmosphere_background.dart';
 import 'vault_screen.dart';
 
@@ -39,6 +41,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isSaving = false;
   String? _error;
   bool _vaultLocked = false;
+  bool _vibrateOnPresence = true;
+  bool _playSolChimes = true;
+  bool _showActiveRoomBanners = true;
 
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
@@ -69,10 +74,17 @@ class _SettingsScreenState extends State<SettingsScreen>
     try {
       final profile = await ApiService.getMyProfile();
       final vault = await BiometricService.isVaultEnabled();
+      final localPrefs = await SharedPreferences.getInstance();
       if (!mounted) return;
       setState(() {
         _profile = profile;
         _vaultLocked = vault;
+        _vibrateOnPresence =
+            localPrefs.getBool(solNotificationHapticsEnabledKey) ?? true;
+        _playSolChimes =
+            localPrefs.getBool(solNotificationSoundEnabledKey) ?? true;
+        _showActiveRoomBanners =
+            localPrefs.getBool(solNotificationBannersEnabledKey) ?? true;
         _isLoading = false;
       });
       _fadeCtrl.forward(from: 0);
@@ -108,6 +120,21 @@ class _SettingsScreenState extends State<SettingsScreen>
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  Future<void> _updateLocalNotificationPref(String key, bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(key, value);
+    if (!mounted) return;
+    setState(() {
+      if (key == solNotificationHapticsEnabledKey) {
+        _vibrateOnPresence = value;
+      } else if (key == solNotificationSoundEnabledKey) {
+        _playSolChimes = value;
+      } else if (key == solNotificationBannersEnabledKey) {
+        _showActiveRoomBanners = value;
+      }
+    });
   }
 
   Future<void> _pickQuietHour({required bool isStart}) async {
@@ -514,6 +541,70 @@ class _SettingsScreenState extends State<SettingsScreen>
             ),
             const SizedBox(height: 20),
           ],
+
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: _surface.withOpacity(0.70),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'presence signals',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: _cream.withOpacity(0.90),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'shape how companion arrivals feel while you are inside sol.',
+                  style: GoogleFonts.jost(
+                    color: _sand.withOpacity(0.68),
+                    fontSize: 12.5,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _buildToggleRow(
+                  title: 'Vibrate on companion presence',
+                  subtitle: 'a delicate tactile pulse when someone reaches in.',
+                  value: _vibrateOnPresence,
+                  onChanged: (v) => _updateLocalNotificationPref(
+                    solNotificationHapticsEnabledKey,
+                    v,
+                  ),
+                ),
+                _buildDivider(),
+                _buildToggleRow(
+                  title: 'Play Sol chime tones',
+                  subtitle: 'soft system chimes for warm in-app arrivals.',
+                  value: _playSolChimes,
+                  onChanged: (v) => _updateLocalNotificationPref(
+                    solNotificationSoundEnabledKey,
+                    v,
+                  ),
+                ),
+                _buildDivider(),
+                _buildToggleRow(
+                  title: 'Show banners while active in other rooms',
+                  subtitle:
+                      'surface companion messages when you are outside their thread.',
+                  value: _showActiveRoomBanners,
+                  onChanged: (v) => _updateLocalNotificationPref(
+                    solNotificationBannersEnabledKey,
+                    v,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
 
           // ── Vault settings ──
           Container(

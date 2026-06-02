@@ -55,6 +55,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../models/message_model.dart';
 import '../services/notification_hooks_service.dart';
+import '../services/notification_service.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/session_bootstrap_service.dart';
@@ -68,6 +69,8 @@ import '../widgets/message_bubble.dart';
 import '../widgets/typing_indicator.dart';
 
 class ChatScreen extends StatefulWidget {
+  static String? activeChatCompanionId;
+
   final SessionStartResponse? initialSession;
 
   const ChatScreen({
@@ -125,12 +128,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    NotificationHooksService.onNotificationReceived.addListener(_onNotificationReceived);
     NotificationHooksService.setForegroundNotificationOptions(active: true);
     _initialize();
   }
 
   @override
   void dispose() {
+    if (ChatScreen.activeChatCompanionId == _companionId) {
+      ChatScreen.activeChatCompanionId = null;
+    }
+    NotificationHooksService.onNotificationReceived.removeListener(_onNotificationReceived);
     NotificationHooksService.setForegroundNotificationOptions(active: false);
     _cancelAssistantPlayback(clearTyping: false);
     WidgetsBinding.instance.removeObserver(this);
@@ -150,6 +158,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _loadPendingProactiveEvents(silent: true);
     }
+  }
+
+  void _onNotificationReceived() {
+    final notification = NotificationHooksService.onNotificationReceived.value;
+    if (notification == null || notification.chatId != _companionId) {
+      return;
+    }
+    _loadPendingProactiveEvents(silent: true);
   }
 
   // ── Backend calls — untouched ─────────────────────────────────────────────
@@ -236,6 +252,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _companionName = session.companionName;
       _memoryCount = session.memoryCount;
     });
+    ChatScreen.activeChatCompanionId = session.companionId;
+    unawaited(NotificationService.markChatRead(session.companionId));
   }
 
   String? _getFirstName() {

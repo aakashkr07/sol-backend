@@ -35,7 +35,8 @@ backend/.ruff_cache/
 backend/.coverage
 backend/.coverage.*
 backend/htmlcov/
-backend/tests/
+backend/tests/*
+!backend/tests/test_notifications.py
 
 # Flutter / Dart
 frontend/companion_app/.dart_tool/
@@ -43,6 +44,7 @@ frontend/companion_app/.flutter-plugins
 frontend/companion_app/.flutter-plugins-dependencies
 frontend/companion_app/build/
 frontend/companion_app/.packages
+frontendfrontend/companion_app/test
 
 # IDE and OS files
 .idea/

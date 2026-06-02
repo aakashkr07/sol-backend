@@ -1,17 +1,17 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 
 import 'api_service.dart';
+import 'notification_service.dart';
 
 class NotificationHooksService {
   NotificationHooksService._();
 
   static bool _initialized = false;
 
-  /// Global notifier that broadcasts FCM message data to active screens in real-time.
-  static final ValueNotifier<Map<String, dynamic>?> onNotificationReceived =
-      ValueNotifier<Map<String, dynamic>?>(null);
+  /// Global notifier that broadcasts parsed Sol notifications to active screens in real-time.
+  static final ValueNotifier<SolNotification?> onNotificationReceived =
+      NotificationService.onNotificationReceived;
 
   static Future<void> initialize() async {
     if (_initialized) {
@@ -21,6 +21,8 @@ class NotificationHooksService {
 
     try {
       final messaging = FirebaseMessaging.instance;
+      FirebaseMessaging.onBackgroundMessage(solFirebaseMessagingBackgroundHandler);
+
       await messaging.requestPermission(
         alert: true,
         badge: true,
@@ -50,12 +52,12 @@ class NotificationHooksService {
 
       // Hook foreground message capture
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        _handleMessage(message.data);
+        _handleMessage(message, isForeground: true);
       });
 
       // Hook background message click / application open
       FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-        _handleMessage(message.data);
+        _handleMessage(message, isForeground: true);
       });
     } catch (_) {
       // Notification hooks are optional; missing platform config should not break chat.
@@ -72,23 +74,16 @@ class NotificationHooksService {
     } catch (_) {}
   }
 
-  /// Processes FCM data payloads, playing premium chimes and triggering micro-vibrations
-  static void _handleMessage(Map<String, dynamic> data) {
-    if (data.isEmpty) return;
-
-    try {
-      // Premium atmospheric Sol notification click sound & haptics
-      SystemSound.play(SystemSoundType.click);
-      HapticFeedback.mediumImpact();
-    } catch (_) {}
-
-    // Broadcast message to the inbox screen for real-time updates
-    onNotificationReceived.value = data;
+  static void _handleMessage(RemoteMessage message, {required bool isForeground}) {
+    if (message.data.isEmpty && message.notification == null) {
+      return;
+    }
+    NotificationService.handleRemoteMessage(message, isForeground: isForeground);
   }
 
   /// Exposes a mock trigger to easily test hooks, badging, and sounds in unit tests
   @visibleForTesting
-  static void mockIncomingNotification(Map<String, dynamic> data) {
-    _handleMessage(data);
+  static Future<void> mockIncomingNotification(Map<String, dynamic> data) {
+    return NotificationService.handlePayload(data);
   }
 }

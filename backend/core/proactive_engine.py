@@ -459,7 +459,7 @@ async def _generate_proactive_event(
         "pair_id": pair_id,
         "reason": decision.reason,
     }
-    notification_status = "skipped"
+    notification_status = "not_attempted"
     if allow_push:
         notification_body = _notification_body_for_style(
             style=style,
@@ -480,7 +480,9 @@ async def _generate_proactive_event(
                     "event_id": event_id,
                     "reason": decision.reason or "",
                     "conversation_id": conversation_id,
-                    "role": "assistant"
+                    "role": "assistant",
+                    "messages": [burst.text for burst in burst_plan.bursts],
+                    "grouped_count": len(burst_plan.bursts),
                 }
             )
             return res.get("status") or "sent"

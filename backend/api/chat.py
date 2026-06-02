@@ -316,23 +316,26 @@ async def chat(
                 if active_event:
                     db.mark_life_event_resolved(active_event["id"])
 
-            # Queue and attempt FCM delivery for each assistant reply burst
+            # Queue and attempt FCM delivery for the saved assistant response.
             from api.notifications import queue_and_send_notification
-            for burst in burst_plan.bursts:
-                try:
-                    queue_and_send_notification(
-                        user_id=identity.uid,
-                        pair_id=pair["id"],
-                        companion_id=pair["companion_id"],
-                        sender_name=companion.name,
-                        message_preview=burst.text,
-                        payload_dict={
-                            "conversation_id": conversation_id,
-                            "role": "assistant"
-                        }
-                    )
-                except Exception as notif_err:
-                    logger.error("Failed to queue and send notification for burst: %s", notif_err)
+            try:
+                messages = [burst.text for burst in burst_plan.bursts]
+                message_preview = messages[-1] if len(messages) == 1 else f"{companion.name}: [{len(messages)} messages] {messages[-1]}"
+                queue_and_send_notification(
+                    user_id=identity.uid,
+                    pair_id=pair["id"],
+                    companion_id=pair["companion_id"],
+                    sender_name=companion.name,
+                    message_preview=message_preview,
+                    payload_dict={
+                        "conversation_id": conversation_id,
+                        "role": "assistant",
+                        "messages": messages,
+                        "grouped_count": len(messages),
+                    },
+                )
+            except Exception as notif_err:
+                logger.error("Failed to queue and send notification for assistant response: %s", notif_err)
         except Exception as e:
             logger.exception("Failed to save assistant bursts for user %s, pair %s", identity.uid, pair["id"])
             try:

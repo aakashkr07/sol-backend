@@ -1,8 +1,6 @@
 from datetime import datetime, timedelta
 import json
 import logging
-import uuid
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -13,12 +11,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# In-memory registry of active user presence
-# key: user_id -> datetime
-_ACTIVE_SESSIONS = {}
+_ACTIVE_SESSIONS: dict[str, datetime] = {}
 
 
-def update_user_presence(user_id: str):
+def update_user_presence(user_id: str) -> None:
     _ACTIVE_SESSIONS[user_id] = datetime.utcnow()
     logger.debug("Updated active presence for user %s", user_id)
 
@@ -27,9 +23,18 @@ def is_user_active(user_id: str) -> bool:
     last_seen = _ACTIVE_SESSIONS.get(user_id)
     if not last_seen:
         return False
-    # User is considered active if their last API interaction was within 15 seconds
-    active = datetime.utcnow() - last_seen < timedelta(seconds=15)
-    return active
+    return datetime.utcnow() - last_seen < timedelta(seconds=15)
+
+
+def _message_list_from_payload(payload_dict: dict, fallback_preview: str) -> list[str]:
+    messages = payload_dict.get("messages") if isinstance(payload_dict, dict) else None
+    if isinstance(messages, list) and messages:
+        return [str(message) for message in messages if str(message).strip()]
+    return [fallback_preview] if fallback_preview else []
+
+
+def _delivery_status(outcome: str) -> str:
+    return "sent" if outcome == "sent" else "failed"
 
 
 def queue_and_send_notification(
@@ -40,118 +45,72 @@ def queue_and_send_notification(
     message_preview: str,
     payload_dict: dict,
 ) -> dict:
-    # 1. Queue it as pending first in the database
-    notif = db.queue_notification(
+    app_active = is_user_active(user_id)
+    payload = {
+        **(payload_dict or {}),
+        "app_active": str(app_active).lower(),
+    }
+
+    notification = db.queue_notification(
         user_id=user_id,
         pair_id=pair_id,
         companion_id=companion_id,
         sender_name=sender_name,
         message_preview=message_preview,
-        payload_dict=payload_dict,
+        payload_dict=payload,
     )
 
-    # 2. Check if the user is currently active (looking at the screen)
-    if is_user_active(user_id):
-        logger.info("User %s is active on screen. Skipping FCM push.", user_id)
-        db.mark_notification_status(notif["id"], "skipped")
-        row = db.conn.execute("SELECT * FROM queued_notifications WHERE id = ?", (notif["id"],)).fetchone()
-        return dict(row)
-
-    # 3. Check for coalescing: check if another notification for this pair_id was queued within the last 15 seconds
-    now = datetime.utcnow()
-    recent_row = db.conn.execute(
-        """
-        SELECT * FROM queued_notifications
-        WHERE pair_id = ? AND id != ? AND status != 'coalesced' AND status != 'skipped'
-        ORDER BY timestamp DESC
-        LIMIT 1
-        """,
-        (pair_id, notif["id"]),
-    ).fetchone()
-
-    # Import the FCM dispatch helper locally to prevent circular dependencies
     from core.proactive_engine import _send_push_hooks
 
-    if recent_row:
-        recent = dict(recent_row)
+    dispatch_preview = message_preview
+    dispatch_payload = payload
+    recent = db.get_recent_queued_notification_for_pair(
+        pair_id,
+        exclude_id=notification["id"],
+        within_seconds=15,
+    )
+    if recent:
         try:
-            recent_time = datetime.fromisoformat(recent["timestamp"])
-        except ValueError:
-            recent_time = None
+            previous_payload = json.loads(recent.get("payload_json") or "{}")
+        except json.JSONDecodeError:
+            previous_payload = {}
 
-        if recent_time and now - recent_time < timedelta(seconds=15):
-            # Coalesce!
-            try:
-                prev_payload = json.loads(recent["payload_json"] or "{}")
-            except Exception:
-                prev_payload = {}
-
-            messages = prev_payload.get("messages", [])
-            if not messages:
-                # Seed with previous preview if list doesn't exist
-                messages.append(recent["message_preview"])
-            messages.append(message_preview)
-            count = len(messages)
-
-            # Grouped preview text format
-            grouped_preview = f"{sender_name}: [{count} messages] {message_preview}"
-
-            new_payload = {
-                **prev_payload,
+        messages = _message_list_from_payload(previous_payload, recent.get("message_preview") or "")
+        messages.extend(_message_list_from_payload(payload, message_preview))
+        if len(messages) > 1:
+            dispatch_preview = f"{sender_name}: [{len(messages)} messages] {messages[-1]}"
+            dispatch_payload = {
+                **payload,
                 "messages": messages,
-                "grouped_count": count,
+                "grouped_count": len(messages),
+                "coalesced": True,
+                "coalesced_with_notification_id": recent["id"],
             }
+            notification = db.update_queued_notification_payload(
+                notification["id"],
+                message_preview=dispatch_preview,
+                payload_dict=dispatch_payload,
+            ) or notification
 
-            # Update the recent notification
-            db.conn.execute(
-                """
-                UPDATE queued_notifications
-                SET message_preview = ?,
-                    payload_json = ?,
-                    status = 'pending'
-                WHERE id = ?
-                """,
-                (grouped_preview, json.dumps(new_payload), recent["id"]),
-            )
-
-            # Mark the new notification as 'coalesced'
-            db.mark_notification_status(notif["id"], "coalesced")
-
-            # Attempt immediate FCM dispatch of the coalesced notification
-            outcome = _send_push_hooks(
-                user_id=user_id,
-                title=sender_name,
-                body=grouped_preview,
-                data={
-                    "pair_id": pair_id,
-                    "companion_id": companion_id,
-                    "notification_id": recent["id"],
-                    "coalesced": "true",
-                    "grouped_count": str(count),
-                },
-            )
-
-            # Update status on the coalesced notification
-            db.mark_notification_status(recent["id"], outcome)
-
-            row = db.conn.execute("SELECT * FROM queued_notifications WHERE id = ?", (recent["id"],)).fetchone()
-            return dict(row)
-
-    # Normal dispatch
     outcome = _send_push_hooks(
         user_id=user_id,
         title=sender_name,
-        body=message_preview,
+        body=dispatch_preview,
         data={
             "pair_id": pair_id,
             "companion_id": companion_id,
-            "notification_id": notif["id"],
+            "notification_id": notification["id"],
+            "app_active": str(app_active).lower(),
+            "coalesced": str(bool(dispatch_payload.get("coalesced"))).lower(),
+            "grouped_count": str(dispatch_payload.get("grouped_count") or 1),
         },
     )
 
-    db.mark_notification_status(notif["id"], outcome)
-    row = db.conn.execute("SELECT * FROM queued_notifications WHERE id = ?", (notif["id"],)).fetchone()
-    return dict(row)
+    return db.mark_notification_status(
+        notification["id"],
+        _delivery_status(outcome),
+        error_message=None if outcome == "sent" else outcome,
+    ) or notification
 
 
 @router.post("/me/notifications/{notification_id}/receipt")
@@ -159,15 +118,12 @@ async def confirm_notification_receipt(
     notification_id: str,
     identity: AuthenticatedIdentity = Depends(get_authenticated_identity),
 ):
-    row = db.conn.execute("SELECT * FROM queued_notifications WHERE id = ?", (notification_id,)).fetchone()
-    if not row:
+    notification = db.get_notification(notification_id)
+    if not notification:
         raise HTTPException(status_code=404, detail="Notification not found")
-
-    notification = dict(row)
     if notification["user_id"] != identity.uid:
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    # Log system event "notification_delivered_receipt"
     db.log_system_event(
         kind="notification_delivered_receipt",
         severity="info",
@@ -176,7 +132,6 @@ async def confirm_notification_receipt(
         payload={"notification_id": notification_id},
     )
 
-    # Confirm notification delivery
     updated = db.confirm_notification_delivery(notification_id)
     return {"status": "success", "notification": updated}
 
