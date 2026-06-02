@@ -121,6 +121,8 @@ async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = Fa
     if not user:
         return []
 
+    await _dispatch_due_pending_notifications(user_id)
+
     preferences = await loop.run_in_executor(None, db.get_or_create_user_preferences, user_id)
     if not settings.PROACTIVE_MESSAGES_ENABLED and not force:
         return []
@@ -171,7 +173,14 @@ async def maybe_generate_for_user(user_id: str, limit: int = 1, force: bool = Fa
         # Offload sync DB reads inside _emotional_callback_ready, pending events, and latest message checks:
         emotional_callback_ready = await loop.run_in_executor(None, _emotional_callback_ready, pair["user_id"], pair["id"])
         cooldown_active = _cooldown_active(pair.get("proactive_cooldown_until"))
-        has_pending = bool(await loop.run_in_executor(None, db.list_pending_proactive_events, user_id, pair["id"]))
+        has_pending = bool(
+            await loop.run_in_executor(
+                None,
+                db.has_pending_proactive_event,
+                user_id,
+                pair["id"],
+            )
+        )
         latest_msg = await loop.run_in_executor(None, db.get_latest_message_for_pair, pair["id"])
         latest_role = latest_msg.get("role") if latest_msg else None
         is_assistant_last = (latest_role == "assistant")
@@ -277,6 +286,68 @@ async def pull_pending_events(user_id: str, pair_id: Optional[str] = None) -> li
 
         await loop.run_in_executor(None, save_delivered_distracted_messages)
     return events
+
+
+async def _dispatch_due_pending_notifications(user_id: str) -> None:
+    loop = asyncio.get_running_loop()
+    rows = await loop.run_in_executor(None, db.list_pending_proactive_events, user_id, None)
+    due_rows = [
+        row for row in rows
+        if (row.get("notification_status") or "not_attempted") in {"not_attempted", "pending", "failed"}
+    ]
+    if not due_rows:
+        return
+
+    def dispatch_due_rows():
+        from api.notifications import queue_and_send_notification
+
+        for row in due_rows:
+            try:
+                payload = json.loads(row.get("payload_json") or "{}")
+            except json.JSONDecodeError:
+                payload = {}
+
+            companion_id = row.get("companion_id") or payload.get("companion_id") or ""
+            pair_id = row.get("pair_id") or payload.get("pair_id") or ""
+            companion_name = payload.get("companion_name")
+            if not companion_name:
+                try:
+                    companion_name = load_character(companion_id).name
+                except Exception:
+                    companion_name = "Companion"
+
+            bursts = payload.get("bursts") if isinstance(payload, dict) else []
+            messages = [
+                str(burst.get("text") or "").strip()
+                for burst in bursts
+                if isinstance(burst, dict) and str(burst.get("text") or "").strip()
+            ]
+            preview = (messages[-1] if messages else (row.get("message_text") or "")).strip()
+            if len(messages) > 1:
+                preview = f"{companion_name}: [{len(messages)} messages] {messages[-1]}"
+
+            result = queue_and_send_notification(
+                user_id=user_id,
+                pair_id=pair_id,
+                companion_id=companion_id,
+                sender_name=companion_name,
+                message_preview=preview,
+                payload_dict={
+                    **payload,
+                    "event_id": row.get("id") or "",
+                    "reason": row.get("reason") or payload.get("reason") or "",
+                    "conversation_id": row.get("conversation_id") or payload.get("conversation_id") or "",
+                    "role": "assistant",
+                    "messages": messages,
+                    "grouped_count": len(messages) or 1,
+                },
+            )
+            db.mark_proactive_notification_status(
+                row["id"],
+                result.get("status") or "sent",
+            )
+
+    await loop.run_in_executor(None, dispatch_due_rows)
 
 
 async def _generate_proactive_event(
@@ -459,7 +530,7 @@ async def _generate_proactive_event(
         "pair_id": pair_id,
         "reason": decision.reason,
     }
-    notification_status = "not_attempted"
+    notification_status = "not_attempted" if allow_push else "disabled"
     if allow_push:
         notification_body = _notification_body_for_style(
             style=style,

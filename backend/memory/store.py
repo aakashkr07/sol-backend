@@ -49,6 +49,7 @@ class Database:
     def __init__(self):
         self._conn: Optional[sqlite3.Connection] = None
         self._local = threading.local()
+        self._transaction_lock = threading.RLock()
 
     @contextmanager
     def transaction(self, mode: str = "IMMEDIATE"):
@@ -60,9 +61,16 @@ class Database:
             self._local.depth = 0
 
         is_outermost = False
+        lock_acquired = False
         if self._local.depth == 0:
-            self.conn.execute(f"BEGIN {mode}")
-            is_outermost = True
+            self._transaction_lock.acquire()
+            lock_acquired = True
+            try:
+                self.conn.execute(f"BEGIN {mode}")
+                is_outermost = True
+            except Exception:
+                self._transaction_lock.release()
+                raise
 
         self._local.depth += 1
         try:
@@ -70,6 +78,9 @@ class Database:
             self._local.depth -= 1
             if is_outermost:
                 self.conn.execute("COMMIT")
+                if lock_acquired:
+                    self._transaction_lock.release()
+                    lock_acquired = False
         except Exception as e:
             if is_outermost:
                 self._local.depth = 0
@@ -77,6 +88,10 @@ class Database:
                     self.conn.execute("ROLLBACK")
                 except sqlite3.OperationalError as rollback_err:
                     logger.warning("Rollback failed or transaction wasn't active: %s", rollback_err)
+                finally:
+                    if lock_acquired:
+                        self._transaction_lock.release()
+                        lock_acquired = False
             else:
                 self._local.depth -= 1
             raise e
@@ -2783,7 +2798,9 @@ class Database:
         payload_json: str,
         notification_status: str = "not_attempted",
         status: str = "pending",
+        scheduled_for: Optional[str] = None,
     ) -> None:
+        scheduled_at = scheduled_for or _utcnow_iso()
         self.conn.execute(
             """
             INSERT INTO proactive_events
@@ -2802,43 +2819,67 @@ class Database:
                 message_text,
                 payload_json,
                 notification_status,
-                _utcnow_iso(),
+                scheduled_at,
                 _utcnow_iso(),
             ),
         )
 
-    def list_pending_proactive_events(self, user_id: str, pair_id: Optional[str] = None) -> list[dict]:
+    def list_pending_proactive_events(
+        self,
+        user_id: str,
+        pair_id: Optional[str] = None,
+        *,
+        due_only: bool = True,
+    ) -> list[dict]:
+        due_clause = "AND datetime(COALESCE(scheduled_for, created_at)) <= datetime(?)" if due_only else ""
+        now = _utcnow_iso()
         if pair_id:
             rows = self.conn.execute(
-                """
+                f"""
                 SELECT *
                 FROM proactive_events
                 WHERE user_id = ? AND pair_id = ? AND status = 'pending'
-                ORDER BY created_at ASC
+                {due_clause}
+                ORDER BY scheduled_for ASC, created_at ASC
                 """,
-                (user_id, pair_id),
+                (user_id, pair_id, now) if due_only else (user_id, pair_id),
             ).fetchall()
         else:
             rows = self.conn.execute(
-                """
+                f"""
                 SELECT *
                 FROM proactive_events
                 WHERE user_id = ? AND status = 'pending'
-                ORDER BY created_at ASC
+                {due_clause}
+                ORDER BY scheduled_for ASC, created_at ASC
                 """,
-                (user_id,),
+                (user_id, now) if due_only else (user_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def has_pending_proactive_event(self, user_id: str, pair_id: str) -> bool:
+        row = self.conn.execute(
+            """
+            SELECT 1
+            FROM proactive_events
+            WHERE user_id = ? AND pair_id = ? AND status = 'pending'
+            LIMIT 1
+            """,
+            (user_id, pair_id),
+        ).fetchone()
+        return row is not None
 
     def get_pending_proactive_counts(self, user_id: str) -> dict[str, int]:
         rows = self.conn.execute(
             """
             SELECT pair_id, COUNT(*) AS pending_count
             FROM proactive_events
-            WHERE user_id = ? AND status = 'pending'
+            WHERE user_id = ?
+              AND status = 'pending'
+              AND datetime(COALESCE(scheduled_for, created_at)) <= datetime(?)
             GROUP BY pair_id
             """,
-            (user_id,),
+            (user_id, _utcnow_iso()),
         ).fetchall()
         return {
             str(row["pair_id"]): int(row["pending_count"] or 0)
@@ -2859,6 +2900,25 @@ class Database:
             """,
             [_utcnow_iso(), *event_ids],
         )
+
+    def mark_proactive_notification_status(
+        self,
+        event_id: str,
+        notification_status: str,
+    ) -> Optional[dict]:
+        self.conn.execute(
+            """
+            UPDATE proactive_events
+            SET notification_status = ?
+            WHERE id = ?
+            """,
+            (notification_status, event_id),
+        )
+        row = self.conn.execute(
+            "SELECT * FROM proactive_events WHERE id = ?",
+            (event_id,),
+        ).fetchone()
+        return dict(row) if row else None
 
     def touch_pair_proactive(
         self,

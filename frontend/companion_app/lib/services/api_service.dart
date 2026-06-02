@@ -538,7 +538,7 @@ class InboxEntrySummary {
   bool get isArrival => entryKind == 'arrival';
   bool get hasUnread => unreadCount > 0;
 
-  DateTime? get previewDateTime => DateTime.tryParse(previewAt);
+  DateTime? get previewDateTime => DateTime.tryParse(previewAt)?.toLocal();
 
   factory InboxEntrySummary.fromJson(Map<String, dynamic> json) {
     return InboxEntrySummary(

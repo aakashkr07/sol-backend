@@ -99,7 +99,7 @@ class SolNotification {
       id: id,
       sender: sender,
       messagePreview: preview,
-      timestamp: timestamp,
+      timestamp: timestamp.toLocal(),
       chatId: chatId,
       payload: Map<String, dynamic>.from(data),
     );
@@ -110,7 +110,7 @@ class SolNotification {
       id: json['id'] as String? ?? '',
       sender: json['sender'] as String? ?? 'Sol',
       messagePreview: json['messagePreview'] as String? ?? '',
-      timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ?? DateTime.now(),
+      timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '')?.toLocal() ?? DateTime.now(),
       chatId: json['chatId'] as String? ?? '',
       isRead: json['isRead'] as bool? ?? false,
       payload: Map<String, dynamic>.from(json['payload'] as Map? ?? const {}),

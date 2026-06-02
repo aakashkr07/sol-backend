@@ -46,8 +46,15 @@ def queue_and_send_notification(
     payload_dict: dict,
 ) -> dict:
     app_active = is_user_active(user_id)
+    queued_at = datetime.utcnow().isoformat(timespec="milliseconds")
     payload = {
         **(payload_dict or {}),
+        "notification_id": "",
+        "sender_name": sender_name,
+        "message_preview": message_preview,
+        "pair_id": pair_id,
+        "companion_id": companion_id,
+        "timestamp": queued_at,
         "app_active": str(app_active).lower(),
     }
 
@@ -59,6 +66,12 @@ def queue_and_send_notification(
         message_preview=message_preview,
         payload_dict=payload,
     )
+    payload["notification_id"] = notification["id"]
+    notification = db.update_queued_notification_payload(
+        notification["id"],
+        message_preview=message_preview,
+        payload_dict=payload,
+    ) or notification
 
     from core.proactive_engine import _send_push_hooks
 
@@ -81,6 +94,7 @@ def queue_and_send_notification(
             dispatch_preview = f"{sender_name}: [{len(messages)} messages] {messages[-1]}"
             dispatch_payload = {
                 **payload,
+                "message_preview": dispatch_preview,
                 "messages": messages,
                 "grouped_count": len(messages),
                 "coalesced": True,
@@ -99,6 +113,10 @@ def queue_and_send_notification(
         data={
             "pair_id": pair_id,
             "companion_id": companion_id,
+            "sender_name": sender_name,
+            "message_preview": dispatch_preview,
+            "conversation_id": str(dispatch_payload.get("conversation_id") or ""),
+            "timestamp": queued_at,
             "notification_id": notification["id"],
             "app_active": str(app_active).lower(),
             "coalesced": str(bool(dispatch_payload.get("coalesced"))).lower(),
