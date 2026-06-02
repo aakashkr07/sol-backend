@@ -41,6 +41,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from auth.firebase import initialize_firebase_auth
 from config import settings
 
+from api.chat import router as chat_router
+from api.ops import router as ops_router
+from api.profile import router as profile_router
+from api.proactive import router as proactive_router
+from api.onboarding import router as onboarding_router
+from api.notifications import router as notifications_router
+
 # ---------------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------------
@@ -273,14 +280,7 @@ app.add_middleware(
 
 # ---------------------------------------------------------------------------
 # Mount Routers
-# ---------------------------------------------------------------------------
-
-from api.chat import router as chat_router
-from api.ops import router as ops_router
-from api.profile import router as profile_router
-from api.proactive import router as proactive_router
-from api.onboarding import router as onboarding_router
-from api.notifications import router as notifications_router
+# --------------------------------------------------------------------------
 
 app.include_router(chat_router, prefix="/api", tags=["chat"])
 app.include_router(onboarding_router, prefix="/api", tags=["onboarding"])
