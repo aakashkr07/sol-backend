@@ -105,6 +105,8 @@ async def chat(
     identity: AuthenticatedIdentity = Depends(get_authenticated_identity),
 ):
     _ensure_request_matches_auth(request.user_id, identity)
+    from api.notifications import update_user_presence
+    update_user_presence(identity.uid)
 
     pair = _resolve_pair(identity, requested_character_id=request.character_id)
     from core.concurrency import pair_lock_context
@@ -313,6 +315,24 @@ async def chat(
                 active_event = db.get_latest_unresolved_life_event(pair["id"])
                 if active_event:
                     db.mark_life_event_resolved(active_event["id"])
+
+            # Queue and attempt FCM delivery for each assistant reply burst
+            from api.notifications import queue_and_send_notification
+            for burst in burst_plan.bursts:
+                try:
+                    queue_and_send_notification(
+                        user_id=identity.uid,
+                        pair_id=pair["id"],
+                        companion_id=pair["companion_id"],
+                        sender_name=companion.name,
+                        message_preview=burst.text,
+                        payload_dict={
+                            "conversation_id": conversation_id,
+                            "role": "assistant"
+                        }
+                    )
+                except Exception as notif_err:
+                    logger.error("Failed to queue and send notification for burst: %s", notif_err)
         except Exception as e:
             logger.exception("Failed to save assistant bursts for user %s, pair %s", identity.uid, pair["id"])
             try:
@@ -359,6 +379,8 @@ async def start_session(
     identity: AuthenticatedIdentity = Depends(get_authenticated_identity),
 ):
     _ensure_request_matches_auth(request.user_id, identity)
+    from api.notifications import update_user_presence
+    update_user_presence(identity.uid)
 
     pair = _resolve_pair(identity, requested_character_id=request.character_id)
     user = db.get_or_create_user(

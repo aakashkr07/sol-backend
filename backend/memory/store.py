@@ -839,7 +839,54 @@ class Database:
                 "is_resolved INTEGER DEFAULT 0",
                 "context_injected INTEGER DEFAULT 0",
             ],
+            "queued_notifications": [
+                "id TEXT",
+                "user_id TEXT",
+                "pair_id TEXT",
+                "companion_id TEXT",
+                "sender_name TEXT",
+                "message_preview TEXT",
+                "timestamp DATETIME",
+                "status TEXT",
+                "retry_count INTEGER",
+                "last_attempt_at DATETIME",
+                "delivered_at DATETIME",
+                "payload_json TEXT",
+            ],
         }
+
+        # Check and create queued_notifications table & indexes dynamically if missing
+        if not self._table_exists("queued_notifications"):
+            try:
+                self.conn.execute("""
+                    CREATE TABLE queued_notifications (
+                        id                    TEXT PRIMARY KEY,
+                        user_id               TEXT REFERENCES users(id) ON DELETE CASCADE,
+                        pair_id               TEXT REFERENCES relationship_pairs(id) ON DELETE CASCADE,
+                        companion_id          TEXT REFERENCES companions(id) ON DELETE CASCADE,
+                        sender_name           TEXT,
+                        message_preview       TEXT,
+                        timestamp             DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        status                TEXT DEFAULT 'pending',
+                        retry_count           INTEGER DEFAULT 0,
+                        last_attempt_at       DATETIME,
+                        delivered_at          DATETIME,
+                        payload_json          TEXT
+                    )
+                """)
+                logger.info("Created table queued_notifications dynamically")
+
+                self.conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_queued_notifications_user_status
+                    ON queued_notifications(user_id, status)
+                """)
+                self.conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_queued_notifications_timestamp
+                    ON queued_notifications(timestamp DESC)
+                """)
+                logger.info("Created indexes for queued_notifications dynamically")
+            except Exception as e:
+                logger.error("Failed to dynamically create queued_notifications table: %s", e)
 
         for table, columns in required_columns.items():
             if not self._table_exists(table):
@@ -2984,6 +3031,120 @@ class Database:
                 (user_id, limit),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    # ------------------------------------------------------------------
+    # Notification queue operations
+    # ------------------------------------------------------------------
+
+    def queue_notification(
+        self,
+        user_id: str,
+        pair_id: str,
+        companion_id: str,
+        sender_name: str,
+        message_preview: str,
+        payload_dict: dict,
+    ) -> dict:
+        notification_id = str(uuid.uuid4())
+        now = _utcnow_iso()
+        payload_json = json.dumps(payload_dict or {})
+        self.conn.execute(
+            """
+            INSERT INTO queued_notifications (
+                id, user_id, pair_id, companion_id, sender_name, message_preview,
+                timestamp, status, retry_count, payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)
+            """,
+            (
+                notification_id,
+                user_id,
+                pair_id,
+                companion_id,
+                sender_name,
+                message_preview,
+                now,
+                payload_json,
+            ),
+        )
+        logger.info("Queued notification: %s", notification_id)
+        row = self.conn.execute(
+            "SELECT * FROM queued_notifications WHERE id = ?",
+            (notification_id,),
+        ).fetchone()
+        return dict(row)
+
+    def get_pending_notifications(self, limit: int = 20) -> list[dict]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM queued_notifications
+            WHERE status IN ('pending', 'failed') AND retry_count < 3
+            ORDER BY timestamp ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def mark_notification_status(
+        self,
+        notification_id: str,
+        status: str,
+        error_message: Optional[str] = None,
+    ) -> Optional[dict]:
+        now = _utcnow_iso()
+        if status == "delivered":
+            self.conn.execute(
+                """
+                UPDATE queued_notifications
+                SET status = ?,
+                    retry_count = retry_count + 1,
+                    last_attempt_at = ?,
+                    delivered_at = ?
+                WHERE id = ?
+                """,
+                (status, now, now, notification_id),
+            )
+        else:
+            self.conn.execute(
+                """
+                UPDATE queued_notifications
+                SET status = ?,
+                    retry_count = retry_count + 1,
+                    last_attempt_at = ?
+                WHERE id = ?
+                """,
+                (status, now, notification_id),
+            )
+        logger.info(
+            "Notification %s status updated to %s (error_message=%s)",
+            notification_id,
+            status,
+            error_message,
+        )
+        row = self.conn.execute(
+            "SELECT * FROM queued_notifications WHERE id = ?",
+            (notification_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def confirm_notification_delivery(self, notification_id: str) -> Optional[dict]:
+        now = _utcnow_iso()
+        self.conn.execute(
+            """
+            UPDATE queued_notifications
+            SET status = 'delivered',
+                delivered_at = ?
+            WHERE id = ?
+            """,
+            (now, notification_id),
+        )
+        logger.info("Notification %s delivery confirmed", notification_id)
+        row = self.conn.execute(
+            "SELECT * FROM queued_notifications WHERE id = ?",
+            (notification_id,),
+        ).fetchone()
+        return dict(row) if row else None
 
 
 db = Database()

@@ -57,3 +57,5 @@ backend/firebase_credentials.json
 backend/verify_step2.py
 backend/verify_step3.py
 backend/verify_step4.py
+backend/verify_coalescing.py
+backend/verify_notifications.py

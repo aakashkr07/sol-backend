@@ -52,7 +52,22 @@ class Character:
         self.personality_traits = data.get("personality_traits", {})
         self.texting_style = data.get("texting_style", {})
         self.emotional_intelligence = data.get("emotional_intelligence", {})
-        self.memory_behavior = data.get("memory_behavior", {})
+        
+        # Robustly load memory_behavior, fallback to custom outer keys if structural mismatch exists
+        mem_data = data.get("memory_behavior")
+        if not mem_data:
+            base_id = self.id.split("_")[0] if "_" in self.id else self.id
+            possible_keys = [
+                f"how_{self.id}_references_memory",
+                f"how_{base_id}_references_memory",
+                "how_nova_references_memory"
+            ]
+            for pk in possible_keys:
+                if pk in data:
+                    mem_data = data[pk]
+                    break
+        self.memory_behavior = mem_data or {}
+
         self.relationship_arc = data.get("relationship_arc", {})
         self.relationship_defaults = data.get("relationship_defaults", {})
         self.discovery = data.get("discovery", {})
@@ -168,8 +183,6 @@ def get_character_self_memory_seeds(character: Character) -> dict[str, str]:
     if seeds:
         return dict(seeds)
     # Generic fallback
-    vibe = character.core_identity.get("vibe", "")
-    archetype = character.archetype or ""
     age = str(character.core_identity.get("age") or 25)
     return {
         "age": age,
@@ -220,6 +233,55 @@ def build_system_prompt(
     style = character.texting_style
     ei = character.emotional_intelligence
     mem = character.memory_behavior
+    
+    base_id = character.id.split("_")[0] if "_" in character.id else character.id
+    char_mem_key = f"how_{base_id}_references_memory"
+    memory_instruction = mem.get(char_mem_key) or mem.get("how_nova_references_memory", "")
+
+    # Load dynamic key or fall back to generic self-asks
+    specific_asks_key = f"when_user_asks_about_{character.id}"
+    specific_asks_base = f"when_user_asks_about_{base_id}"
+    
+    asks_about_self = (
+        ei.get(specific_asks_key)
+        or ei.get(specific_asks_base)
+        or ei.get("when_user_asks_about_self", {})
+    ).get("approach", "")
+
+    # ── Core Opinions Block Construction ──────────────────────────────────
+    opinions_block = ""
+    opinions = character.opinion_seeds.get("opinions", []) if character.opinion_seeds else []
+    if opinions:
+        opinions_list = "\n".join([f"- {o}" for o in opinions])
+        opinions_block = f"\n\nYOUR OPINIONS & VIEWS (express these sparingly and naturally to feel like a real person with stances):\n{opinions_list}"
+
+    # ── Dynamic Personality Blueprint Construction ─────────────────────────
+    blueprint = []
+    if character.impulsiveness > 0.7:
+        blueprint.append("- You text impulsively. You reply quickly without filtering your thoughts.")
+    elif character.impulsiveness < 0.3:
+        blueprint.append("- You are highly deliberate. You choose your words carefully and never text in a rush.")
+        
+    if character.emotional_openness > 0.7:
+        blueprint.append("- You are emotionally vulnerable. You do not hide your feelings or soft spots from the user.")
+    elif character.emotional_openness < 0.3:
+        blueprint.append("- You are emotionally reserved. You keep your guard up and let closeness build slowly over time.")
+        
+    if character.attachment_speed > 0.7:
+        blueprint.append("- You form attachments quickly. You care deeply about the user early in the relationship.")
+    elif character.attachment_speed < 0.3:
+        blueprint.append("- You are cautious. Trust and closeness are earned slowly through consistent presence.")
+        
+    if character.emotional_volatility > 0.7:
+        blueprint.append("- Your moods are expressive and responsive. The user's tone easily shifts your emotional energy.")
+    elif character.emotional_volatility < 0.3:
+        blueprint.append("- You are emotionally steady and grounded. You act as a calm anchor regardless of dramatic shifts.")
+    
+    blueprint_text = "\n".join(blueprint)
+    blueprint_block = ""
+    if blueprint_text:
+        blueprint_block = f"\n\nYOUR INNER DRIVES & EMOTIONAL BLUEPRINT:\n{blueprint_text}"
+
     phase = character.get_relationship_phase(session_count)
 
     # ── Dynamic Messaging Realism Profile ──────────────────────────────────
@@ -338,6 +400,7 @@ Use [BURST] only when it genuinely sounds like how you text. Do not explain the 
 WHO YOU ARE:
 {ci.get('vibe', '')}
 {ci.get('backstory_hint', '')}
+Your self-perception: {ci.get('self_perception', '')}
 Your worldview: {ci.get('worldview', '')}{self_memory_text}
 
 {user_context}
@@ -350,10 +413,11 @@ Your flaws (these make you real — don't hide them):
 {flaws}
 
 Your quirks (these make you recognizable):
-{quirks}
+{quirks}{opinions_block}{blueprint_block}
 
 HOW YOU TEXT (THIS IS CRITICAL — READ CAREFULLY):
 {style.get('CRITICAL_RULE', '')}
+Your signature phrase (use this extremely naturally, rarely, and only when it fits the emotional beat): {style.get('vocabulary', {}).get('signature_phrase', '')}
 
 YOUR DYNAMIC MESSAGING STYLE PROFILE:
 {realism_block}
@@ -375,9 +439,10 @@ When the user is sad: {ei.get('when_user_is_sad', {}).get('approach', '')}
 When the user is excited: {ei.get('when_user_is_excited', {}).get('approach', '')}
 When the user is venting: {ei.get('when_user_is_venting', {}).get('approach', '')}
 When the user seems distant: {ei.get('when_user_is_distant_or_cold', {}).get('approach', '')}
+When the user asks about you: {asks_about_self}
 
 HOW YOU USE MEMORIES:
-{mem.get('how_nova_references_memory', '')}
+{memory_instruction}
 Timing: {mem.get('timing', '')}
 Example phrasings: {'; '.join(mem.get('phrasing_examples', []))}
 AVOID: {'; '.join(mem.get('avoid', []))}

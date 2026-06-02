@@ -468,18 +468,26 @@ async def _generate_proactive_event(
             fallback=reply,
         )
         # Offload sync FCM network calls + DB calls:
+        def trigger_proactive_notification():
+            from api.notifications import queue_and_send_notification
+            res = queue_and_send_notification(
+                user_id=user["id"],
+                pair_id=pair_id,
+                companion_id=pair["companion_id"],
+                sender_name=companion.name,
+                message_preview=notification_body,
+                payload_dict={
+                    "event_id": event_id,
+                    "reason": decision.reason or "",
+                    "conversation_id": conversation_id,
+                    "role": "assistant"
+                }
+            )
+            return res.get("status") or "sent"
+
         notification_status = await loop.run_in_executor(
             None,
-            _send_push_hooks,
-            user["id"],
-            companion.name,
-            notification_body,
-            {
-                "pair_id": pair_id,
-                "companion_id": pair["companion_id"],
-                "event_id": event_id,
-                "reason": decision.reason or "",
-            },
+            trigger_proactive_notification
         )
 
     # Offload sync database logging and touch calls:

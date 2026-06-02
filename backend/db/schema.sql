@@ -404,6 +404,25 @@ CREATE TABLE IF NOT EXISTS companion_life_events (
 
 
 -- =============================================================================
+-- QUEUED NOTIFICATIONS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS queued_notifications (
+    id                    TEXT PRIMARY KEY,
+    user_id               TEXT REFERENCES users(id) ON DELETE CASCADE,
+    pair_id               TEXT REFERENCES relationship_pairs(id) ON DELETE CASCADE,
+    companion_id          TEXT REFERENCES companions(id) ON DELETE CASCADE,
+    sender_name           TEXT,
+    message_preview       TEXT,
+    timestamp             DATETIME DEFAULT CURRENT_TIMESTAMP,
+    status                TEXT DEFAULT 'pending',
+    retry_count           INTEGER DEFAULT 0,
+    last_attempt_at       DATETIME,
+    delivered_at          DATETIME,
+    payload_json          TEXT
+);
+
+
+-- =============================================================================
 -- INDEXES
 -- =============================================================================
 DROP INDEX IF EXISTS idx_user_facts_active_unique;
@@ -487,3 +506,9 @@ CREATE INDEX IF NOT EXISTS idx_proactive_events_pair_status
 
 CREATE INDEX IF NOT EXISTS idx_system_events_kind_created
     ON system_events(kind, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_queued_notifications_user_status
+    ON queued_notifications(user_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_queued_notifications_timestamp
+    ON queued_notifications(timestamp DESC);
