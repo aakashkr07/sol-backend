@@ -71,7 +71,8 @@ async def generate_reply(
     tokens = max_tokens or settings.LLM_MAX_TOKENS
     primary_model = model or settings.LLM_MODEL
 
-    # Try primary model first, then fallback
+    # Try primary model first, then fallback. Timeout/server stalls are common
+    # enough that chat should degrade to the faster model instead of hanging.
     try:
         raw_reply = await _call_groq(
             model=primary_model,
@@ -79,9 +80,15 @@ async def generate_reply(
             messages=messages,
             temperature=temp,
             max_tokens=tokens,
+            timeout=24.0,
         )
-    except RateLimitError:
-        logger.warning(f"Rate limit hit on {primary_model}, falling back to {settings.LLM_FALLBACK_MODEL}")
+    except Exception as primary_error:
+        logger.warning(
+            "Primary LLM model %s failed (%s); falling back to %s",
+            primary_model,
+            primary_error,
+            settings.LLM_FALLBACK_MODEL,
+        )
         try:
             raw_reply = await _call_groq(
                 model=settings.LLM_FALLBACK_MODEL,
@@ -89,11 +96,10 @@ async def generate_reply(
                 messages=messages,
                 temperature=temp,
                 max_tokens=tokens,
+                timeout=24.0,
             )
         except Exception as e:
-            raise LLMError(f"Both models failed: {e}") from e
-    except Exception as e:
-        raise LLMError(f"LLM call failed: {e}") from e
+            raise LLMError(f"Both models failed. Primary: {primary_error}; fallback: {e}") from e
 
     # Clean the response before returning
     cleaned = _clean_response(raw_reply)

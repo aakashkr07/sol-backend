@@ -1595,6 +1595,44 @@ class Database:
             return [dict(row) for row in rows]
         return []
 
+    def update_user_fact_value(
+        self,
+        *,
+        user_id: str,
+        pair_id: str,
+        fact_id: int,
+        value: str,
+    ) -> Optional[dict]:
+        now = _utcnow_iso()
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM user_facts
+            WHERE id = ? AND user_id = ? AND pair_id = ? AND is_outdated = 0
+            LIMIT 1
+            """,
+            (fact_id, user_id, pair_id),
+        ).fetchone()
+        if not row:
+            return None
+
+        self.conn.execute(
+            """
+            UPDATE user_facts
+            SET fact_value = ?,
+                confidence = MAX(confidence, 0.96),
+                source_type = 'user_corrected',
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (value.strip(), now, fact_id),
+        )
+        updated = self.conn.execute(
+            "SELECT * FROM user_facts WHERE id = ?",
+            (fact_id,),
+        ).fetchone()
+        return dict(updated) if updated else None
+
     def get_fact_conflicts(self, pair_id: str, limit: int = 8) -> list[dict]:
         rows = self.conn.execute(
             """
@@ -2619,6 +2657,47 @@ class Database:
         )
         self._refresh_pair_memory_counts()
         return int(cursor.rowcount or 0) > 0
+
+    def update_memory_record(
+        self,
+        *,
+        pair_id: str,
+        chroma_id: str,
+        title: Optional[str] = None,
+        content: Optional[str] = None,
+    ) -> Optional[dict]:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM memory_index
+            WHERE pair_id = ? AND chroma_id = ?
+            LIMIT 1
+            """,
+            (pair_id, chroma_id),
+        ).fetchone()
+        if not row:
+            return None
+
+        self.conn.execute(
+            """
+            UPDATE memory_index
+            SET title = COALESCE(?, title),
+                content = COALESCE(?, content),
+                strength = MIN(strength + 0.08, 2.5)
+            WHERE pair_id = ? AND chroma_id = ?
+            """,
+            (
+                title.strip() if title is not None else None,
+                content.strip() if content is not None else None,
+                pair_id,
+                chroma_id,
+            ),
+        )
+        updated = self.conn.execute(
+            "SELECT * FROM memory_index WHERE pair_id = ? AND chroma_id = ?",
+            (pair_id, chroma_id),
+        ).fetchone()
+        return dict(updated) if updated else None
 
     def reinforce_memories(self, pair_id: str, chroma_ids: list[str]):
         if not chroma_ids:

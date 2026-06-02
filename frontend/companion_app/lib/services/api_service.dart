@@ -29,6 +29,10 @@ class ApiConfig {
   static String pairResetUrl(String pairId) => '$baseUrl/api/me/pairs/$pairId/reset';
   static String pairMemoryDeleteUrl(String pairId, String memoryId) =>
       '$baseUrl/api/me/pairs/$pairId/memories/$memoryId';
+  static String pairMemoryUrl(String pairId, String memoryId) =>
+      '$baseUrl/api/me/pairs/$pairId/memories/$memoryId';
+  static String pairFactUrl(String pairId, int factId) =>
+      '$baseUrl/api/me/pairs/$pairId/facts/$factId';
   static String get preferencesUrl => '$baseUrl/api/me/preferences';
   static String get deviceTokenUrl => '$baseUrl/api/me/device-token';
   static String get proactivePendingUrl => '$baseUrl/api/me/proactive/pending';
@@ -37,6 +41,7 @@ class ApiConfig {
   static String get healthUrl => '$baseUrl/health';
 
   static const Duration requestTimeout = Duration(seconds: 30);
+  static const Duration chatTimeout = Duration(seconds: 75);
 }
 
 class ChatResponse {
@@ -601,7 +606,7 @@ class ApiService {
               'parent_message_id': parentMessageId,
             }),
           )
-          .timeout(ApiConfig.requestTimeout);
+          .timeout(ApiConfig.chatTimeout);
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -779,6 +784,50 @@ class ApiService {
     if (response.statusCode != 200) {
       throw ChatException(_parseError(response), response.statusCode);
     }
+  }
+
+  static Future<Map<String, dynamic>> updateFact(
+    String pairId,
+    int factId,
+    String value,
+  ) async {
+    final response = await _client
+        .patch(
+          Uri.parse(ApiConfig.pairFactUrl(pairId, factId)),
+          headers: await _defaultHeaders(),
+          body: jsonEncode({'value': value}),
+        )
+        .timeout(ApiConfig.requestTimeout);
+    if (response.statusCode != 200) {
+      throw ChatException(_parseError(response), response.statusCode);
+    }
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    return json['fact'] as Map<String, dynamic>? ?? const {};
+  }
+
+  static Future<MemoryEntry> updateMemory(
+    String pairId,
+    String memoryId, {
+    String? title,
+    String? content,
+  }) async {
+    final response = await _client
+        .patch(
+          Uri.parse(ApiConfig.pairMemoryUrl(pairId, memoryId)),
+          headers: await _defaultHeaders(),
+          body: jsonEncode({
+            if (title != null) 'title': title,
+            if (content != null) 'content': content,
+          }),
+        )
+        .timeout(ApiConfig.requestTimeout);
+    if (response.statusCode != 200) {
+      throw ChatException(_parseError(response), response.statusCode);
+    }
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    return MemoryEntry.fromJson(
+      json['memory'] as Map<String, dynamic>? ?? const {},
+    );
   }
 
   static Future<void> resetPairMemory(String pairId) async {

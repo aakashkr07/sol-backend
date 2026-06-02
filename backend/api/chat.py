@@ -316,26 +316,24 @@ async def chat(
                 if active_event:
                     db.mark_life_event_resolved(active_event["id"])
 
-            # Queue and attempt FCM delivery for the saved assistant response.
-            from api.notifications import queue_and_send_notification
-            try:
-                messages = [burst.text for burst in burst_plan.bursts]
-                message_preview = messages[-1] if len(messages) == 1 else f"{companion.name}: [{len(messages)} messages] {messages[-1]}"
-                queue_and_send_notification(
-                    user_id=identity.uid,
-                    pair_id=pair["id"],
-                    companion_id=pair["companion_id"],
-                    sender_name=companion.name,
-                    message_preview=message_preview,
-                    payload_dict={
-                        "conversation_id": conversation_id,
-                        "role": "assistant",
-                        "messages": messages,
-                        "grouped_count": len(messages),
-                    },
-                )
-            except Exception as notif_err:
-                logger.error("Failed to queue and send notification for assistant response: %s", notif_err)
+            # Queue/send push after the HTTP response path is free to return.
+            # Firebase delivery must never make chat feel stuck.
+            messages = [burst.text for burst in burst_plan.bursts]
+            message_preview = (
+                messages[-1]
+                if len(messages) == 1
+                else f"{companion.name}: [{len(messages)} messages] {messages[-1]}"
+            )
+            background_tasks.add_task(
+                _queue_assistant_notification,
+                user_id=identity.uid,
+                pair_id=pair["id"],
+                companion_id=pair["companion_id"],
+                sender_name=companion.name,
+                message_preview=message_preview,
+                conversation_id=conversation_id,
+                messages=messages,
+            )
         except Exception as e:
             logger.exception("Failed to save assistant bursts for user %s, pair %s", identity.uid, pair["id"])
             try:
@@ -363,7 +361,7 @@ async def chat(
                 conversation_id=conversation_id,
             )
 
-        mem_count = get_memory_count(pair_id=pair["id"], user_id=identity.uid)
+        mem_count = int((db.get_pair_by_id(pair["id"]) or {}).get("memory_count") or 0)
 
         return ChatResponse(
             reply=burst_plan.combined_text,
@@ -555,3 +553,33 @@ def _burst_payload(burst: BurstSegment) -> BurstPayload:
         pause_intensity=burst.pause_intensity,
         is_follow_up=burst.is_follow_up,
     )
+
+
+def _queue_assistant_notification(
+    *,
+    user_id: str,
+    pair_id: str,
+    companion_id: str,
+    sender_name: str,
+    message_preview: str,
+    conversation_id: str,
+    messages: list[str],
+) -> None:
+    from api.notifications import queue_and_send_notification
+
+    try:
+        queue_and_send_notification(
+            user_id=user_id,
+            pair_id=pair_id,
+            companion_id=companion_id,
+            sender_name=sender_name,
+            message_preview=message_preview,
+            payload_dict={
+                "conversation_id": conversation_id,
+                "role": "assistant",
+                "messages": messages,
+                "grouped_count": len(messages),
+            },
+        )
+    except Exception as notif_err:
+        logger.error("Failed to queue and send notification for assistant response: %s", notif_err)

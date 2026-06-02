@@ -60,8 +60,9 @@ import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/session_bootstrap_service.dart';
 import '../services/burst_playback_service.dart';
+import 'about_screen.dart';
 import 'privacy_screen.dart';
-import 'memory_vault_screen.dart';
+import 'relationship_studio_screen.dart';
 import 'settings_screen.dart';
 import '../widgets/atmosphere_background.dart';
 
@@ -430,6 +431,28 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
+  String _relationshipButtonLabel() {
+    final parts = _companionName.trim().split(RegExp(r'\s+'));
+    final first = parts.isEmpty || parts.first.isEmpty ? 'sol' : parts.first;
+    return 'you & ${first.toLowerCase()}';
+  }
+
+  void _openRelationshipStudio() {
+    final pairId = _pairId;
+    if (pairId == null || pairId.isEmpty) {
+      _showNotice('relationship record is still loading.');
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RelationshipStudioScreen(
+          pairId: pairId,
+          companionName: _companionName,
+        ),
+      ),
+    );
+  }
+
   Future<void> _sendMessage() async {
     final text = _inputController.text.trim();
     if (text.isEmpty || _isSending || _isAssistantDelivering) return;
@@ -494,18 +517,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       });
 
       if (response != null) {
+        final responseBursts = response.bursts.isNotEmpty
+            ? response.bursts
+            : (response.reply.trim().isEmpty
+                ? const <ChatBurst>[]
+                : [ChatBurst.single(response.reply)]);
+
+        if (responseBursts.isEmpty) {
+          _cancelAssistantPlayback();
+          HapticFeedback.selectionClick();
+          _scrollToBottom();
+          return;
+        }
+
         if (_pairId != null) {
-          await BurstPlaybackService.saveBursts(
-            _pairId!,
-            response.bursts.isNotEmpty
-                ? response.bursts
-                : [ChatBurst.single(response.reply)],
-          );
+          await BurstPlaybackService.saveBursts(_pairId!, responseBursts);
         }
         await _playCompanionBursts(
-          response.bursts.isNotEmpty
-              ? response.bursts
-              : [ChatBurst.single(response.reply)],
+          responseBursts,
           networkElapsedMs: networkElapsedMs,
         );
       } else {
@@ -785,11 +814,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
           const SizedBox(width: 10),
 
-          // ── Memory badge ─────────────────────────────────────────────────
-          if (_memoryCount > 0) ...[
-            _buildMemoryIndicator(),
-            const SizedBox(width: 8),
-          ],
+          _relationshipPill(),
+          const SizedBox(width: 8),
 
           PopupMenuButton<String>(
             icon: Container(
@@ -804,7 +830,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 ),
               ),
               child: Icon(
-                Icons.more_vert_rounded,
+                Icons.tune_rounded,
                 size: 15,
                 color: _sand.withValues(alpha: 0.72),
               ),
@@ -824,13 +850,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const PrivacyScreen()),
                 );
-              } else if (val == 'memories') {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const MemoryVaultScreen()),
-                );
               } else if (val == 'settings') {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              } else if (val == 'about') {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AboutScreen()),
                 );
               } else if (val == 'logout') {
                 _signOut();
@@ -838,8 +864,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             },
             itemBuilder: (context) => [
               _popupItem('privacy.', 'privacy'),
-              _popupItem('your memories.', 'memories'),
               _popupItem('settings.', 'settings'),
+              _popupItem('about.', 'about'),
               _popupItem('logout.', 'logout'),
             ],
           ),
@@ -884,46 +910,43 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  // ── Memory badge ─────────────────────────────────────────────────────────────
-  Widget _buildMemoryIndicator() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_blue, _blueSoft],
+  // Relationship shortcut
+  Widget _relationshipPill() {
+    return GestureDetector(
+      onTap: _openRelationshipStudio,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 128, minHeight: 34),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+        decoration: BoxDecoration(
+          color: _blue.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: _blue.withValues(alpha: 0.20), width: 0.7),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: _blue.withValues(alpha: 0.28),
-            blurRadius: 8,
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 5,
-            height: 5,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: Color(0xFF060810), // _ink — dark dot on gradient
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _memoryCount > 0
+                  ? Icons.auto_awesome_rounded
+                  : Icons.favorite_border_rounded,
+              color: _blue.withValues(alpha: 0.78),
+              size: 14,
             ),
-          ),
-          const SizedBox(width: 5),
-          Text(
-            '$_memoryCount',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 11,
-              color: const Color(0xFF060810),
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.2,
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                _relationshipButtonLabel(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.jost(
+                  color: _cream.withValues(alpha: 0.88),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

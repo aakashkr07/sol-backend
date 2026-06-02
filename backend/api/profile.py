@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from auth.firebase import AuthenticatedIdentity, get_authenticated_identity
-from memory.retriever import clear_all_memories, delete_memory, get_memory_count
+from memory.retriever import clear_all_memories, delete_memory, get_memory_count, update_memory_document
 from memory.store import db
 from personality.registry import build_pair_payload
 
@@ -33,6 +33,15 @@ class PairPreferencesUpdate(BaseModel):
 class DeviceTokenRegistration(BaseModel):
     platform: str = Field(..., min_length=2, max_length=32)
     push_token: str = Field(..., min_length=8, max_length=4096)
+
+
+class FactUpdate(BaseModel):
+    value: str = Field(..., min_length=1, max_length=500)
+
+
+class MemoryUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=120)
+    content: Optional[str] = Field(None, min_length=1, max_length=2000)
 
 
 def _resolve_owned_pair(identity: AuthenticatedIdentity, pair_id: Optional[str]) -> Optional[dict]:
@@ -83,6 +92,7 @@ async def get_my_profile(
             "email": user.get("email"),
             "display_name": user.get("display_name"),
             "timezone": user.get("timezone"),
+            "created_at": user.get("created_at"),
             "total_sessions": user.get("total_sessions", 0),
             "total_messages": user.get("total_messages", 0),
             "onboarding_completed": bool(user.get("onboarding_completed", 0)),
@@ -157,6 +167,67 @@ async def remove_pair_memory(
     deleted_vector = delete_memory(pair["id"], memory_id, user_id=identity.uid)
     deleted_record = db.delete_memory_record(pair["id"], memory_id)
     return {"deleted": deleted_vector or deleted_record}
+
+
+@router.patch("/me/pairs/{pair_id}/facts/{fact_id}")
+async def correct_pair_fact(
+    pair_id: str,
+    fact_id: int,
+    payload: FactUpdate,
+    identity: AuthenticatedIdentity = Depends(get_authenticated_identity),
+):
+    pair = _resolve_owned_pair(identity, pair_id)
+    updated = db.update_user_fact_value(
+        user_id=identity.uid,
+        pair_id=pair["id"],
+        fact_id=fact_id,
+        value=payload.value,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Fact not found")
+    return {"fact": updated}
+
+
+@router.patch("/me/pairs/{pair_id}/memories/{memory_id}")
+async def correct_pair_memory(
+    pair_id: str,
+    memory_id: str,
+    payload: MemoryUpdate,
+    identity: AuthenticatedIdentity = Depends(get_authenticated_identity),
+):
+    pair = _resolve_owned_pair(identity, pair_id)
+    if payload.title is None and payload.content is None:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+
+    current = next(
+        (
+            item for item in db.list_pair_memories(pair["id"], limit=100)
+            if item.get("chroma_id") == memory_id
+        ),
+        None,
+    )
+    if not current:
+        raise HTTPException(status_code=404, detail="Memory not found")
+
+    title = payload.title if payload.title is not None else current.get("title")
+    content = payload.content if payload.content is not None else current.get("content")
+    updated_vector = update_memory_document(
+        pair["id"],
+        memory_id,
+        title=title,
+        content=content or "",
+        user_id=identity.uid,
+    )
+    updated_record = db.update_memory_record(
+        pair_id=pair["id"],
+        chroma_id=memory_id,
+        title=payload.title,
+        content=payload.content,
+    )
+    if not updated_record:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    updated_record["vector_updated"] = updated_vector
+    return {"memory": updated_record}
 
 
 @router.post("/me/pairs/{pair_id}/reset")

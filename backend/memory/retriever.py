@@ -145,6 +145,30 @@ def delete_memory(pair_id: str, memory_id: str, user_id: Optional[str] = None) -
         return False
 
 
+def update_memory_document(
+    pair_id: str,
+    memory_id: str,
+    *,
+    content: str,
+    title: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> bool:
+    try:
+        collection = get_chroma_collection(pair_id=pair_id, user_id=user_id)
+        metadata = {}
+        if title:
+            metadata["title"] = title
+        collection.update(
+            ids=[memory_id],
+            documents=[content],
+            metadatas=[metadata] if metadata else None,
+        )
+        return True
+    except Exception as exc:
+        logger.error("Failed to update memory %s: %s", memory_id, exc)
+        return False
+
+
 def clear_all_memories(pair_id: str) -> bool:
     try:
         client = get_chroma_client()
