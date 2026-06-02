@@ -24,8 +24,8 @@
 //     The Scaffold gradient already provides the background depth.
 //   · Horizontal ListView padding added (16px each side) so MessageBubble
 //     widgets have breathing room against screen edges.
-//   · Loading indicator colour uses withOpacity instead of withValues for
-//     compatibility across Flutter versions.
+//   · Loading indicator colour uses withValues for
+//     clean analyzer diagnostics.
 //
 //   Error banner
 //   · Replaced jarring Colors.redAccent with a muted dustRose palette
@@ -115,10 +115,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   DateTime? _draftStartedAt;
   List<ChatItem> _cachedDisplayItems = [];
 
+  void _cacheDisplayItems() {
+    _cachedDisplayItems = _buildDisplayItems();
+  }
+
   void _updateCachedDisplayItems() {
-    setState(() {
-      _cachedDisplayItems = _buildDisplayItems();
-    });
+    if (!mounted) return;
+    setState(_cacheDisplayItems);
   }
 
   bool get _isTyping => _typingSpec != null;
@@ -192,7 +195,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _messages
             ..clear()
             ..addAll(hist.reversed);
-          _updateCachedDisplayItems();
+          _cacheDisplayItems();
         } else if (session.openingBursts.isNotEmpty ||
             session.openingMessage.trim().isNotEmpty) {
           openingBursts = session.openingBursts.isNotEmpty
@@ -339,8 +342,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           0,
           Message.fromCompanion(burst.text, startsNewGroup: burst.isFollowUp),
         );
+        _cacheDisplayItems();
       });
-      _updateCachedDisplayItems();
       _scrollToBottom();
 
       if (_pairId != null) {
@@ -378,7 +381,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         content: Text(
           'Your memories with $_companionName stay saved.',
           style: GoogleFonts.plusJakartaSans(
-            color: Colors.white.withOpacity(0.50),
+            color: Colors.white.withValues(alpha: 0.50),
             fontSize: 14,
             height: 1.5,
           ),
@@ -399,7 +402,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             child: Text(
               'Sign out',
               style: GoogleFonts.plusJakartaSans(
-                color: Colors.white.withOpacity(0.55),
+                color: Colors.white.withValues(alpha: 0.55),
               ),
             ),
           ),
@@ -418,7 +421,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       child: Text(
         label,
         style: GoogleFonts.jost(
-          color: _cream.withOpacity(0.82),
+          color: _cream.withValues(alpha: 0.82),
           fontSize: 13.5,
           fontWeight: FontWeight.w400,
           letterSpacing: 0.1,
@@ -459,8 +462,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _isAssistantDelivering = true;
       _typingSpec = TypingIndicatorSpec.network();
       _errorMessage = null;
+      _cacheDisplayItems();
     });
-    _updateCachedDisplayItems();
 
     _scrollToBottom();
     final requestStartedAt = DateTime.now();
@@ -487,6 +490,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _memoryCount = response?.memoryCount ?? _memoryCount;
         _isSending = false;
         _replaceMessageStatus(userMessage.id, MessageStatus.read);
+        _cacheDisplayItems();
       });
 
       if (response != null) {
@@ -590,7 +594,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         content: Text(
           message,
           style: GoogleFonts.plusJakartaSans(
-            color: _cream.withOpacity(0.85),
+            color: _cream.withValues(alpha: 0.85),
             fontSize: 13.5,
           ),
         ),
@@ -602,7 +606,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final index = _messages.indexWhere((m) => m.id == id);
     if (index == -1) return;
     _messages[index] = _messages[index].copyWith(status: status, isNew: false);
-    _updateCachedDisplayItems();
+    _cacheDisplayItems();
   }
 
   void _scrollToBottom() {
@@ -717,7 +721,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       padding: const EdgeInsets.fromLTRB(20, 10, 16, 12),
       decoration: BoxDecoration(
         // Slightly lighter than the gradient base to lift the bar
-        color: _bg.withOpacity(0.92),
+        color: _bg.withValues(alpha: 0.92),
         border: Border(
           bottom: BorderSide(color: _borderFaint, width: 0.8),
         ),
@@ -770,8 +774,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 11.5,
                     color: _isTyping
-                        ? _blue.withOpacity(0.60)
-                        : Colors.white.withOpacity(0.32),
+                        ? _blue.withValues(alpha: 0.60)
+                        : Colors.white.withValues(alpha: 0.32),
                     letterSpacing: 0.1,
                   ),
                 ),
@@ -793,16 +797,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               height: 34,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _surface.withOpacity(0.70),
+                color: _surface.withValues(alpha: 0.70),
                 border: Border.all(
-                  color: _cream.withOpacity(0.08),
+                  color: _cream.withValues(alpha: 0.08),
                   width: 0.6,
                 ),
               ),
               child: Icon(
                 Icons.more_vert_rounded,
                 size: 15,
-                color: _sand.withOpacity(0.72),
+                color: _sand.withValues(alpha: 0.72),
               ),
             ),
             padding: EdgeInsets.zero,
@@ -811,7 +815,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
               side: BorderSide(
-                color: _cream.withOpacity(0.07),
+                color: _cream.withValues(alpha: 0.07),
                 width: 0.6,
               ),
             ),
@@ -855,12 +859,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         shape: BoxShape.circle,
         color: _surface,
         border: Border.all(
-          color: _blue.withOpacity(0.35),
+          color: _blue.withValues(alpha: 0.35),
           width: 1.2,
         ),
         boxShadow: [
           BoxShadow(
-            color: _blue.withOpacity(0.18),
+            color: _blue.withValues(alpha: 0.18),
             blurRadius: 14,
             spreadRadius: 0,
           ),
@@ -870,7 +874,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         child: Text(
           initial,
           style: GoogleFonts.plusJakartaSans(
-            color: _cream.withOpacity(0.85),
+            color: _cream.withValues(alpha: 0.85),
             fontSize: 16,
             fontWeight: FontWeight.w500,
             height: 1.0,
@@ -893,7 +897,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         ),
         boxShadow: [
           BoxShadow(
-            color: _blue.withOpacity(0.28),
+            color: _blue.withValues(alpha: 0.28),
             blurRadius: 8,
           ),
         ],
@@ -931,7 +935,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         child: CircularProgressIndicator(
           strokeWidth: 1.0,
           valueColor: AlwaysStoppedAnimation<Color>(
-            _blue.withOpacity(0.45),
+            _blue.withValues(alpha: 0.45),
           ),
         ),
       );
@@ -972,9 +976,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.04),
+                  color: Colors.white.withValues(alpha: 0.04),
                   border: Border.all(
-                    color: Colors.white.withOpacity(0.05),
+                    color: Colors.white.withValues(alpha: 0.05),
                     width: 0.6,
                   ),
                   borderRadius: BorderRadius.circular(999),
@@ -1013,10 +1017,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
-        color: _dustRose.withOpacity(0.10),
+        color: _dustRose.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: _dustRose.withOpacity(0.22),
+          color: _dustRose.withValues(alpha: 0.22),
           width: 0.8,
         ),
       ),
@@ -1027,7 +1031,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             padding: const EdgeInsets.only(top: 1),
             child: Icon(
               Icons.error_outline_rounded,
-              color: _dustRose.withOpacity(0.75),
+              color: _dustRose.withValues(alpha: 0.75),
               size: 15,
             ),
           ),
@@ -1036,7 +1040,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             child: Text(
               _errorMessage ?? '',
               style: GoogleFonts.plusJakartaSans(
-                color: _dustRose.withOpacity(0.85),
+                color: _dustRose.withValues(alpha: 0.85),
                 fontSize: 13,
                 height: 1.5,
               ),
@@ -1047,7 +1051,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             onTap: () => setState(() => _errorMessage = null),
             child: Icon(
               Icons.close_rounded,
-              color: _dustRose.withOpacity(0.50),
+              color: _dustRose.withValues(alpha: 0.50),
               size: 16,
             ),
           ),
@@ -1064,7 +1068,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
       decoration: BoxDecoration(
-        color: _bg.withOpacity(0.96),
+        color: _bg.withValues(alpha: 0.96),
         border: Border(
           top: BorderSide(color: _borderFaint, width: 0.8),
         ),
@@ -1086,8 +1090,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   borderRadius: BorderRadius.circular(22),
                   border: Border.all(
                     color: hasText
-                        ? _blue.withOpacity(0.28)
-                        : Colors.white.withOpacity(0.06),
+                        ? _blue.withValues(alpha: 0.28)
+                        : Colors.white.withValues(alpha: 0.06),
                     width: 0.8,
                   ),
                 ),
@@ -1101,14 +1105,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   cursorWidth: 1.4,
                   selectionControls: materialTextSelectionControls,
                   style: GoogleFonts.plusJakartaSans(
-                    color: Colors.white.withOpacity(0.88),
+                    color: Colors.white.withValues(alpha: 0.88),
                     fontSize: 15,
                     height: 1.4,
                   ),
                   decoration: InputDecoration(
                     hintText: 'say something…',
                     hintStyle: GoogleFonts.plusJakartaSans(
-                      color: Colors.white.withOpacity(0.20),
+                      color: Colors.white.withValues(alpha: 0.20),
                       fontSize: 15,
                     ),
                     border: InputBorder.none,
@@ -1151,19 +1155,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     colors: canSend
                         ? [_blue, _blueSoft]
                         : [
-                            Colors.white.withOpacity(0.10),
-                            Colors.white.withOpacity(0.06),
+                            Colors.white.withValues(alpha: 0.10),
+                            Colors.white.withValues(alpha: 0.06),
                           ],
                   ),
                   boxShadow: canSend
                       ? [
                           BoxShadow(
-                            color: _blue.withOpacity(0.30),
+                            color: _blue.withValues(alpha: 0.30),
                             blurRadius: 16,
                             spreadRadius: 0,
                           ),
                           BoxShadow(
-                            color: _violet.withOpacity(0.14),
+                            color: _violet.withValues(alpha: 0.14),
                             blurRadius: 24,
                             spreadRadius: 0,
                           ),
@@ -1218,12 +1222,12 @@ class _IconButton extends StatelessWidget {
           height: 34,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: Colors.white.withOpacity(0.04),
+            color: Colors.white.withValues(alpha: 0.04),
           ),
           child: Icon(
             icon,
             size: size,
-            color: baseColor.withOpacity(opacity),
+            color: baseColor.withValues(alpha: opacity),
           ),
         ),
       ),

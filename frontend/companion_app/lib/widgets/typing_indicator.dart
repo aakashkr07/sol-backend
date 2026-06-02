@@ -160,12 +160,12 @@ class _TypingIndicatorState extends State<TypingIndicator>
               shape: BoxShape.circle,
               color: _surface,
               border: Border.all(
-                color: _blue.withOpacity(0.40),
+                color: _blue.withValues(alpha: 0.40),
                 width: 1.0,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: _blue.withOpacity(0.14),
+                  color: _blue.withValues(alpha: 0.14),
                   blurRadius: 8,
                 ),
               ],
@@ -174,7 +174,7 @@ class _TypingIndicatorState extends State<TypingIndicator>
               child: Text(
                 initial,
                 style: GoogleFonts.plusJakartaSans(
-                  color: _cream.withOpacity(0.82),
+                  color: _cream.withValues(alpha: 0.82),
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   height: 1.0,
@@ -198,7 +198,7 @@ class _TypingIndicatorState extends State<TypingIndicator>
                 bottomRight: const Radius.circular(18),
               ),
               border: Border.all(
-                color: Colors.white.withOpacity(0.06),
+                color: Colors.white.withValues(alpha: 0.06),
                 width: 0.6,
               ),
             ),
@@ -228,7 +228,7 @@ class _TypingIndicatorState extends State<TypingIndicator>
                         width: widget.spec.pauseIntensity == 'long' ? 6 : 7,
                         height: widget.spec.pauseIntensity == 'long' ? 6 : 7,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.70),
+                          color: Colors.white.withValues(alpha: 0.70),
                           shape: BoxShape.circle,
                         ),
                       ),

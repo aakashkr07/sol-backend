@@ -303,9 +303,9 @@ class _VaultScreenState extends State<VaultScreen>
                           height: 38,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: _surface.withOpacity(0.70),
+                            color: _surface.withValues(alpha: 0.70),
                             border: Border.all(
-                              color: _cream.withOpacity(0.08),
+                              color: _cream.withValues(alpha: 0.08),
                               width: 0.6,
                             ),
                           ),
@@ -325,10 +325,10 @@ class _VaultScreenState extends State<VaultScreen>
                           height: 5,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: _violet.withOpacity(0.70),
+                            color: _violet.withValues(alpha: 0.70),
                             boxShadow: [
                               BoxShadow(
-                                color: _violet.withOpacity(0.55),
+                                color: _violet.withValues(alpha: 0.55),
                                 blurRadius: 6,
                                 spreadRadius: 1,
                               ),
@@ -339,7 +339,7 @@ class _VaultScreenState extends State<VaultScreen>
                         Text(
                           'SOL VAULT',
                           style: GoogleFonts.jost(
-                            color: _sand.withOpacity(0.58),
+                            color: _sand.withValues(alpha: 0.58),
                             fontSize: 10,
                             fontWeight: FontWeight.w500,
                             letterSpacing: 2.5,
@@ -363,7 +363,7 @@ class _VaultScreenState extends State<VaultScreen>
                       _titleText,
                       textAlign: TextAlign.center,
                       style: GoogleFonts.plusJakartaSans(
-                        color: _cream.withOpacity(0.92),
+                        color: _cream.withValues(alpha: 0.92),
                         fontSize: 20,
                         fontWeight: FontWeight.w400,
                         letterSpacing: -0.3,
@@ -379,7 +379,7 @@ class _VaultScreenState extends State<VaultScreen>
                         style: GoogleFonts.jost(
                           color: _isShaking
                               ? const Color(0xFFF2B8A0)
-                              : _sand.withOpacity(0.55),
+                              : _sand.withValues(alpha: 0.55),
                           fontSize: 13,
                           letterSpacing: 0.1,
                         ),
@@ -411,15 +411,15 @@ class _VaultScreenState extends State<VaultScreen>
                       height: 14,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: isFilled ? _blue.withOpacity(0.85) : Colors.transparent,
+                        color: isFilled ? _blue.withValues(alpha: 0.85) : Colors.transparent,
                         border: Border.all(
-                          color: isFilled ? _blue.withOpacity(0.85) : _cream.withOpacity(0.20),
+                          color: isFilled ? _blue.withValues(alpha: 0.85) : _cream.withValues(alpha: 0.20),
                           width: 1.5,
                         ),
                         boxShadow: isFilled
                             ? [
                                 BoxShadow(
-                                  color: _blue.withOpacity(0.40),
+                                  color: _blue.withValues(alpha: 0.40),
                                   blurRadius: 8,
                                   spreadRadius: 1,
                                 ),
@@ -557,15 +557,15 @@ class _PINKeyButtonState extends State<_PINKeyButton> {
             height: 64,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _pressed ? _cream.withOpacity(0.08) : _surface.withOpacity(0.60),
+              color: _pressed ? _cream.withValues(alpha: 0.08) : _surface.withValues(alpha: 0.60),
               border: Border.all(
-                color: _pressed ? _blue.withOpacity(0.35) : _cream.withOpacity(0.06),
+                color: _pressed ? _blue.withValues(alpha: 0.35) : _cream.withValues(alpha: 0.06),
                 width: 0.6,
               ),
               boxShadow: _pressed
                   ? [
                       BoxShadow(
-                        color: _blue.withOpacity(0.12),
+                        color: _blue.withValues(alpha: 0.12),
                         blurRadius: 12,
                         spreadRadius: 1,
                       ),
@@ -577,12 +577,12 @@ class _PINKeyButtonState extends State<_PINKeyButton> {
                   ? Icon(
                       widget.icon,
                       size: 24,
-                      color: _cream.withOpacity(0.85),
+                      color: _cream.withValues(alpha: 0.85),
                     )
                   : Text(
                       widget.label,
                       style: GoogleFonts.plusJakartaSans(
-                        color: _cream.withOpacity(0.92),
+                        color: _cream.withValues(alpha: 0.92),
                         fontSize: 22,
                         fontWeight: FontWeight.w400,
                         letterSpacing: -0.5,

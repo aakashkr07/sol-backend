@@ -54,11 +54,12 @@ class Message {
     required String? createdAt,
     int? parentMessageId,
   }) {
+    final parsedTimestamp = DateTime.tryParse(createdAt ?? '');
     return Message(
       id: '${role}_${createdAt ?? DateTime.now().microsecondsSinceEpoch}_${content.hashCode}',
       role: role == 'user' ? MessageRole.user : MessageRole.assistant,
       content: content,
-      timestamp: DateTime.tryParse(createdAt ?? '') ?? DateTime.now(),
+      timestamp: parsedTimestamp?.toLocal() ?? DateTime.now(),
       isNew: false,
       status: MessageStatus.read,
       startsNewGroup: false,

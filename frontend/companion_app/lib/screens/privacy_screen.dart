@@ -124,7 +124,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
         content: Text(
           message,
           style: GoogleFonts.jost(
-            color: _sand.withOpacity(0.85),
+            color: _sand.withValues(alpha: 0.85),
             fontSize: 13,
             letterSpacing: 0.1,
           ),
@@ -169,8 +169,8 @@ class _PrivacyScreenState extends State<PrivacyScreen>
               height: 38,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _surface.withOpacity(0.70),
-                border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
+                color: _surface.withValues(alpha: 0.70),
+                border: Border.all(color: _cream.withValues(alpha: 0.08), width: 0.6),
               ),
               child:
                   const Icon(Icons.arrow_back_rounded, size: 15, color: _sand),
@@ -188,10 +188,10 @@ class _PrivacyScreenState extends State<PrivacyScreen>
                       height: 5,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: _violet.withOpacity(0.70),
+                        color: _violet.withValues(alpha: 0.70),
                         boxShadow: [
                           BoxShadow(
-                            color: _violet.withOpacity(0.55),
+                            color: _violet.withValues(alpha: 0.55),
                             blurRadius: 6,
                             spreadRadius: 1,
                           )
@@ -202,7 +202,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
                     Text(
                       'PRIVACY',
                       style: GoogleFonts.jost(
-                        color: _sand.withOpacity(0.58),
+                        color: _sand.withValues(alpha: 0.58),
                         fontSize: 10,
                         fontWeight: FontWeight.w500,
                         letterSpacing: 2.5,
@@ -214,7 +214,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
                 Text(
                   'presence & safety.',
                   style: GoogleFonts.plusJakartaSans(
-                    color: _cream.withOpacity(0.92),
+                    color: _cream.withValues(alpha: 0.92),
                     fontSize: 22,
                     fontWeight: FontWeight.w400,
                     letterSpacing: -0.3,
@@ -254,9 +254,9 @@ class _PrivacyScreenState extends State<PrivacyScreen>
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: _surface.withOpacity(0.70),
+              color: _surface.withValues(alpha: 0.70),
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
+              border: Border.all(color: _cream.withValues(alpha: 0.08), width: 0.6),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -264,7 +264,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
                 Text(
                   'continuity & storage controls',
                   style: GoogleFonts.plusJakartaSans(
-                    color: _cream.withOpacity(0.90),
+                    color: _cream.withValues(alpha: 0.90),
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
                   ),
@@ -307,9 +307,9 @@ class _PrivacyScreenState extends State<PrivacyScreen>
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: _surface.withOpacity(0.50),
+              color: _surface.withValues(alpha: 0.50),
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: _cream.withOpacity(0.05), width: 0.6),
+              border: Border.all(color: _cream.withValues(alpha: 0.05), width: 0.6),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -317,7 +317,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
                 Text(
                   'data governance policy',
                   style: GoogleFonts.plusJakartaSans(
-                    color: _cream.withOpacity(0.85),
+                    color: _cream.withValues(alpha: 0.85),
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
@@ -326,7 +326,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
                 Text(
                   'your vulnerabilities, memories, and presence metadata are kept fully sandbox-isolated. sol does not feed data into public systems. everything exists to serve one feeling: that someone is thinking about you.',
                   style: GoogleFonts.jost(
-                    color: _sand.withOpacity(0.68),
+                    color: _sand.withValues(alpha: 0.68),
                     fontSize: 12.5,
                     height: 1.5,
                   ),
@@ -335,18 +335,18 @@ class _PrivacyScreenState extends State<PrivacyScreen>
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                   decoration: BoxDecoration(
-                    color: _cream.withOpacity(0.02),
+                    color: _cream.withValues(alpha: 0.02),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _cream.withOpacity(0.05), width: 0.5),
+                    border: Border.all(color: _cream.withValues(alpha: 0.05), width: 0.5),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.verified_user_outlined, size: 14, color: _violet.withOpacity(0.70)),
+                      Icon(Icons.verified_user_outlined, size: 14, color: _violet.withValues(alpha: 0.70)),
                       const SizedBox(width: 8),
                       Text(
                         '100% client-isolated encryption active.',
                         style: GoogleFonts.jost(
-                          color: _sand.withOpacity(0.80),
+                          color: _sand.withValues(alpha: 0.80),
                           fontSize: 11,
                           letterSpacing: 0.2,
                         ),
@@ -364,9 +364,9 @@ class _PrivacyScreenState extends State<PrivacyScreen>
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: _surface.withOpacity(0.40),
+              color: _surface.withValues(alpha: 0.40),
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: _cream.withOpacity(0.04), width: 0.6),
+              border: Border.all(color: _cream.withValues(alpha: 0.04), width: 0.6),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -377,7 +377,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
                     Text(
                       'local security logs',
                       style: GoogleFonts.plusJakartaSans(
-                        color: _cream.withOpacity(0.80),
+                        color: _cream.withValues(alpha: 0.80),
                         fontSize: 13.5,
                         fontWeight: FontWeight.w500,
                       ),
@@ -403,7 +403,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
                           Text(
                             '[${log['time']}] ',
                             style: GoogleFonts.jost(
-                              color: _blue.withOpacity(0.70),
+                              color: _blue.withValues(alpha: 0.70),
                               fontSize: 11.5,
                               fontWeight: FontWeight.w400,
                             ),
@@ -412,7 +412,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
                             child: Text(
                               log['event']!,
                               style: GoogleFonts.jost(
-                                color: _sand.withOpacity(0.72),
+                                color: _sand.withValues(alpha: 0.72),
                                 fontSize: 11.5,
                                 height: 1.35,
                               ),
@@ -423,8 +423,8 @@ class _PrivacyScreenState extends State<PrivacyScreen>
                             log['status']!,
                             style: GoogleFonts.jost(
                               color: log['status'] == 'SECURE' || log['status'] == 'ACTIVE'
-                                  ? _violet.withOpacity(0.75)
-                                  : _sand.withOpacity(0.50),
+                                  ? _violet.withValues(alpha: 0.75)
+                                  : _sand.withValues(alpha: 0.50),
                               fontSize: 9.5,
                               fontWeight: FontWeight.w500,
                               letterSpacing: 0.5,
@@ -455,7 +455,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
             child: CircularProgressIndicator(
               strokeWidth: 1.0,
               valueColor: AlwaysStoppedAnimation<Color>(
-                _violet.withOpacity(0.62),
+                _violet.withValues(alpha: 0.62),
               ),
             ),
           ),
@@ -463,7 +463,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
           Text(
             'gathering presence…',
             style: GoogleFonts.plusJakartaSans(
-              color: _sand.withOpacity(0.38),
+              color: _sand.withValues(alpha: 0.38),
               fontSize: 12,
               fontWeight: FontWeight.w400,
               letterSpacing: 0.5,
@@ -487,7 +487,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
                 _error ?? 'something went wrong.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.jost(
-                  color: _sand.withOpacity(0.52),
+                  color: _sand.withValues(alpha: 0.52),
                   fontSize: 13,
                   height: 1.55,
                 ),
@@ -517,7 +517,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
                 Text(
                   title,
                   style: GoogleFonts.jost(
-                    color: _cream.withOpacity(0.85),
+                    color: _cream.withValues(alpha: 0.85),
                     fontSize: 13.5,
                     fontWeight: FontWeight.w400,
                   ),
@@ -526,7 +526,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
                 Text(
                   subtitle,
                   style: GoogleFonts.jost(
-                    color: _dusty.withOpacity(0.90),
+                    color: _dusty.withValues(alpha: 0.90),
                     fontSize: 12,
                     height: 1.4,
                   ),
@@ -546,7 +546,7 @@ class _PrivacyScreenState extends State<PrivacyScreen>
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: Container(
         height: 0.4,
-        color: _cream.withOpacity(0.06),
+        color: _cream.withValues(alpha: 0.06),
       ),
     );
   }
@@ -568,9 +568,9 @@ class _CustomSwitch extends StatelessWidget {
         height: 24,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(99),
-          color: value ? _blue.withOpacity(0.55) : _surfaceUp.withOpacity(0.90),
+          color: value ? _blue.withValues(alpha: 0.55) : _surfaceUp.withValues(alpha: 0.90),
           border: Border.all(
-            color: value ? _blue.withOpacity(0.35) : _cream.withOpacity(0.08),
+            color: value ? _blue.withValues(alpha: 0.35) : _cream.withValues(alpha: 0.08),
             width: 0.7,
           ),
         ),
@@ -584,7 +584,7 @@ class _CustomSwitch extends StatelessWidget {
               height: 16,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: value ? _cream : _dusty.withOpacity(0.60),
+                color: value ? _cream : _dusty.withValues(alpha: 0.60),
               ),
             ),
           ),

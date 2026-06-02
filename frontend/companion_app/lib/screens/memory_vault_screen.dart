@@ -258,7 +258,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
   Future<bool> _confirmDeleteMoment() async {
     final result = await showDialog<bool>(
       context: context,
-      barrierColor: _ink.withOpacity(0.80),
+      barrierColor: _ink.withValues(alpha: 0.80),
       builder: (context) {
         return BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
@@ -266,12 +266,12 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
             backgroundColor: _surfaceUp,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(22),
-              side: BorderSide(color: _cream.withOpacity(0.06), width: 0.6),
+              side: BorderSide(color: _cream.withValues(alpha: 0.06), width: 0.6),
             ),
             title: Text(
               'erase this moment?',
               style: GoogleFonts.plusJakartaSans(
-                color: _cream.withOpacity(0.92),
+                color: _cream.withValues(alpha: 0.92),
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
                 letterSpacing: -0.2,
@@ -280,7 +280,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
             content: Text(
               'this permanently wipes the memory chunk from your companion\'s vector continuity indices. this action is irreversible.',
               style: GoogleFonts.jost(
-                color: _sand.withOpacity(0.72),
+                color: _sand.withValues(alpha: 0.72),
                 fontSize: 13.5,
                 height: 1.55,
               ),
@@ -291,7 +291,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                 child: Text(
                   'keep',
                   style: GoogleFonts.jost(
-                    color: _sand.withOpacity(0.55),
+                    color: _sand.withValues(alpha: 0.55),
                     fontSize: 13.5,
                   ),
                 ),
@@ -301,7 +301,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                 child: Text(
                   'erase permanently',
                   style: GoogleFonts.jost(
-                    color: _destructiveRed.withOpacity(0.85),
+                    color: _destructiveRed.withValues(alpha: 0.85),
                     fontSize: 13.5,
                     fontWeight: FontWeight.w500,
                   ),
@@ -324,7 +324,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         content: Text(
           message,
-          style: GoogleFonts.jost(color: _sand.withOpacity(0.85), fontSize: 13),
+          style: GoogleFonts.jost(color: _sand.withValues(alpha: 0.85), fontSize: 13),
         ),
       ),
     );
@@ -402,7 +402,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
 
   Widget _buildBiometricBreathingOverlay() {
     return Container(
-      color: _bgDeep.withOpacity(0.95),
+      color: _bgDeep.withValues(alpha: 0.95),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -413,7 +413,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
             Text(
               'unlocking your memory vault…',
               style: GoogleFonts.plusJakartaSans(
-                color: _cream.withOpacity(0.85),
+                color: _cream.withValues(alpha: 0.85),
                 fontSize: 15,
                 fontWeight: FontWeight.w400,
                 letterSpacing: -0.2,
@@ -423,7 +423,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
             Text(
               'gathering local presence signature.',
               style: GoogleFonts.jost(
-                color: _sand.withOpacity(0.45),
+                color: _sand.withValues(alpha: 0.45),
                 fontSize: 12,
                 letterSpacing: 0.2,
               ),
@@ -438,7 +438,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
 
   Widget _buildPinLockpadOverlay() {
     return Container(
-      color: _bgDeep.withOpacity(0.92),
+      color: _bgDeep.withValues(alpha: 0.92),
       child: Column(
         children: [
           // Header balance
@@ -454,9 +454,9 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                     height: 38,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: _surface.withOpacity(0.70),
+                      color: _surface.withValues(alpha: 0.70),
                       border: Border.all(
-                        color: _cream.withOpacity(0.08),
+                        color: _cream.withValues(alpha: 0.08),
                         width: 0.6,
                       ),
                     ),
@@ -474,10 +474,10 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                       height: 5,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: _violet.withOpacity(0.70),
+                        color: _violet.withValues(alpha: 0.70),
                         boxShadow: [
                           BoxShadow(
-                            color: _violet.withOpacity(0.55),
+                            color: _violet.withValues(alpha: 0.55),
                             blurRadius: 6,
                             spreadRadius: 1,
                           ),
@@ -488,7 +488,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                     Text(
                       'SECURE VAULT',
                       style: GoogleFonts.jost(
-                        color: _sand.withOpacity(0.58),
+                        color: _sand.withValues(alpha: 0.58),
                         fontSize: 10,
                         fontWeight: FontWeight.w500,
                         letterSpacing: 2.5,
@@ -512,7 +512,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                   _lockTitle,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.plusJakartaSans(
-                    color: _cream.withOpacity(0.92),
+                    color: _cream.withValues(alpha: 0.92),
                     fontSize: 20,
                     fontWeight: FontWeight.w400,
                     letterSpacing: -0.3,
@@ -524,7 +524,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                   _lockSubtext,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.jost(
-                    color: _isShaking ? _amber : _sand.withOpacity(0.55),
+                    color: _isShaking ? _amber : _sand.withValues(alpha: 0.55),
                     fontSize: 13,
                     letterSpacing: 0.1,
                   ),
@@ -555,15 +555,15 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                   height: 14,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: isFilled ? _blue.withOpacity(0.85) : Colors.transparent,
+                    color: isFilled ? _blue.withValues(alpha: 0.85) : Colors.transparent,
                     border: Border.all(
-                      color: isFilled ? _blue.withOpacity(0.85) : _cream.withOpacity(0.20),
+                      color: isFilled ? _blue.withValues(alpha: 0.85) : _cream.withValues(alpha: 0.20),
                       width: 1.5,
                     ),
                     boxShadow: isFilled
                         ? [
                             BoxShadow(
-                              color: _blue.withOpacity(0.40),
+                              color: _blue.withValues(alpha: 0.40),
                               blurRadius: 8,
                               spreadRadius: 1,
                             ),
@@ -686,8 +686,8 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
               height: 38,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _surface.withOpacity(0.70),
-                border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
+                color: _surface.withValues(alpha: 0.70),
+                border: Border.all(color: _cream.withValues(alpha: 0.08), width: 0.6),
               ),
               child: const Icon(Icons.arrow_back_rounded, size: 15, color: _sand),
             ),
@@ -704,10 +704,10 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                       height: 5,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: _blue.withOpacity(0.70),
+                        color: _blue.withValues(alpha: 0.70),
                         boxShadow: [
                           BoxShadow(
-                            color: _blue.withOpacity(0.55),
+                            color: _blue.withValues(alpha: 0.55),
                             blurRadius: 6,
                             spreadRadius: 1,
                           ),
@@ -718,7 +718,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                     Text(
                       'MEMORIES',
                       style: GoogleFonts.jost(
-                        color: _sand.withOpacity(0.58),
+                        color: _sand.withValues(alpha: 0.58),
                         fontSize: 10,
                         fontWeight: FontWeight.w500,
                         letterSpacing: 2.5,
@@ -730,7 +730,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                 Text(
                   'your memory vault.',
                   style: GoogleFonts.plusJakartaSans(
-                    color: _cream.withOpacity(0.92),
+                    color: _cream.withValues(alpha: 0.92),
                     fontSize: 22,
                     fontWeight: FontWeight.w400,
                     letterSpacing: -0.3,
@@ -763,7 +763,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Container(
             height: 0.5,
-            color: _cream.withOpacity(0.06),
+            color: _cream.withValues(alpha: 0.06),
           ),
         ),
 
@@ -825,19 +825,19 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? _surface.withOpacity(0.85)
-                      : _surface.withOpacity(0.40),
+                      ? _surface.withValues(alpha: 0.85)
+                      : _surface.withValues(alpha: 0.40),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: isSelected
-                        ? _blue.withOpacity(0.45)
-                        : _cream.withOpacity(0.04),
+                        ? _blue.withValues(alpha: 0.45)
+                        : _cream.withValues(alpha: 0.04),
                     width: isSelected ? 1.0 : 0.6,
                   ),
                   boxShadow: isSelected
                       ? [
                           BoxShadow(
-                            color: _blue.withOpacity(0.06),
+                            color: _blue.withValues(alpha: 0.06),
                             blurRadius: 16,
                             spreadRadius: 1,
                           ),
@@ -856,7 +856,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                         boxShadow: isSelected
                             ? [
                                 BoxShadow(
-                                  color: gradient.colors.first.withOpacity(0.35),
+                                  color: gradient.colors.first.withValues(alpha: 0.35),
                                   blurRadius: 10,
                                   spreadRadius: 1,
                                 ),
@@ -869,7 +869,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                               ? companion.name[0].toUpperCase()
                               : '?',
                           style: GoogleFonts.plusJakartaSans(
-                            color: _cream.withOpacity(0.92),
+                            color: _cream.withValues(alpha: 0.92),
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                           ),
@@ -889,7 +889,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.plusJakartaSans(
-                              color: _cream.withOpacity(0.90),
+                              color: _cream.withValues(alpha: 0.90),
                               fontSize: 13.5,
                               fontWeight: FontWeight.w600,
                             ),
@@ -908,7 +908,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                           Text(
                             '${companion.totalMessages} messages',
                             style: GoogleFonts.jost(
-                              color: _sand.withOpacity(0.45),
+                              color: _sand.withValues(alpha: 0.45),
                               fontSize: 10,
                             ),
                           ),
@@ -928,13 +928,13 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
   Color _stageColor(String stage) {
     switch (stage.toLowerCase()) {
       case 'new':
-        return _sand.withOpacity(0.60);
+        return _sand.withValues(alpha: 0.60);
       case 'warming':
-        return _amber.withOpacity(0.85);
+        return _amber.withValues(alpha: 0.85);
       case 'settled':
-        return _blue.withOpacity(0.85);
+        return _blue.withValues(alpha: 0.85);
       case 'close':
-        return _violet.withOpacity(0.85);
+        return _violet.withValues(alpha: 0.85);
       case 'bonded':
         return const Color(0xFFC084FC); // Purple bonded
       default:
@@ -963,17 +963,17 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
               duration: const Duration(milliseconds: 180),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: isSelected ? _cream.withOpacity(0.04) : Colors.transparent,
+                color: isSelected ? _cream.withValues(alpha: 0.04) : Colors.transparent,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: isSelected ? _cream.withOpacity(0.06) : Colors.transparent,
+                  color: isSelected ? _cream.withValues(alpha: 0.06) : Colors.transparent,
                   width: 0.6,
                 ),
               ),
               child: Text(
                 tabs[idx],
                 style: GoogleFonts.jost(
-                  color: isSelected ? _cream.withOpacity(0.92) : _sand.withOpacity(0.40),
+                  color: isSelected ? _cream.withValues(alpha: 0.92) : _sand.withValues(alpha: 0.40),
                   fontSize: 12.5,
                   fontWeight: isSelected ? FontWeight.w500 : FontWeight.w400,
                   letterSpacing: 0.5,
@@ -1020,9 +1020,9 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
           Container(
             padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
             decoration: BoxDecoration(
-              color: _surface.withOpacity(0.60),
+              color: _surface.withValues(alpha: 0.60),
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: _cream.withOpacity(0.05), width: 0.6),
+              border: Border.all(color: _cream.withValues(alpha: 0.05), width: 0.6),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1042,7 +1042,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
           Text(
             'narrative connection.',
             style: GoogleFonts.jost(
-              color: _sand.withOpacity(0.55),
+              color: _sand.withValues(alpha: 0.55),
               fontSize: 11,
               fontWeight: FontWeight.w500,
               letterSpacing: 1.5,
@@ -1052,9 +1052,9 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: _surface.withOpacity(0.40),
+              color: _surface.withValues(alpha: 0.40),
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: _cream.withOpacity(0.04), width: 0.6),
+              border: Border.all(color: _cream.withValues(alpha: 0.04), width: 0.6),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1062,7 +1062,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                 Icon(
                   Icons.format_quote_rounded,
                   size: 20,
-                  color: _amber.withOpacity(0.50),
+                  color: _amber.withValues(alpha: 0.50),
                 ),
                 const SizedBox(height: 4),
                 Padding(
@@ -1070,7 +1070,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                   child: Text(
                     narrative,
                     style: GoogleFonts.jost(
-                      color: _cream.withOpacity(0.85),
+                      color: _cream.withValues(alpha: 0.85),
                       fontSize: 13.5,
                       fontWeight: FontWeight.w300,
                       fontStyle: FontStyle.italic,
@@ -1084,7 +1084,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                   child: Icon(
                     Icons.format_quote_rounded,
                     size: 20,
-                    color: _amber.withOpacity(0.50),
+                    color: _amber.withValues(alpha: 0.50),
                   ),
                 ),
               ],
@@ -1108,7 +1108,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
               height: 58,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: _cream.withOpacity(0.04), width: 3),
+                border: Border.all(color: _cream.withValues(alpha: 0.04), width: 3),
               ),
             ),
             // Glow effect
@@ -1119,7 +1119,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: color.withOpacity(0.08),
+                    color: color.withValues(alpha: 0.08),
                     blurRadius: 14,
                     spreadRadius: 1,
                   ),
@@ -1134,14 +1134,14 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                 value: value,
                 strokeWidth: 3.5,
                 backgroundColor: Colors.transparent,
-                valueColor: AlwaysStoppedAnimation<Color>(color.withOpacity(0.80)),
+                valueColor: AlwaysStoppedAnimation<Color>(color.withValues(alpha: 0.80)),
               ),
             ),
             // Inside percentage
             Text(
               '${(value * 100).toInt()}%',
               style: GoogleFonts.jost(
-                color: _cream.withOpacity(0.90),
+                color: _cream.withValues(alpha: 0.90),
                 fontSize: 12.5,
                 fontWeight: FontWeight.w500,
               ),
@@ -1152,7 +1152,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
         Text(
           label,
           style: GoogleFonts.jost(
-            color: _sand.withOpacity(0.68),
+            color: _sand.withValues(alpha: 0.68),
             fontSize: 11,
             fontWeight: FontWeight.w400,
             letterSpacing: 0.1,
@@ -1174,12 +1174,12 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.bubble_chart_outlined, size: 28, color: _sand.withOpacity(0.20)),
+              Icon(Icons.bubble_chart_outlined, size: 28, color: _sand.withValues(alpha: 0.20)),
               const SizedBox(height: 12),
               Text(
                 'nothing cataloged yet.',
                 style: GoogleFonts.jost(
-                  color: _sand.withOpacity(0.45),
+                  color: _sand.withValues(alpha: 0.45),
                   fontSize: 13,
                 ),
               ),
@@ -1187,7 +1187,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
               Text(
                 'keep conversing to build presence continuity.',
                 style: GoogleFonts.jost(
-                  color: _sand.withOpacity(0.30),
+                  color: _sand.withValues(alpha: 0.30),
                   fontSize: 11.5,
                 ),
               ),
@@ -1213,9 +1213,9 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
           margin: const EdgeInsets.only(bottom: 20),
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: _surface.withOpacity(0.50),
+            color: _surface.withValues(alpha: 0.50),
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: _cream.withOpacity(0.04), width: 0.6),
+            border: Border.all(color: _cream.withValues(alpha: 0.04), width: 0.6),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1224,7 +1224,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
               Text(
                 categoryTitle,
                 style: GoogleFonts.jost(
-                  color: _blue.withOpacity(0.70),
+                  color: _blue.withValues(alpha: 0.70),
                   fontSize: 11.5,
                   fontWeight: FontWeight.w500,
                   letterSpacing: 1.0,
@@ -1248,7 +1248,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                           height: 4,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: _violet.withOpacity(0.55),
+                            color: _violet.withValues(alpha: 0.55),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1256,7 +1256,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                           child: RichText(
                             text: TextSpan(
                               style: GoogleFonts.jost(
-                                color: _sand.withOpacity(0.85),
+                                color: _sand.withValues(alpha: 0.85),
                                 fontSize: 13,
                                 height: 1.45,
                               ),
@@ -1267,7 +1267,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                                 ),
                                 TextSpan(
                                   text: val,
-                                  style: TextStyle(color: _cream.withOpacity(0.80)),
+                                  style: TextStyle(color: _cream.withValues(alpha: 0.80)),
                                 ),
                               ],
                             ),
@@ -1297,12 +1297,12 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.auto_awesome_outlined, size: 28, color: _sand.withOpacity(0.20)),
+              Icon(Icons.auto_awesome_outlined, size: 28, color: _sand.withValues(alpha: 0.20)),
               const SizedBox(height: 12),
               Text(
                 'no core moments cataloged yet.',
                 style: GoogleFonts.jost(
-                  color: _sand.withOpacity(0.45),
+                  color: _sand.withValues(alpha: 0.45),
                   fontSize: 13,
                 ),
               ),
@@ -1310,7 +1310,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
               Text(
                 'moments are generated from deeply personal threads.',
                 style: GoogleFonts.jost(
-                  color: _sand.withOpacity(0.30),
+                  color: _sand.withValues(alpha: 0.30),
                   fontSize: 11.5,
                 ),
               ),
@@ -1332,9 +1332,9 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: _surface.withOpacity(0.60),
+            color: _surface.withValues(alpha: 0.60),
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _cream.withOpacity(0.04), width: 0.6),
+            border: Border.all(color: _cream.withValues(alpha: 0.04), width: 0.6),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1348,7 +1348,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.plusJakartaSans(
-                        color: _cream.withOpacity(0.85),
+                        color: _cream.withValues(alpha: 0.85),
                         fontSize: 13.5,
                         fontWeight: FontWeight.w500,
                       ),
@@ -1362,7 +1362,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                     child: Icon(
                       Icons.delete_outline_rounded,
                       size: 16,
-                      color: _destructiveRed.withOpacity(0.55),
+                      color: _destructiveRed.withValues(alpha: 0.55),
                     ),
                   ),
                 ],
@@ -1371,7 +1371,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
               Text(
                 moment.content,
                 style: GoogleFonts.jost(
-                  color: _sand.withOpacity(0.72),
+                  color: _sand.withValues(alpha: 0.72),
                   fontSize: 12.5,
                   height: 1.45,
                 ),
@@ -1385,9 +1385,9 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
                       decoration: BoxDecoration(
-                        color: _blue.withOpacity(0.06),
+                        color: _blue.withValues(alpha: 0.06),
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: _blue.withOpacity(0.16), width: 0.5),
+                        border: Border.all(color: _blue.withValues(alpha: 0.16), width: 0.5),
                       ),
                       child: Text(
                         cleanTag,
@@ -1407,7 +1407,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                       Text(
                         'strength: ',
                         style: GoogleFonts.jost(
-                          color: _sand.withOpacity(0.35),
+                          color: _sand.withValues(alpha: 0.35),
                           fontSize: 9.5,
                         ),
                       ),
@@ -1415,7 +1415,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                         width: 44,
                         height: 3.5,
                         decoration: BoxDecoration(
-                          color: _cream.withOpacity(0.06),
+                          color: _cream.withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: FractionallySizedBox(
@@ -1423,7 +1423,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                           widthFactor: moment.strength.clamp(0.0, 1.0),
                           child: Container(
                             decoration: BoxDecoration(
-                              color: _violet.withOpacity(0.70),
+                              color: _violet.withValues(alpha: 0.70),
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
@@ -1456,9 +1456,9 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: _surface.withOpacity(0.50),
+            color: _surface.withValues(alpha: 0.50),
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: _cream.withOpacity(0.04), width: 0.6),
+            border: Border.all(color: _cream.withValues(alpha: 0.04), width: 0.6),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1466,7 +1466,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
               Text(
                 'presence metrics.',
                 style: GoogleFonts.plusJakartaSans(
-                  color: _cream.withOpacity(0.85),
+                  color: _cream.withValues(alpha: 0.85),
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
@@ -1494,14 +1494,14 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
         Text(
           label,
           style: GoogleFonts.jost(
-            color: _sand.withOpacity(0.65),
+            color: _sand.withValues(alpha: 0.65),
             fontSize: 13,
           ),
         ),
         Text(
           val,
           style: GoogleFonts.jost(
-            color: _cream.withOpacity(0.82),
+            color: _cream.withValues(alpha: 0.82),
             fontSize: 13,
             fontWeight: FontWeight.w500,
           ),
@@ -1515,7 +1515,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Container(
         height: 0.4,
-        color: _cream.withOpacity(0.06),
+        color: _cream.withValues(alpha: 0.06),
       ),
     );
   }
@@ -1544,14 +1544,14 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
             height: 20,
             child: CircularProgressIndicator(
               strokeWidth: 1.0,
-              valueColor: AlwaysStoppedAnimation<Color>(_violet.withOpacity(0.65)),
+              valueColor: AlwaysStoppedAnimation<Color>(_violet.withValues(alpha: 0.65)),
             ),
           ),
           const SizedBox(height: 14),
           Text(
             'gathering presence…',
             style: GoogleFonts.plusJakartaSans(
-              color: _sand.withOpacity(0.38),
+              color: _sand.withValues(alpha: 0.38),
               fontSize: 12,
               letterSpacing: 0.5,
             ),
@@ -1575,7 +1575,7 @@ class _MemoryVaultScreenState extends State<MemoryVaultScreen>
                 msg,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.jost(
-                  color: _sand.withOpacity(0.52),
+                  color: _sand.withValues(alpha: 0.52),
                   fontSize: 13,
                   height: 1.55,
                 ),
@@ -1633,12 +1633,12 @@ class _BreathingRingState extends State<_BreathingRing>
               shape: BoxShape.circle,
               color: Colors.transparent,
               border: Border.all(
-                color: _blue.withOpacity(0.65 * (2.0 - scale)),
+                color: _blue.withValues(alpha: 0.65 * (2.0 - scale)),
                 width: 2.0,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: _blue.withOpacity(0.20 * (2.0 - scale)),
+                  color: _blue.withValues(alpha: 0.20 * (2.0 - scale)),
                   blurRadius: 20,
                   spreadRadius: 2,
                 ),
@@ -1690,15 +1690,15 @@ class _PINKeyButtonState extends State<_PINKeyButton> {
             height: 62,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _pressed ? _cream.withOpacity(0.08) : _surface.withOpacity(0.60),
+              color: _pressed ? _cream.withValues(alpha: 0.08) : _surface.withValues(alpha: 0.60),
               border: Border.all(
-                color: _pressed ? _blue.withOpacity(0.35) : _cream.withOpacity(0.06),
+                color: _pressed ? _blue.withValues(alpha: 0.35) : _cream.withValues(alpha: 0.06),
                 width: 0.6,
               ),
               boxShadow: _pressed
                   ? [
                       BoxShadow(
-                        color: _blue.withOpacity(0.12),
+                        color: _blue.withValues(alpha: 0.12),
                         blurRadius: 12,
                         spreadRadius: 1,
                       ),
@@ -1710,12 +1710,12 @@ class _PINKeyButtonState extends State<_PINKeyButton> {
                   ? Icon(
                       widget.icon,
                       size: 24,
-                      color: _cream.withOpacity(0.85),
+                      color: _cream.withValues(alpha: 0.85),
                     )
                   : Text(
                       widget.label,
                       style: GoogleFonts.plusJakartaSans(
-                        color: _cream.withOpacity(0.92),
+                        color: _cream.withValues(alpha: 0.92),
                         fontSize: 22,
                         fontWeight: FontWeight.w400,
                         letterSpacing: -0.5,

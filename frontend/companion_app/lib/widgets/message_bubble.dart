@@ -247,12 +247,12 @@ class _MessageBubbleState extends State<MessageBubble>
         shape: BoxShape.circle,
         color: _surface,
         border: Border.all(
-          color: _blue.withOpacity(0.40),
+          color: _blue.withValues(alpha: 0.40),
           width: 1.0,
         ),
         boxShadow: [
           BoxShadow(
-            color: _blue.withOpacity(0.14),
+            color: _blue.withValues(alpha: 0.14),
             blurRadius: 8,
           ),
         ],
@@ -261,7 +261,7 @@ class _MessageBubbleState extends State<MessageBubble>
         child: Text(
           initial,
           style: GoogleFonts.plusJakartaSans(
-            color: _cream.withOpacity(0.82),
+            color: _cream.withValues(alpha: 0.82),
             fontSize: 11,
             fontWeight: FontWeight.w600,
             height: 1.0,
@@ -287,7 +287,7 @@ class _MessageBubbleState extends State<MessageBubble>
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.18),
+        color: Colors.black.withValues(alpha: 0.18),
         borderRadius: BorderRadius.circular(8),
         border: Border(
           left: BorderSide(color: accentColor, width: 3.0),
@@ -312,8 +312,8 @@ class _MessageBubbleState extends State<MessageBubble>
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.plusJakartaSans(
               color: isUser
-                  ? Colors.white.withOpacity(0.70)
-                  : _cream.withOpacity(0.70),
+                  ? Colors.white.withValues(alpha: 0.70)
+                  : _cream.withValues(alpha: 0.70),
               fontSize: 13,
               height: 1.2,
             ),
@@ -340,14 +340,14 @@ class _MessageBubbleState extends State<MessageBubble>
         border: isUser
             ? null
             : Border.all(
-                color: Colors.white.withOpacity(0.06),
+                color: Colors.white.withValues(alpha: 0.06),
                 width: 0.6,
               ),
         boxShadow: [
           BoxShadow(
             color: isUser
-                ? _blue.withOpacity(0.20)
-                : Colors.black.withOpacity(0.18),
+                ? _blue.withValues(alpha: 0.20)
+                : Colors.black.withValues(alpha: 0.18),
             blurRadius: isUser ? 12 : 8,
             offset: const Offset(0, 3),
           ),
@@ -362,8 +362,8 @@ class _MessageBubbleState extends State<MessageBubble>
             widget.message.text,
             style: GoogleFonts.plusJakartaSans(
               color: isUser
-                  ? Colors.white.withOpacity(0.95)
-                  : _cream.withOpacity(0.88),
+                  ? Colors.white.withValues(alpha: 0.95)
+                  : _cream.withValues(alpha: 0.88),
               fontSize: 15,
               height: 1.45,
               fontWeight: isUser ? FontWeight.w500 : FontWeight.w400,
@@ -392,7 +392,7 @@ class _MessageBubbleState extends State<MessageBubble>
             widget.message.timeLabel,
             style: GoogleFonts.plusJakartaSans(
               fontSize: 11,
-              color: _dusty.withOpacity(0.75),
+              color: _dusty.withValues(alpha: 0.75),
               height: 1.0,
             ),
           ),
@@ -414,10 +414,10 @@ class _MessageBubbleState extends State<MessageBubble>
     switch (status) {
       case MessageStatus.sending:
         return Icon(Icons.schedule_rounded,
-            size: iconSize, color: tickGrey.withOpacity(0.55));
+            size: iconSize, color: tickGrey.withValues(alpha: 0.55));
       case MessageStatus.sent:
       case MessageStatus.delivered:
-        return _doubleTick(color: tickGrey.withOpacity(0.55), size: iconSize);
+        return _doubleTick(color: tickGrey.withValues(alpha: 0.55), size: iconSize);
       case MessageStatus.read:
         return _doubleTick(color: tickRead, size: iconSize);
       case MessageStatus.failed:

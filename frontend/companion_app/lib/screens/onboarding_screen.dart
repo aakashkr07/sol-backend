@@ -203,8 +203,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: _surface.withOpacity(0.70),
-            border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
+            color: _surface.withValues(alpha: 0.70),
+            border: Border.all(color: _cream.withValues(alpha: 0.08), width: 0.6),
             borderRadius: BorderRadius.circular(12),
           ),
           child: const Icon(
@@ -329,7 +329,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             "This shouldn't take long.",
             textAlign: TextAlign.center,
             style: GoogleFonts.jost(
-              color: _sand.withOpacity(0.72),
+              color: _sand.withValues(alpha: 0.72),
               fontSize: 14,
               fontWeight: FontWeight.w300,
               letterSpacing: 0.2,
@@ -346,10 +346,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF331515).withOpacity(0.72),
+        color: const Color(0xFF331515).withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFFE08B8B).withOpacity(0.22),
+          color: const Color(0xFFE08B8B).withValues(alpha: 0.22),
         ),
       ),
       child: Text(
@@ -401,7 +401,7 @@ class _NameInputCardState extends State<_NameInputCard> {
         Text(
           'Before we start...',
           style: GoogleFonts.plusJakartaSans(
-            color: _cream.withOpacity(0.92),
+            color: _cream.withValues(alpha: 0.92),
             fontSize: 25,
             fontWeight: FontWeight.w400,
             letterSpacing: -0.3,
@@ -411,7 +411,7 @@ class _NameInputCardState extends State<_NameInputCard> {
         Text(
           'What should we call you?',
           style: GoogleFonts.plusJakartaSans(
-            color: _sand.withOpacity(0.72),
+            color: _sand.withValues(alpha: 0.72),
             fontSize: 16,
             fontWeight: FontWeight.w300,
           ),
@@ -419,8 +419,8 @@ class _NameInputCardState extends State<_NameInputCard> {
         const SizedBox(height: 36),
         Container(
           decoration: BoxDecoration(
-            color: _surface.withOpacity(0.70),
-            border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
+            color: _surface.withValues(alpha: 0.70),
+            border: Border.all(color: _cream.withValues(alpha: 0.08), width: 0.6),
             borderRadius: BorderRadius.circular(16),
           ),
           child: TextField(
@@ -515,7 +515,7 @@ class _QuestionCard extends StatelessWidget {
         Text(
           header,
           style: GoogleFonts.plusJakartaSans(
-            color: _cream.withOpacity(0.92),
+            color: _cream.withValues(alpha: 0.92),
             fontSize: 24,
             fontWeight: FontWeight.w400,
             letterSpacing: -0.3,
@@ -525,7 +525,7 @@ class _QuestionCard extends StatelessWidget {
         Text(
           question,
           style: GoogleFonts.plusJakartaSans(
-            color: _sand.withOpacity(0.72),
+            color: _sand.withValues(alpha: 0.72),
             fontSize: 15,
             fontWeight: FontWeight.w300,
           ),
@@ -582,12 +582,12 @@ class _OptionTileState extends State<_OptionTile> {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
             decoration: BoxDecoration(
               color: widget.selected
-                  ? _blue.withOpacity(0.15)
-                  : _surface.withOpacity(0.70),
+                  ? _blue.withValues(alpha: 0.15)
+                  : _surface.withValues(alpha: 0.70),
               border: Border.all(
                 color: widget.selected
-                    ? _blueSoft.withOpacity(0.4)
-                    : _cream.withOpacity(0.08),
+                    ? _blueSoft.withValues(alpha: 0.4)
+                    : _cream.withValues(alpha: 0.08),
                 width: 0.6,
               ),
               borderRadius: BorderRadius.circular(16),
@@ -595,7 +595,7 @@ class _OptionTileState extends State<_OptionTile> {
             child: Text(
               widget.text,
               style: GoogleFonts.jost(
-                color: widget.selected ? _cream : _cream.withOpacity(0.78),
+                color: widget.selected ? _cream : _cream.withValues(alpha: 0.78),
                 fontSize: 14.5,
                 fontWeight: widget.selected ? FontWeight.w500 : FontWeight.w400,
               ),
@@ -660,7 +660,7 @@ class _BreathingSilhouettesState extends State<_BreathingSilhouettes>
                         color: _violet,
                         boxShadow: [
                           BoxShadow(
-                            color: _violet.withOpacity(0.1),
+                            color: _violet.withValues(alpha: 0.1),
                             blurRadius: 12,
                           ),
                         ],
@@ -686,7 +686,7 @@ class _BreathingSilhouettesState extends State<_BreathingSilhouettes>
                         color: _amber,
                         boxShadow: [
                           BoxShadow(
-                            color: _amber.withOpacity(0.1),
+                            color: _amber.withValues(alpha: 0.1),
                             blurRadius: 12,
                           ),
                         ],
@@ -709,12 +709,12 @@ class _BreathingSilhouettesState extends State<_BreathingSilhouettes>
                       shape: BoxShape.circle,
                       color: _surface,
                       border: Border.all(
-                        color: _blueSoft.withOpacity(0.12 + 0.12 * glow),
+                        color: _blueSoft.withValues(alpha: 0.12 + 0.12 * glow),
                         width: 1.5,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: _blue.withOpacity(0.10 * glow),
+                          color: _blue.withValues(alpha: 0.10 * glow),
                           blurRadius: 20 + 8 * _pulse.value,
                           spreadRadius: 2,
                         ),
@@ -723,7 +723,7 @@ class _BreathingSilhouettesState extends State<_BreathingSilhouettes>
                     child: Center(
                       child: Icon(
                         Icons.person_outline,
-                        color: _cream.withOpacity(0.3 + 0.3 * _pulse.value),
+                        color: _cream.withValues(alpha: 0.3 + 0.3 * _pulse.value),
                         size: 40,
                       ),
                     ),
@@ -794,7 +794,7 @@ class _CyclingLoadingTextState extends State<_CyclingLoadingText>
         _phases[_phaseIndex],
         textAlign: TextAlign.center,
         style: GoogleFonts.plusJakartaSans(
-          color: _cream.withOpacity(0.92),
+          color: _cream.withValues(alpha: 0.92),
           fontSize: 22,
           fontWeight: FontWeight.w400,
           letterSpacing: -0.3,

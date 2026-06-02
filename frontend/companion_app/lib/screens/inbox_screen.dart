@@ -1,5 +1,3 @@
-import 'dart:async';
-import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,7 +12,6 @@ import 'chat_screen.dart';
 import 'privacy_screen.dart';
 import 'memory_vault_screen.dart';
 import 'settings_screen.dart';
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Palette — Sol Design System
@@ -82,14 +79,17 @@ class _InboxScreenState extends State<InboxScreen>
 
     _load();
 
-    NotificationHooksService.onNotificationReceived.addListener(_onNotificationReceived);
+    NotificationHooksService.onNotificationReceived
+        .addListener(_onNotificationReceived);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final pending = SessionBootstrapService.peek();
       if (pending != null) {
-        Navigator.of(context).push(
+        Navigator.of(context)
+            .push(
           MaterialPageRoute(builder: (_) => const ChatScreen()),
-        ).then((_) {
+        )
+            .then((_) {
           if (mounted) {
             _load(silent: true);
           }
@@ -100,7 +100,8 @@ class _InboxScreenState extends State<InboxScreen>
 
   @override
   void dispose() {
-    NotificationHooksService.onNotificationReceived.removeListener(_onNotificationReceived);
+    NotificationHooksService.onNotificationReceived
+        .removeListener(_onNotificationReceived);
     WidgetsBinding.instance.removeObserver(this);
     _fadeInCtrl.dispose();
     super.dispose();
@@ -119,11 +120,12 @@ class _InboxScreenState extends State<InboxScreen>
 
   // ── Data (untouched) ──────────────────────────────────────────────────────
   Future<void> _load({bool silent = false}) async {
-    if (!silent)
+    if (!silent) {
       setState(() {
         _isLoading = true;
         _error = null;
       });
+    }
     try {
       await NotificationHooksService.initialize();
       final roster = await ApiService.getMyCompanions();
@@ -181,12 +183,10 @@ class _InboxScreenState extends State<InboxScreen>
     }
   }
 
-
-
   Future<void> _signOut() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      barrierColor: _ink.withOpacity(0.80),
+      barrierColor: _ink.withValues(alpha: 0.80),
       builder: (context) {
         return BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
@@ -194,12 +194,12 @@ class _InboxScreenState extends State<InboxScreen>
             backgroundColor: _surfaceUp,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(22),
-              side: BorderSide(color: _cream.withOpacity(0.06), width: 0.6),
+              side: BorderSide(color: _cream.withValues(alpha: 0.06), width: 0.6),
             ),
             title: Text(
               'sign out?',
               style: GoogleFonts.plusJakartaSans(
-                color: _cream.withOpacity(0.92),
+                color: _cream.withValues(alpha: 0.92),
                 fontSize: 17,
                 fontWeight: FontWeight.w500,
                 letterSpacing: -0.2,
@@ -208,7 +208,7 @@ class _InboxScreenState extends State<InboxScreen>
             content: Text(
               'your memories stay saved. we will keep presence here for you.',
               style: GoogleFonts.jost(
-                color: _sand.withOpacity(0.72),
+                color: _sand.withValues(alpha: 0.72),
                 fontSize: 14,
                 height: 1.55,
               ),
@@ -219,7 +219,7 @@ class _InboxScreenState extends State<InboxScreen>
                 child: Text(
                   'cancel',
                   style: GoogleFonts.jost(
-                    color: _sand.withOpacity(0.55),
+                    color: _sand.withValues(alpha: 0.55),
                     fontSize: 13.5,
                   ),
                 ),
@@ -229,7 +229,7 @@ class _InboxScreenState extends State<InboxScreen>
                 child: Text(
                   'sign out',
                   style: GoogleFonts.jost(
-                    color: const Color(0xFFE07070).withOpacity(0.85),
+                    color: const Color(0xFFE07070).withValues(alpha: 0.85),
                     fontSize: 13.5,
                     fontWeight: FontWeight.w500,
                   ),
@@ -251,7 +251,7 @@ class _InboxScreenState extends State<InboxScreen>
       child: Text(
         label,
         style: GoogleFonts.jost(
-          color: _cream.withOpacity(0.82),
+          color: _cream.withValues(alpha: 0.82),
           fontSize: 13.5,
           fontWeight: FontWeight.w400,
           letterSpacing: 0.1,
@@ -259,7 +259,6 @@ class _InboxScreenState extends State<InboxScreen>
       ),
     );
   }
-
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   String? _firstName() {
@@ -272,9 +271,9 @@ class _InboxScreenState extends State<InboxScreen>
     final name = _firstName();
     final h = DateTime.now().hour;
     String base;
-    if (h >= 5 && h < 12)
+    if (h >= 5 && h < 12) {
       base = 'good morning';
-    else if (h >= 12 && h < 17)
+    } else if (h >= 12 && h < 17)
       base = 'good afternoon';
     else if (h >= 17 && h < 22)
       base = 'good evening';
@@ -315,7 +314,7 @@ class _InboxScreenState extends State<InboxScreen>
             child: CircularProgressIndicator(
               strokeWidth: 1.0,
               valueColor: AlwaysStoppedAnimation<Color>(
-                _blue.withOpacity(0.62),
+                _blue.withValues(alpha: 0.62),
               ),
             ),
           ),
@@ -323,7 +322,7 @@ class _InboxScreenState extends State<InboxScreen>
           Text(
             'gathering presence…',
             style: GoogleFonts.plusJakartaSans(
-              color: _sand.withOpacity(0.38),
+              color: _sand.withValues(alpha: 0.38),
               fontSize: 12,
               fontWeight: FontWeight.w400,
               letterSpacing: 0.5,
@@ -406,10 +405,10 @@ class _InboxScreenState extends State<InboxScreen>
                       height: 5,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: _blue.withOpacity(0.70),
+                        color: _blue.withValues(alpha: 0.70),
                         boxShadow: [
                           BoxShadow(
-                            color: _blue.withOpacity(0.62),
+                            color: _blue.withValues(alpha: 0.62),
                             blurRadius: 6,
                             spreadRadius: 1,
                           ),
@@ -420,7 +419,7 @@ class _InboxScreenState extends State<InboxScreen>
                     Text(
                       'sol',
                       style: GoogleFonts.jost(
-                        color: _sand.withOpacity(0.58),
+                        color: _sand.withValues(alpha: 0.58),
                         fontSize: 11.5,
                         fontWeight: FontWeight.w500,
                         letterSpacing: 2.5,
@@ -433,7 +432,7 @@ class _InboxScreenState extends State<InboxScreen>
                 Text(
                   _greeting(),
                   style: GoogleFonts.plusJakartaSans(
-                    color: _cream.withOpacity(0.92),
+                    color: _cream.withValues(alpha: 0.92),
                     fontSize: 26,
                     fontWeight: FontWeight.w400,
                     letterSpacing: -0.3,
@@ -450,16 +449,16 @@ class _InboxScreenState extends State<InboxScreen>
               height: 38,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _surface.withOpacity(0.70),
+                color: _surface.withValues(alpha: 0.70),
                 border: Border.all(
-                  color: _cream.withOpacity(0.08),
+                  color: _cream.withValues(alpha: 0.08),
                   width: 0.6,
                 ),
               ),
               child: Icon(
                 Icons.more_vert_rounded,
                 size: 16,
-                color: _sand.withOpacity(0.72),
+                color: _sand.withValues(alpha: 0.72),
               ),
             ),
             padding: EdgeInsets.zero,
@@ -468,7 +467,7 @@ class _InboxScreenState extends State<InboxScreen>
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
               side: BorderSide(
-                color: _cream.withOpacity(0.07),
+                color: _cream.withValues(alpha: 0.07),
                 width: 0.6,
               ),
             ),
@@ -496,7 +495,6 @@ class _InboxScreenState extends State<InboxScreen>
               _popupItem('logout.', 'logout'),
             ],
           ),
-
         ],
       ),
     );
@@ -513,14 +511,14 @@ class _InboxScreenState extends State<InboxScreen>
             height: 3,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xFFE07070).withOpacity(0.60),
+              color: const Color(0xFFE07070).withValues(alpha: 0.60),
             ),
           ),
           const SizedBox(width: 8),
           Text(
             _error ?? '',
             style: GoogleFonts.jost(
-              color: const Color(0xFFBB7070).withOpacity(0.65),
+              color: const Color(0xFFBB7070).withValues(alpha: 0.65),
               fontSize: 11.5,
               fontWeight: FontWeight.w400,
               letterSpacing: 0.2,
@@ -544,7 +542,7 @@ class _InboxScreenState extends State<InboxScreen>
                 gradient: LinearGradient(
                   colors: [
                     Colors.transparent,
-                    _cream.withOpacity(0.07),
+                    _cream.withValues(alpha: 0.07),
                     Colors.transparent,
                   ],
                 ),
@@ -563,7 +561,7 @@ class _InboxScreenState extends State<InboxScreen>
       child: Text(
         label,
         style: GoogleFonts.jost(
-          color: _violet.withOpacity(0.68),
+          color: _violet.withValues(alpha: 0.68),
           fontSize: 10.5,
           fontWeight: FontWeight.w400,
           letterSpacing: 2.0,
@@ -602,7 +600,7 @@ class _InboxScreenState extends State<InboxScreen>
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: GoogleFonts.jost(
-                        color: _sand.withOpacity(0.78),
+                        color: _sand.withValues(alpha: 0.78),
                         fontSize: 11,
                         fontWeight: FontWeight.w400,
                         letterSpacing: 0.2,
@@ -635,12 +633,12 @@ class _InboxScreenState extends State<InboxScreen>
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
                     colors: [
-                      _blue.withOpacity(0.12),
+                      _blue.withValues(alpha: 0.12),
                       Colors.transparent,
                     ],
                   ),
                   border: Border.all(
-                    color: _blue.withOpacity(0.10),
+                    color: _blue.withValues(alpha: 0.10),
                     width: 0.8,
                   ),
                 ),
@@ -649,7 +647,7 @@ class _InboxScreenState extends State<InboxScreen>
               Text(
                 'nothing yet.',
                 style: GoogleFonts.plusJakartaSans(
-                  color: _sand.withOpacity(0.42),
+                  color: _sand.withValues(alpha: 0.42),
                   fontSize: 20,
                   fontWeight: FontWeight.w400,
                   letterSpacing: -0.2,
@@ -659,7 +657,7 @@ class _InboxScreenState extends State<InboxScreen>
               Text(
                 'your connections will appear here.',
                 style: GoogleFonts.jost(
-                  color: _dusty.withOpacity(0.68),
+                  color: _dusty.withValues(alpha: 0.68),
                   fontSize: 12,
                   fontWeight: FontWeight.w400,
                   letterSpacing: 0.3,
@@ -671,8 +669,6 @@ class _InboxScreenState extends State<InboxScreen>
       ],
     );
   }
-
-
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -780,7 +776,7 @@ class _PresenceDotState extends State<_PresenceDot>
                 color: color,
                 boxShadow: [
                   BoxShadow(
-                    color: color.withOpacity(0.35 + glow * 0.45),
+                    color: color.withValues(alpha: 0.35 + glow * 0.45),
                     blurRadius: 3 + glow * 5,
                     spreadRadius: 0.5,
                   ),
@@ -795,68 +791,6 @@ class _PresenceDotState extends State<_PresenceDot>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _BouncingDots — lightweight fluid typing circles
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _BouncingDots extends StatefulWidget {
-  const _BouncingDots();
-
-  @override
-  State<_BouncingDots> createState() => _BouncingDotsState();
-}
-
-class _BouncingDotsState extends State<_BouncingDots>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: List.generate(3, (index) {
-            final delay = index * 0.2;
-            final t = (_controller.value - delay) % 1.0;
-            final bounce = math.sin(t * math.pi).clamp(0.0, 1.0);
-            return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 1.2),
-              width: 3.5,
-              height: 3.5,
-              transform: Matrix4.translationValues(0, -bounce * 3.2, 0),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _blueSoft.withOpacity(0.42 + (1.0 - bounce) * 0.58),
-              ),
-            );
-          }),
-        );
-      },
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// _PresenceAvatar — pulsing ring for active companions
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _PresenceAvatar extends StatefulWidget {
   final InboxEntrySummary entry;
   const _PresenceAvatar({required this.entry});
@@ -895,10 +829,10 @@ class _PresenceAvatarState extends State<_PresenceAvatar>
 
     final gradient = _getAvatarGradient(name, false);
     final ringColor = unread
-        ? _blue.withOpacity(0.55)
+        ? _blue.withValues(alpha: 0.55)
         : waiting
-            ? _blueSoft.withOpacity(0.35)
-            : _cream.withOpacity(0.07);
+            ? _blueSoft.withValues(alpha: 0.35)
+            : _cream.withValues(alpha: 0.07);
 
     return AnimatedBuilder(
       animation: _pulse,
@@ -915,7 +849,7 @@ class _PresenceAvatarState extends State<_PresenceAvatar>
                 boxShadow: isOnline
                     ? [
                         BoxShadow(
-                          color: _blue.withOpacity(0.06 + glow * 0.14),
+                          color: _blue.withValues(alpha: 0.06 + glow * 0.14),
                           blurRadius: 10 + glow * 6,
                           spreadRadius: 0,
                         ),
@@ -935,7 +869,7 @@ class _PresenceAvatarState extends State<_PresenceAvatar>
                   child: Text(
                     name.isNotEmpty ? name[0].toUpperCase() : '?',
                     style: GoogleFonts.plusJakartaSans(
-                      color: _cream.withOpacity(isOnline ? 0.90 : 0.48),
+                      color: _cream.withValues(alpha: isOnline ? 0.90 : 0.48),
                       fontSize: 18,
                       fontWeight: FontWeight.w500,
                     ),
@@ -985,8 +919,6 @@ class _InboxTileState extends State<_InboxTile>
   late Animation<double> _entryFade;
   late Animation<Offset> _entrySlide;
   bool _pressed = false;
-  bool _isTyping = false;
-  Timer? _typingTimer;
 
   @override
   void initState() {
@@ -1001,48 +933,11 @@ class _InboxTileState extends State<_InboxTile>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
 
-    // Staggered entrance
-    Future.delayed(Duration(milliseconds: widget.index * 55), () {
-      if (mounted) _entryCtrl.forward();
-    });
-
-    _initTypingSimulation();
-
-    // Flash typing indicator shortly after mount for premium micro-interaction!
-    if (widget.entry.isPrimary) {
-      Future.delayed(const Duration(milliseconds: 1500), () {
-        if (mounted && !widget.opening && !_isTyping) {
-          setState(() => _isTyping = true);
-          Timer(const Duration(milliseconds: 3800), () {
-            if (mounted) {
-              setState(() => _isTyping = false);
-            }
-          });
-        }
-      });
-    }
-  }
-
-  void _initTypingSimulation() {
-    if (widget.entry.isArrival) return;
-    final random = math.Random();
-    _typingTimer = Timer.periodic(Duration(seconds: 14 + random.nextInt(10)), (timer) {
-      if (!mounted || widget.opening) return;
-      final isCompanionActive = widget.entry.waitingOnUser || (random.nextDouble() < 0.12);
-      if (isCompanionActive && !_isTyping) {
-        setState(() => _isTyping = true);
-        Timer(Duration(seconds: 4 + random.nextInt(4)), () {
-          if (mounted) {
-            setState(() => _isTyping = false);
-          }
-        });
-      }
-    });
+    _entryCtrl.forward();
   }
 
   @override
   void dispose() {
-    _typingTimer?.cancel();
     _entryCtrl.dispose();
     super.dispose();
   }
@@ -1085,21 +980,19 @@ class _InboxTileState extends State<_InboxTile>
               curve: Curves.easeOut,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                  child: Container(
+                child: Container(
                     decoration: BoxDecoration(
                       color: _pressed
-                          ? _cream.withOpacity(0.025)
+                          ? _cream.withValues(alpha: 0.025)
                           : (unread
-                              ? _surfaceUp.withOpacity(0.48)
-                              : _surface.withOpacity(0.26)),
+                              ? _surfaceUp.withValues(alpha: 0.48)
+                              : _surface.withValues(alpha: 0.26)),
                       border: Border.all(
                         color: unread
                             ? (arrival
-                                ? _violetSoft.withOpacity(0.22)
-                                : _blueSoft.withOpacity(0.22))
-                            : _cream.withOpacity(0.07),
+                                ? _violetSoft.withValues(alpha: 0.22)
+                                : _blueSoft.withValues(alpha: 0.22))
+                            : _cream.withValues(alpha: 0.07),
                         width: 0.6,
                       ),
                       borderRadius: BorderRadius.circular(16),
@@ -1107,8 +1000,8 @@ class _InboxTileState extends State<_InboxTile>
                           ? [
                               BoxShadow(
                                 color: arrival
-                                    ? _violet.withOpacity(0.04)
-                                    : _blue.withOpacity(0.04),
+                                    ? _violet.withValues(alpha: 0.04)
+                                    : _blue.withValues(alpha: 0.04),
                                 blurRadius: 12,
                                 offset: const Offset(0, 4),
                               ),
@@ -1133,12 +1026,12 @@ class _InboxTileState extends State<_InboxTile>
                                           end: Alignment.bottomCenter,
                                           colors: arrival
                                               ? [
-                                                  _violet.withOpacity(0.85),
-                                                  _violet.withOpacity(0.20),
+                                                  _violet.withValues(alpha: 0.85),
+                                                  _violet.withValues(alpha: 0.20),
                                                 ]
                                               : [
-                                                  _blue.withOpacity(0.85),
-                                                  _blue.withOpacity(0.20),
+                                                  _blue.withValues(alpha: 0.85),
+                                                  _blue.withValues(alpha: 0.20),
                                                 ],
                                         )
                                       : null,
@@ -1149,30 +1042,33 @@ class _InboxTileState extends State<_InboxTile>
                               // ── Content ──────────────────────────────────────
                               Expanded(
                                 child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(16, 16, 18, 16),
+                                  padding:
+                                      const EdgeInsets.fromLTRB(16, 16, 18, 16),
                                   child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
                                     children: [
                                       _buildAvatar(unread, arrival),
                                       const SizedBox(width: 14),
                                       Expanded(
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             // Name + timestamp
                                             Row(
                                               crossAxisAlignment:
                                                   CrossAxisAlignment.baseline,
-                                              textBaseline: TextBaseline.alphabetic,
+                                              textBaseline:
+                                                  TextBaseline.alphabetic,
                                               children: [
                                                 Expanded(
                                                   child: Text(
                                                     widget.entry.companionName,
-                                                    style: GoogleFonts.plusJakartaSans(
-                                                      color: _cream.withOpacity(
-                                                        unread ? 0.96 : 0.78,
-                                                      ),
+                                                    style: GoogleFonts
+                                                        .plusJakartaSans(
+                                                      color: _cream.withValues(alpha: unread ? 0.96 : 0.78,),
                                                       fontSize: 15,
                                                       fontWeight: unread
                                                           ? FontWeight.w600
@@ -1188,9 +1084,11 @@ class _InboxTileState extends State<_InboxTile>
                                                   style: GoogleFonts.jost(
                                                     color: unread
                                                         ? (arrival
-                                                            ? _violet.withOpacity(0.65)
-                                                            : _blue.withOpacity(0.60))
-                                                        : _sand.withOpacity(0.40),
+                                                            ? _violet
+                                                                .withValues(alpha: 0.65)
+                                                            : _blue.withValues(alpha: 0.60))
+                                                        : _sand
+                                                            .withValues(alpha: 0.40),
                                                     fontSize: 11,
                                                     fontWeight: FontWeight.w400,
                                                     letterSpacing: 0.1,
@@ -1202,27 +1100,33 @@ class _InboxTileState extends State<_InboxTile>
                                             // Dynamic Presence/Activity Subtitle
                                             const SizedBox(height: 4),
                                             Text(
-                                              _isTyping
-                                                  ? "typing..."
-                                                  : (widget.entry.isPrimary
-                                                      ? "online now"
-                                                      : (widget.entry.arrivalHint.isNotEmpty
-                                                          ? widget.entry.arrivalHint
-                                                          : (widget.entry.socialPresence.isNotEmpty
-                                                              ? widget.entry.socialPresence
-                                                              : (widget.entry.statusText.isNotEmpty
-                                                                  ? widget.entry.statusText
-                                                                  : "quiet for now")))),
+                                              widget.entry.isPrimary
+                                                  ? "online now"
+                                                  : (widget.entry.arrivalHint
+                                                          .isNotEmpty
+                                                      ? widget.entry.arrivalHint
+                                                      : (widget.entry
+                                                              .socialPresence
+                                                              .isNotEmpty
+                                                          ? widget.entry
+                                                              .socialPresence
+                                                          : (widget.entry
+                                                                  .statusText
+                                                                  .isNotEmpty
+                                                              ? widget.entry
+                                                                  .statusText
+                                                              : "quiet for now"))),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: GoogleFonts.jost(
-                                                color: _isTyping
-                                                    ? _violetSoft
-                                                    : (widget.entry.isPrimary
-                                                        ? _blueSoft
-                                                        : (widget.entry.arrivalHint.isNotEmpty
-                                                            ? _violetSoft.withOpacity(0.85)
-                                                            : _sand.withOpacity(0.65))),
+                                                color: widget.entry.isPrimary
+                                                    ? _blueSoft
+                                                    : (widget.entry.arrivalHint
+                                                            .isNotEmpty
+                                                        ? _violetSoft
+                                                            .withValues(alpha: 0.85)
+                                                        : _sand
+                                                            .withValues(alpha: 0.65)),
                                                 fontSize: 12.0,
                                                 fontWeight: FontWeight.w400,
                                                 letterSpacing: 0.15,
@@ -1231,43 +1135,18 @@ class _InboxTileState extends State<_InboxTile>
 
                                             const SizedBox(height: 6),
 
-                                            // Preview text or Typing indicator
-                                            if (_isTyping)
-                                              Padding(
-                                                padding: const EdgeInsets.only(top: 4.0),
-                                                child: Row(
-                                                  mainAxisSize: MainAxisSize.min,
-                                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                                  children: [
-                                                    Text(
-                                                      'typing',
-                                                      style: GoogleFonts.jost(
-                                                        color: _violetSoft.withOpacity(0.9),
-                                                        fontSize: 13,
-                                                        fontWeight: FontWeight.w400,
-                                                        letterSpacing: 0.2,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    const _BouncingDots(),
-                                                  ],
-                                                ),
-                                              )
-                                            else
-                                              Text(
-                                                _getFormattedPreviewText(),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: GoogleFonts.jost(
-                                                  color: _cream.withOpacity(
-                                                    unread ? 0.78 : 0.52,
-                                                  ),
-                                                  fontSize: 13.5,
-                                                  fontWeight: FontWeight.w400,
-                                                  height: 1.45,
-                                                  letterSpacing: 0.1,
-                                                ),
+                                            Text(
+                                              _getFormattedPreviewText(),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: GoogleFonts.jost(
+                                                color: _cream.withValues(alpha: unread ? 0.78 : 0.52,),
+                                                fontSize: 13.5,
+                                                fontWeight: FontWeight.w400,
+                                                height: 1.45,
+                                                letterSpacing: 0.1,
                                               ),
+                                            ),
                                           ],
                                         ),
                                       ),
@@ -1275,7 +1154,8 @@ class _InboxTileState extends State<_InboxTile>
                                       // Unread badge
                                       if (widget.entry.unreadCount > 0) ...[
                                         const SizedBox(width: 10),
-                                        _buildBadge(widget.entry.unreadCount, arrival),
+                                        _buildBadge(
+                                            widget.entry.unreadCount, arrival),
                                       ],
                                     ],
                                   ),
@@ -1286,7 +1166,6 @@ class _InboxTileState extends State<_InboxTile>
                         ),
                       ],
                     ),
-                  ),
                 ),
               ),
             ),
@@ -1299,13 +1178,15 @@ class _InboxTileState extends State<_InboxTile>
   Widget _buildAvatar(bool unread, bool arrival) {
     final gradient = _getAvatarGradient(widget.entry.companionName, arrival);
     final ringColor = arrival
-        ? _violet.withOpacity(unread ? 0.65 : 0.22)
+        ? _violet.withValues(alpha: unread ? 0.65 : 0.22)
         : unread
-            ? _blue.withOpacity(0.55)
-            : _cream.withOpacity(0.07);
+            ? _blue.withValues(alpha: 0.55)
+            : _cream.withValues(alpha: 0.07);
 
     final ringWidth = (arrival || unread) ? 1.3 : 0.6;
-    final isOnline = arrival || (!arrival && (widget.entry.waitingOnUser || _isTyping || widget.entry.unreadCount > 0));
+    final isOnline = arrival ||
+        (!arrival &&
+            (widget.entry.waitingOnUser || widget.entry.unreadCount > 0));
 
     return Stack(
       clipBehavior: Clip.none,
@@ -1321,8 +1202,8 @@ class _InboxTileState extends State<_InboxTile>
                 ? [
                     BoxShadow(
                       color: arrival
-                          ? _violet.withOpacity(0.12)
-                          : _blue.withOpacity(0.14),
+                          ? _violet.withValues(alpha: 0.12)
+                          : _blue.withValues(alpha: 0.14),
                       blurRadius: 14,
                       spreadRadius: 0,
                     ),
@@ -1335,7 +1216,7 @@ class _InboxTileState extends State<_InboxTile>
                   ? widget.entry.companionName[0].toUpperCase()
                   : '?',
               style: GoogleFonts.plusJakartaSans(
-                color: _cream.withOpacity(unread ? 0.85 : 0.48),
+                color: _cream.withValues(alpha: unread ? 0.85 : 0.48),
                 fontSize: 17,
                 fontWeight: FontWeight.w500,
               ),
@@ -1346,7 +1227,7 @@ class _InboxTileState extends State<_InboxTile>
           Positioned(
             right: -1,
             bottom: -1,
-            child: _PresenceDot(isTyping: _isTyping, isArrival: arrival),
+            child: _PresenceDot(isTyping: false, isArrival: arrival),
           ),
       ],
     );
@@ -1370,7 +1251,7 @@ class _InboxTileState extends State<_InboxTile>
         borderRadius: BorderRadius.circular(999),
         boxShadow: [
           BoxShadow(
-            color: (arrival ? _violet : _blue).withOpacity(0.30),
+            color: (arrival ? _violet : _blue).withValues(alpha: 0.30),
             blurRadius: 8,
             spreadRadius: 0,
           ),
@@ -1380,7 +1261,7 @@ class _InboxTileState extends State<_InboxTile>
       child: Text(
         label,
         style: GoogleFonts.jost(
-          color: _ink.withOpacity(0.85),
+          color: _ink.withValues(alpha: 0.85),
           fontSize: 9.5,
           fontWeight: FontWeight.w600,
         ),
@@ -1406,5 +1287,3 @@ class _InboxTileState extends State<_InboxTile>
     return '${stamp.month}/${stamp.day}';
   }
 }
-
-

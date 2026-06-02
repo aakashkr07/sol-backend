@@ -187,15 +187,15 @@ class _HeadsUpBannerState extends State<HeadsUpBanner>
                     constraints: const BoxConstraints(minHeight: 78),
                     padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                     decoration: BoxDecoration(
-                      color: _bgDeep.withOpacity(0.72),
+                      color: _bgDeep.withValues(alpha: 0.72),
                       borderRadius: BorderRadius.circular(22),
                       border: Border.all(
-                        color: _cream.withOpacity(0.075),
+                        color: _cream.withValues(alpha: 0.075),
                         width: 0.8,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: _presenceBlue.withOpacity(0.12),
+                          color: _presenceBlue.withValues(alpha: 0.12),
                           blurRadius: 26,
                           offset: const Offset(0, 14),
                         ),
@@ -285,7 +285,7 @@ class _MessageCopy extends StatelessWidget {
             Text(
               timeLabel,
               style: GoogleFonts.jost(
-                color: const Color(0xFF5A5568).withOpacity(0.95),
+                color: const Color(0xFF5A5568).withValues(alpha: 0.95),
                 fontSize: 12,
                 fontWeight: FontWeight.w400,
                 height: 1.15,
@@ -299,7 +299,7 @@ class _MessageCopy extends StatelessWidget {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: GoogleFonts.plusJakartaSans(
-            color: const Color(0xFF9A8C78).withOpacity(0.86),
+            color: const Color(0xFF9A8C78).withValues(alpha: 0.86),
             fontSize: 13,
             fontWeight: FontWeight.w400,
             height: 1.25,
@@ -328,10 +328,10 @@ class _QuickReplyInput extends StatelessWidget {
     return Container(
       height: 42,
       decoration: BoxDecoration(
-        color: _HeadsUpBannerState._surface.withOpacity(0.68),
+        color: _HeadsUpBannerState._surface.withValues(alpha: 0.68),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: _HeadsUpBannerState._warmViolet.withOpacity(0.18),
+          color: _HeadsUpBannerState._warmViolet.withValues(alpha: 0.18),
           width: 0.7,
         ),
       ),
@@ -347,14 +347,14 @@ class _QuickReplyInput extends StatelessWidget {
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => onSend(),
               style: GoogleFonts.plusJakartaSans(
-                color: const Color(0xFFE8DDD0).withOpacity(0.92),
+                color: const Color(0xFFE8DDD0).withValues(alpha: 0.92),
                 fontSize: 13.5,
                 fontWeight: FontWeight.w400,
               ),
               decoration: InputDecoration(
                 hintText: 'reply softly...',
                 hintStyle: GoogleFonts.jost(
-                  color: const Color(0xFF5A5568).withOpacity(0.78),
+                  color: const Color(0xFF5A5568).withValues(alpha: 0.78),
                   fontSize: 13,
                   fontWeight: FontWeight.w400,
                 ),
@@ -366,9 +366,7 @@ class _QuickReplyInput extends StatelessWidget {
           IconButton(
             visualDensity: VisualDensity.compact,
             iconSize: 18,
-            color: _HeadsUpBannerState._presenceBlue.withOpacity(
-              sending ? 0.38 : 0.92,
-            ),
+            color: _HeadsUpBannerState._presenceBlue.withValues(alpha: sending ? 0.38 : 0.92,),
             onPressed: sending ? null : onSend,
             icon: sending
                 ? const SizedBox(
@@ -409,17 +407,17 @@ class _ReplyButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: const Color(0xFF7DA2FF).withOpacity(0.10),
+          color: const Color(0xFF7DA2FF).withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: const Color(0xFF7DA2FF).withOpacity(0.18),
+            color: const Color(0xFF7DA2FF).withValues(alpha: 0.18),
             width: 0.7,
           ),
         ),
         child: Text(
           'Reply',
           style: GoogleFonts.jost(
-            color: const Color(0xFFE8DDD0).withOpacity(0.82),
+            color: const Color(0xFFE8DDD0).withValues(alpha: 0.82),
             fontSize: 12,
             fontWeight: FontWeight.w400,
           ),
@@ -444,7 +442,7 @@ class _Avatar extends StatelessWidget {
         shape: BoxShape.circle,
         gradient: _getAvatarGradient(name),
         border: Border.all(
-          color: const Color(0xFFE8DDD0).withOpacity(0.12),
+          color: const Color(0xFFE8DDD0).withValues(alpha: 0.12),
           width: 0.8,
         ),
       ),

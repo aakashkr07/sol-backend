@@ -403,7 +403,7 @@ class FragmentPainter extends CustomPainter {
         Offset(sx * size.width, dy * size.height),
         m.radius,
         Paint()
-          ..color = kFragCream.withOpacity(pulse * 0.02)
+          ..color = kFragCream.withValues(alpha: pulse * 0.02)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.0),
       );
     }
@@ -455,11 +455,11 @@ class FragmentPainter extends CustomPainter {
           RRect.fromRectAndRadius(rect, const Radius.circular(_kRadius));
 
       // Fill — Sol _surface at reduced opacity; melts into _bgDeep
-      _fillPaint.color = _kBubbleFill.withOpacity(op * 0.18);
+      _fillPaint.color = _kBubbleFill.withValues(alpha: op * 0.18);
       canvas.drawRRect(rrect, _fillPaint);
 
       // Border — cream hairline
-      _strokePaint.color = _kBubbleBorder.withOpacity(op * 0.055);
+      _strokePaint.color = _kBubbleBorder.withValues(alpha: op * 0.055);
       canvas.drawRRect(rrect, _strokePaint);
 
       // Text — Jost, cream @ 0.40 × envelope
@@ -467,7 +467,7 @@ class FragmentPainter extends CustomPainter {
         text: TextSpan(
           text: p.text,
           style: textStyle.copyWith(
-            color: kFragCream.withOpacity(op * 0.40),
+            color: kFragCream.withValues(alpha: op * 0.40),
           ),
         ),
         textDirection: TextDirection.ltr,

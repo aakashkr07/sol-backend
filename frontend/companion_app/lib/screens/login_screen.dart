@@ -167,7 +167,7 @@ class _LoginScreenState extends State<LoginScreen>
 
     _entranceCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2400),
+      duration: const Duration(milliseconds: 1400),
     );
 
     _tagCtrl = AnimationController(
@@ -223,10 +223,10 @@ class _LoginScreenState extends State<LoginScreen>
   // Entrance / shimmer / tag cycling — UNTOUCHED
   // ─────────────────────────────────────────────────────────────────────────
   Future<void> _startEntrance() async {
-    await Future.delayed(const Duration(milliseconds: 120));
+    await Future.delayed(const Duration(milliseconds: 40));
     if (!mounted) return;
     _entranceCtrl.forward();
-    await Future.delayed(const Duration(milliseconds: 3200));
+    await Future.delayed(const Duration(milliseconds: 1200));
     if (!mounted) return;
     _loopShimmer();
   }
@@ -243,7 +243,7 @@ class _LoginScreenState extends State<LoginScreen>
 
   Future<void> _cycleTags() async {
     while (mounted) {
-      await Future.delayed(const Duration(milliseconds: 5200));
+      await Future.delayed(const Duration(milliseconds: 7000));
       if (!mounted) return;
       await _tagCtrl.forward();
       if (!mounted) return;
@@ -331,8 +331,8 @@ class _LoginScreenState extends State<LoginScreen>
                     colors: [
                       Colors.transparent,
                       Colors.transparent,
-                      _bgDeep.withOpacity(0.45),
-                      _bgDeep.withOpacity(0.92),
+                      _bgDeep.withValues(alpha: 0.45),
+                      _bgDeep.withValues(alpha: 0.92),
                     ],
                     stops: const [0.0, 0.50, 0.78, 1.0],
                   ),
@@ -396,8 +396,8 @@ class _LoginScreenState extends State<LoginScreen>
                         shape: BoxShape.circle,
                         gradient: RadialGradient(
                           colors: [
-                            _amber.withOpacity(0.045 + p * 0.018),
-                            _amberAcc.withOpacity(0.022 + p * 0.010),
+                            _amber.withValues(alpha: 0.045 + p * 0.018),
+                            _amberAcc.withValues(alpha: 0.022 + p * 0.010),
                             Colors.transparent,
                           ],
                           stops: const [0.0, 0.38, 0.72],
@@ -417,7 +417,7 @@ class _LoginScreenState extends State<LoginScreen>
                       shape: BoxShape.circle,
                       gradient: RadialGradient(
                         colors: [
-                          _blue.withOpacity(0.028 + pFast * 0.018),
+                          _blue.withValues(alpha: 0.028 + pFast * 0.018),
                           Colors.transparent,
                         ],
                       ),
@@ -435,7 +435,7 @@ class _LoginScreenState extends State<LoginScreen>
                       shape: BoxShape.circle,
                       gradient: RadialGradient(
                         colors: [
-                          _violet.withOpacity(0.022 + p * 0.016),
+                          _violet.withValues(alpha: 0.022 + p * 0.016),
                           Colors.transparent,
                         ],
                       ),
@@ -477,7 +477,7 @@ class _LoginScreenState extends State<LoginScreen>
                       boxShadow: [
                         BoxShadow(
                           color: const Color.fromARGB(255, 111, 69, 238)
-                              .withOpacity(0.07 + p * 0.08),
+                              .withValues(alpha: 0.07 + p * 0.08),
                           blurRadius: 80 + p * 35,
                           spreadRadius: 4 + p * 10,
                         ),
@@ -501,7 +501,7 @@ class _LoginScreenState extends State<LoginScreen>
                       boxShadow: [
                         BoxShadow(
                           color: const Color.fromARGB(255, 95, 136, 238)
-                              .withOpacity(0.04 + p * 0.055),
+                              .withValues(alpha: 0.04 + p * 0.055),
                           blurRadius: 60 + p * 28,
                           spreadRadius: 0,
                         ),
@@ -526,7 +526,7 @@ class _LoginScreenState extends State<LoginScreen>
                         boxShadow: [
                           BoxShadow(
                             color: const Color.fromARGB(255, 250, 184, 109)
-                                .withOpacity(0.13 + p * 0.20),
+                                .withValues(alpha: 0.13 + p * 0.20),
                             blurRadius: 28 + p * 28,
                           ),
                         ],
@@ -577,7 +577,7 @@ class _LoginScreenState extends State<LoginScreen>
           style: GoogleFonts.jost(
             fontWeight: FontWeight.w200,
             fontSize: 64,
-            color: _amber.withOpacity(0.92),
+            color: _amber.withValues(alpha: 0.92),
             letterSpacing: 22,
             height: 1.0,
           ),
@@ -601,7 +601,7 @@ class _LoginScreenState extends State<LoginScreen>
             style: GoogleFonts.plusJakartaSans(
               fontWeight: FontWeight.w300,
               fontSize: 14,
-              color: _sand.withOpacity(0.65),
+              color: _sand.withValues(alpha: 0.65),
               letterSpacing: 0.4,
               height: 1.0,
             ),
@@ -612,7 +612,7 @@ class _LoginScreenState extends State<LoginScreen>
                 style: GoogleFonts.plusJakartaSans(
                   fontWeight: FontWeight.w500,
                   fontSize: 14,
-                  color: _violet.withOpacity(0.88),
+                  color: _violet.withValues(alpha: 0.88),
                   letterSpacing: 0.4,
                 ),
               ),
@@ -639,7 +639,7 @@ class _LoginScreenState extends State<LoginScreen>
               style: GoogleFonts.jost(
                 fontWeight: FontWeight.w300,
                 fontSize: 11,
-                color: _violet.withOpacity(0.38),
+                color: _violet.withValues(alpha: 0.38),
                 letterSpacing: 2.0,
               ),
             ),
@@ -684,25 +684,21 @@ class _LoginScreenState extends State<LoginScreen>
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
-                            color: _cream.withOpacity(
-                              _isLoading ? 0.04 : 0.07,
-                            ),
+                            color: _cream.withValues(alpha: _isLoading ? 0.04 : 0.07,),
                             width: 0.6,
                           ),
-                          color: _surface.withOpacity(0.60),
+                          color: _surface.withValues(alpha: 0.60),
                           boxShadow: [
                             // Burst glow — amber (on tap, unchanged feel)
                             BoxShadow(
                               color: const Color.fromARGB(255, 60, 83, 141)
-                                  .withOpacity(
-                                _burstGlow.value * 0.20,
-                              ),
+                                  .withValues(alpha: _burstGlow.value * 0.20,),
                               blurRadius: 40,
                               spreadRadius: 0,
                             ),
                             // Resting glow — Presence Blue (new, ties to Sol palette)
                             BoxShadow(
-                              color: _blue.withOpacity(0.055),
+                              color: _blue.withValues(alpha: 0.055),
                               blurRadius: 22,
                               spreadRadius: 0,
                             ),
@@ -725,9 +721,9 @@ class _LoginScreenState extends State<LoginScreen>
                                       gradient: LinearGradient(
                                         colors: [
                                           Colors.transparent,
-                                          _cream.withOpacity(0.025),
-                                          _cream.withOpacity(0.060),
-                                          _cream.withOpacity(0.025),
+                                          _cream.withValues(alpha: 0.025),
+                                          _cream.withValues(alpha: 0.060),
+                                          _cream.withValues(alpha: 0.025),
                                           Colors.transparent,
                                         ],
                                         stops: const [
@@ -752,7 +748,7 @@ class _LoginScreenState extends State<LoginScreen>
                                     child: CircularProgressIndicator(
                                       strokeWidth: 1.0,
                                       valueColor: AlwaysStoppedAnimation<Color>(
-                                        _blue.withOpacity(0.45),
+                                        _blue.withValues(alpha: 0.45),
                                       ),
                                     ),
                                   )
@@ -769,7 +765,7 @@ class _LoginScreenState extends State<LoginScreen>
                                         style: GoogleFonts.plusJakartaSans(
                                           fontWeight: FontWeight.w400,
                                           fontSize: 14,
-                                          color: _cream.withOpacity(0.72),
+                                          color: _cream.withValues(alpha: 0.72),
                                           letterSpacing: 0.2,
                                         ),
                                       ),
@@ -798,7 +794,7 @@ class _LoginScreenState extends State<LoginScreen>
         style: GoogleFonts.jost(
           fontSize: 11.5,
           fontWeight: FontWeight.w300,
-          color: _dustRose.withOpacity(0.65),
+          color: _dustRose.withValues(alpha: 0.65),
           letterSpacing: 0.2,
           height: 1.6,
         ),
@@ -818,7 +814,7 @@ class _LoginScreenState extends State<LoginScreen>
           style: GoogleFonts.jost(
             fontSize: 10,
             fontWeight: FontWeight.w300,
-            color: _sand.withOpacity(0.28),
+            color: _sand.withValues(alpha: 0.28),
             letterSpacing: 0.2,
             height: 1.85,
           ),

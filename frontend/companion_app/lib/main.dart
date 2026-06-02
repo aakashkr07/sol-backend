@@ -328,13 +328,13 @@ class _SplashScreen extends StatelessWidget {
                 height: 80,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: _amber.withOpacity(0.15),
+                  color: _amber.withValues(alpha: 0.15),
                 ),
                 child: Center(
                   child: Text(
                     'S',
                     style: TextStyle(
-                      color: _stone.withOpacity(0.6),
+                      color: _stone.withValues(alpha: 0.6),
                       fontSize: 32,
                       fontWeight: FontWeight.w200,
                     ),
@@ -349,7 +349,7 @@ class _SplashScreen extends StatelessWidget {
               child: CircularProgressIndicator(
                 strokeWidth: 1,
                 valueColor: AlwaysStoppedAnimation<Color>(
-                  _amber.withOpacity(0.5),
+                  _amber.withValues(alpha: 0.5),
                 ),
               ),
             ),

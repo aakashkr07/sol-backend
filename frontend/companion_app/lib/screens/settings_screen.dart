@@ -242,7 +242,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   }) async {
     final result = await showDialog<bool>(
       context: context,
-      barrierColor: _ink.withOpacity(0.80),
+      barrierColor: _ink.withValues(alpha: 0.80),
       builder: (context) {
         return BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
@@ -250,12 +250,12 @@ class _SettingsScreenState extends State<SettingsScreen>
             backgroundColor: _surfaceUp,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(22),
-              side: BorderSide(color: _cream.withOpacity(0.06), width: 0.6),
+              side: BorderSide(color: _cream.withValues(alpha: 0.06), width: 0.6),
             ),
             title: Text(
               title,
               style: GoogleFonts.plusJakartaSans(
-                color: _cream.withOpacity(0.92),
+                color: _cream.withValues(alpha: 0.92),
                 fontSize: 17,
                 fontWeight: FontWeight.w500,
                 letterSpacing: -0.2,
@@ -264,7 +264,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             content: Text(
               body,
               style: GoogleFonts.jost(
-                color: _sand.withOpacity(0.72),
+                color: _sand.withValues(alpha: 0.72),
                 fontSize: 14,
                 height: 1.55,
               ),
@@ -275,7 +275,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 child: Text(
                   'cancel',
                   style: GoogleFonts.jost(
-                    color: _sand.withOpacity(0.55),
+                    color: _sand.withValues(alpha: 0.55),
                     fontSize: 13.5,
                   ),
                 ),
@@ -286,8 +286,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                   confirmLabel,
                   style: GoogleFonts.jost(
                     color: destructive
-                        ? _destructiveRed.withOpacity(0.85)
-                        : _blue.withOpacity(0.85),
+                        ? _destructiveRed.withValues(alpha: 0.85)
+                        : _blue.withValues(alpha: 0.85),
                     fontSize: 13.5,
                     fontWeight: FontWeight.w500,
                   ),
@@ -310,7 +310,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         content: Text(
           message,
-          style: GoogleFonts.jost(color: _sand.withOpacity(0.85), fontSize: 13),
+          style: GoogleFonts.jost(color: _sand.withValues(alpha: 0.85), fontSize: 13),
         ),
       ),
     );
@@ -358,8 +358,8 @@ class _SettingsScreenState extends State<SettingsScreen>
               height: 38,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _surface.withOpacity(0.70),
-                border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
+                color: _surface.withValues(alpha: 0.70),
+                border: Border.all(color: _cream.withValues(alpha: 0.08), width: 0.6),
               ),
               child:
                   const Icon(Icons.arrow_back_rounded, size: 15, color: _sand),
@@ -377,10 +377,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                       height: 5,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: _blue.withOpacity(0.70),
+                        color: _blue.withValues(alpha: 0.70),
                         boxShadow: [
                           BoxShadow(
-                            color: _blue.withOpacity(0.55),
+                            color: _blue.withValues(alpha: 0.55),
                             blurRadius: 6,
                             spreadRadius: 1,
                           )
@@ -391,7 +391,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     Text(
                       'SETTINGS',
                       style: GoogleFonts.jost(
-                        color: _sand.withOpacity(0.58),
+                        color: _sand.withValues(alpha: 0.58),
                         fontSize: 10,
                         fontWeight: FontWeight.w500,
                         letterSpacing: 2.5,
@@ -403,7 +403,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 Text(
                   'app preferences.',
                   style: GoogleFonts.plusJakartaSans(
-                    color: _cream.withOpacity(0.92),
+                    color: _cream.withValues(alpha: 0.92),
                     fontSize: 22,
                     fontWeight: FontWeight.w400,
                     letterSpacing: -0.3,
@@ -446,9 +446,9 @@ class _SettingsScreenState extends State<SettingsScreen>
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: _surface.withOpacity(0.70),
+              color: _surface.withValues(alpha: 0.70),
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
+              border: Border.all(color: _cream.withValues(alpha: 0.08), width: 0.6),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -456,7 +456,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 Text(
                   'quiet hours',
                   style: GoogleFonts.plusJakartaSans(
-                    color: _cream.withOpacity(0.90),
+                    color: _cream.withValues(alpha: 0.90),
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
                   ),
@@ -465,7 +465,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 Text(
                   'configure time brackets where companions will hold back proactive outreach to match your rhythm.',
                   style: GoogleFonts.jost(
-                    color: _sand.withOpacity(0.68),
+                    color: _sand.withValues(alpha: 0.68),
                     fontSize: 12.5,
                     height: 1.5,
                   ),
@@ -501,9 +501,9 @@ class _SettingsScreenState extends State<SettingsScreen>
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: _surface.withOpacity(0.70),
+                color: _surface.withValues(alpha: 0.70),
                 borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
+                border: Border.all(color: _cream.withValues(alpha: 0.08), width: 0.6),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -511,7 +511,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   Text(
                     'reach-out frequency',
                     style: GoogleFonts.plusJakartaSans(
-                      color: _cream.withOpacity(0.90),
+                      color: _cream.withValues(alpha: 0.90),
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
                     ),
@@ -520,7 +520,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   Text(
                     'adjust how often ${pair.name} organically initiates encounters outside conversational threads.',
                     style: GoogleFonts.jost(
-                      color: _sand.withOpacity(0.68),
+                      color: _sand.withValues(alpha: 0.68),
                       fontSize: 12.5,
                       height: 1.5,
                     ),
@@ -545,9 +545,9 @@ class _SettingsScreenState extends State<SettingsScreen>
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: _surface.withOpacity(0.70),
+              color: _surface.withValues(alpha: 0.70),
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
+              border: Border.all(color: _cream.withValues(alpha: 0.08), width: 0.6),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -555,7 +555,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 Text(
                   'presence signals',
                   style: GoogleFonts.plusJakartaSans(
-                    color: _cream.withOpacity(0.90),
+                    color: _cream.withValues(alpha: 0.90),
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
                   ),
@@ -564,7 +564,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 Text(
                   'shape how companion arrivals feel while you are inside sol.',
                   style: GoogleFonts.jost(
-                    color: _sand.withOpacity(0.68),
+                    color: _sand.withValues(alpha: 0.68),
                     fontSize: 12.5,
                     height: 1.5,
                   ),
@@ -610,9 +610,9 @@ class _SettingsScreenState extends State<SettingsScreen>
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: _surface.withOpacity(0.70),
+              color: _surface.withValues(alpha: 0.70),
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: _cream.withOpacity(0.08), width: 0.6),
+              border: Border.all(color: _cream.withValues(alpha: 0.08), width: 0.6),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -620,7 +620,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 Text(
                   'biometric vault security',
                   style: GoogleFonts.plusJakartaSans(
-                    color: _cream.withOpacity(0.90),
+                    color: _cream.withValues(alpha: 0.90),
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
                   ),
@@ -690,16 +690,16 @@ class _SettingsScreenState extends State<SettingsScreen>
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             decoration: BoxDecoration(
-                              color: _cream.withOpacity(0.03),
+                              color: _cream.withValues(alpha: 0.03),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                  color: _cream.withOpacity(0.08), width: 0.6),
+                                  color: _cream.withValues(alpha: 0.08), width: 0.6),
                             ),
                             child: Center(
                               child: Text(
                                 'change fallback PIN',
                                 style: GoogleFonts.jost(
-                                  color: _cream.withOpacity(0.80),
+                                  color: _cream.withValues(alpha: 0.80),
                                   fontSize: 13,
                                 ),
                               ),
@@ -720,10 +720,10 @@ class _SettingsScreenState extends State<SettingsScreen>
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: const Color(0xFF2A0E0E).withOpacity(0.40),
+              color: const Color(0xFF2A0E0E).withValues(alpha: 0.40),
               borderRadius: BorderRadius.circular(22),
               border: Border.all(
-                color: _destructiveRed.withOpacity(0.18),
+                color: _destructiveRed.withValues(alpha: 0.18),
                 width: 0.6,
               ),
             ),
@@ -733,12 +733,12 @@ class _SettingsScreenState extends State<SettingsScreen>
                 Row(
                   children: [
                     Icon(Icons.report_problem_outlined,
-                        size: 16, color: _destructiveRed.withOpacity(0.80)),
+                        size: 16, color: _destructiveRed.withValues(alpha: 0.80)),
                     const SizedBox(width: 8),
                     Text(
                       'danger parameter control',
                       style: GoogleFonts.plusJakartaSans(
-                        color: _destructiveRed.withOpacity(0.85),
+                        color: _destructiveRed.withValues(alpha: 0.85),
                         fontSize: 14.5,
                         fontWeight: FontWeight.w500,
                       ),
@@ -749,7 +749,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 Text(
                   'the triggers below modify secure databases and relationship vectors. operate with caution.',
                   style: GoogleFonts.jost(
-                    color: _destructiveRed.withOpacity(0.58),
+                    color: _destructiveRed.withValues(alpha: 0.58),
                     fontSize: 12,
                     height: 1.45,
                   ),
@@ -787,7 +787,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             child: CircularProgressIndicator(
               strokeWidth: 1.0,
               valueColor: AlwaysStoppedAnimation<Color>(
-                _blue.withOpacity(0.62),
+                _blue.withValues(alpha: 0.62),
               ),
             ),
           ),
@@ -795,7 +795,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           Text(
             'gathering presence…',
             style: GoogleFonts.plusJakartaSans(
-              color: _sand.withOpacity(0.38),
+              color: _sand.withValues(alpha: 0.38),
               fontSize: 12,
               fontWeight: FontWeight.w400,
               letterSpacing: 0.5,
@@ -819,7 +819,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 _error ?? 'something went wrong.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.jost(
-                  color: _sand.withOpacity(0.52),
+                  color: _sand.withValues(alpha: 0.52),
                   fontSize: 13,
                   height: 1.55,
                 ),
@@ -849,7 +849,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 Text(
                   title,
                   style: GoogleFonts.jost(
-                    color: _cream.withOpacity(0.85),
+                    color: _cream.withValues(alpha: 0.85),
                     fontSize: 13.5,
                     fontWeight: FontWeight.w400,
                   ),
@@ -858,7 +858,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 Text(
                   subtitle,
                   style: GoogleFonts.jost(
-                    color: _dusty.withOpacity(0.90),
+                    color: _dusty.withValues(alpha: 0.90),
                     fontSize: 12,
                     height: 1.4,
                   ),
@@ -883,10 +883,10 @@ class _SettingsScreenState extends State<SettingsScreen>
     final safeValue = items.contains(value) ? value : 'balanced';
     return Container(
       decoration: BoxDecoration(
-        color: _surfaceUp.withOpacity(0.70),
+        color: _surfaceUp.withValues(alpha: 0.70),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: _cream.withOpacity(0.07),
+          color: _cream.withValues(alpha: 0.07),
           width: 0.6,
         ),
       ),
@@ -898,11 +898,11 @@ class _SettingsScreenState extends State<SettingsScreen>
           icon: Icon(
             Icons.keyboard_arrow_down_rounded,
             size: 16,
-            color: _sand.withOpacity(0.45),
+            color: _sand.withValues(alpha: 0.45),
           ),
           isExpanded: true,
           style: GoogleFonts.jost(
-            color: _cream.withOpacity(0.82),
+            color: _cream.withValues(alpha: 0.82),
             fontSize: 13.5,
           ),
           items: items.map((item) {
@@ -911,7 +911,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               child: Text(
                 item,
                 style: GoogleFonts.jost(
-                  color: _cream.withOpacity(0.82),
+                  color: _cream.withValues(alpha: 0.82),
                   fontSize: 13.5,
                 ),
               ),
@@ -929,7 +929,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     bool enabled = true,
   }) {
     final active = enabled && onTap != null;
-    final textCol = _destructiveRed.withOpacity(active ? 0.85 : 0.30);
+    final textCol = _destructiveRed.withValues(alpha: active ? 0.85 : 0.30);
     return InkWell(
       onTap: active ? onTap : null,
       child: Padding(
@@ -962,8 +962,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       child: Container(
         height: 0.4,
         color: isDestructive
-            ? _destructiveRed.withOpacity(0.12)
-            : _cream.withOpacity(0.06),
+            ? _destructiveRed.withValues(alpha: 0.12)
+            : _cream.withValues(alpha: 0.06),
       ),
     );
   }
@@ -978,9 +978,9 @@ class _SettingsScreenState extends State<SettingsScreen>
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: _surfaceUp.withOpacity(0.70),
+          color: _surfaceUp.withValues(alpha: 0.70),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _cream.withOpacity(0.06), width: 0.6),
+          border: Border.all(color: _cream.withValues(alpha: 0.06), width: 0.6),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1021,9 +1021,9 @@ class _CustomSwitch extends StatelessWidget {
         height: 24,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(99),
-          color: value ? _blue.withOpacity(0.55) : _surfaceUp.withOpacity(0.90),
+          color: value ? _blue.withValues(alpha: 0.55) : _surfaceUp.withValues(alpha: 0.90),
           border: Border.all(
-            color: value ? _blue.withOpacity(0.35) : _cream.withOpacity(0.08),
+            color: value ? _blue.withValues(alpha: 0.35) : _cream.withValues(alpha: 0.08),
             width: 0.7,
           ),
         ),
@@ -1037,7 +1037,7 @@ class _CustomSwitch extends StatelessWidget {
               height: 16,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: value ? _cream : _dusty.withOpacity(0.60),
+                color: value ? _cream : _dusty.withValues(alpha: 0.60),
               ),
             ),
           ),
