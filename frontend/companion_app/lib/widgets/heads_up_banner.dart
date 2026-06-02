@@ -49,8 +49,6 @@ class _HeadsUpBannerState extends State<HeadsUpBanner>
   static const Color _presenceBlue = Color(0xFF7DA2FF);
   static const Color _warmViolet = Color(0xFFA78BFA);
   static const Color _cream = Color(0xFFE8DDD0);
-  static const Color _sand = Color(0xFF9A8C78);
-  static const Color _dusty = Color(0xFF5A5568);
 
   late final AnimationController _controller;
   late final Animation<double> _fade;
@@ -471,8 +469,8 @@ LinearGradient _getAvatarGradient(String name) {
     [const Color(0xFF5F7EA8), const Color(0xFFB98EA7)],
     [const Color(0xFF52627E), const Color(0xFF7DA2FF)],
   ];
-  final index = name.codeUnits.fold<int>(0, (sum, code) => sum + code) %
-      palettes.length;
+  final index =
+      name.codeUnits.fold<int>(0, (sum, code) => sum + code) % palettes.length;
   return LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
