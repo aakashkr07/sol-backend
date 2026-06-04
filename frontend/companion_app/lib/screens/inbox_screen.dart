@@ -10,8 +10,8 @@ import '../services/session_bootstrap_service.dart';
 import '../widgets/atmosphere_background.dart';
 import 'chat_screen.dart';
 import 'privacy_screen.dart';
-import 'memory_vault_screen.dart';
 import 'settings_screen.dart';
+import 'about_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Palette — Sol Design System
@@ -194,7 +194,8 @@ class _InboxScreenState extends State<InboxScreen>
             backgroundColor: _surfaceUp,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(22),
-              side: BorderSide(color: _cream.withValues(alpha: 0.06), width: 0.6),
+              side:
+                  BorderSide(color: _cream.withValues(alpha: 0.06), width: 0.6),
             ),
             title: Text(
               'sign out?',
@@ -472,27 +473,27 @@ class _InboxScreenState extends State<InboxScreen>
               ),
             ),
             onSelected: (val) {
-              if (val == 'privacy') {
+              if (val == 'Privacy') {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const PrivacyScreen()),
                 );
-              } else if (val == 'memories') {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const MemoryVaultScreen()),
-                );
-              } else if (val == 'settings') {
+              } else if (val == 'Settings') {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const SettingsScreen()),
                 );
-              } else if (val == 'logout') {
+              } else if (val == 'About') {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AboutSolScreen()),
+                );
+              } else if (val == 'Logout') {
                 _signOut();
               }
             },
             itemBuilder: (context) => [
-              _popupItem('privacy.', 'privacy'),
-              _popupItem('your memories.', 'memories'),
-              _popupItem('settings.', 'settings'),
-              _popupItem('logout.', 'logout'),
+              _popupItem('Privacy', 'Privacy'),
+              _popupItem('Settings', 'Settings'),
+              _popupItem('About', 'About'),
+              _popupItem('Logout', 'Logout'),
             ],
           ),
         ],
@@ -981,191 +982,198 @@ class _InboxTileState extends State<_InboxTile>
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: Container(
-                    decoration: BoxDecoration(
-                      color: _pressed
-                          ? _cream.withValues(alpha: 0.025)
-                          : (unread
-                              ? _surfaceUp.withValues(alpha: 0.48)
-                              : _surface.withValues(alpha: 0.26)),
-                      border: Border.all(
-                        color: unread
-                            ? (arrival
-                                ? _violetSoft.withValues(alpha: 0.22)
-                                : _blueSoft.withValues(alpha: 0.22))
-                            : _cream.withValues(alpha: 0.07),
-                        width: 0.6,
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: unread
-                          ? [
-                              BoxShadow(
-                                color: arrival
-                                    ? _violet.withValues(alpha: 0.04)
-                                    : _blue.withValues(alpha: 0.04),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
-                              ),
-                            ]
-                          : null,
+                  decoration: BoxDecoration(
+                    color: _pressed
+                        ? _cream.withValues(alpha: 0.025)
+                        : (unread
+                            ? _surfaceUp.withValues(alpha: 0.48)
+                            : _surface.withValues(alpha: 0.26)),
+                    border: Border.all(
+                      color: unread
+                          ? (arrival
+                              ? _violetSoft.withValues(alpha: 0.22)
+                              : _blueSoft.withValues(alpha: 0.22))
+                          : _cream.withValues(alpha: 0.07),
+                      width: 0.6,
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IntrinsicHeight(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // ── Left accent bar ──────────────────────────────
-                              AnimatedContainer(
-                                duration: const Duration(milliseconds: 300),
-                                width: 3.0,
-                                decoration: BoxDecoration(
-                                  gradient: unread
-                                      ? LinearGradient(
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter,
-                                          colors: arrival
-                                              ? [
-                                                  _violet.withValues(alpha: 0.85),
-                                                  _violet.withValues(alpha: 0.20),
-                                                ]
-                                              : [
-                                                  _blue.withValues(alpha: 0.85),
-                                                  _blue.withValues(alpha: 0.20),
-                                                ],
-                                        )
-                                      : null,
-                                  color: unread ? null : Colors.transparent,
-                                ),
-                              ),
-
-                              // ── Content ──────────────────────────────────────
-                              Expanded(
-                                child: Padding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(16, 16, 18, 16),
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.center,
-                                    children: [
-                                      _buildAvatar(unread, arrival),
-                                      const SizedBox(width: 14),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            // Name + timestamp
-                                            Row(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.baseline,
-                                              textBaseline:
-                                                  TextBaseline.alphabetic,
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    widget.entry.companionName,
-                                                    style: GoogleFonts
-                                                        .plusJakartaSans(
-                                                      color: _cream.withValues(alpha: unread ? 0.96 : 0.78,),
-                                                      fontSize: 15,
-                                                      fontWeight: unread
-                                                          ? FontWeight.w600
-                                                          : FontWeight.w500,
-                                                      letterSpacing: -0.1,
-                                                      height: 1.15,
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Text(
-                                                  _timeLabel(),
-                                                  style: GoogleFonts.jost(
-                                                    color: unread
-                                                        ? (arrival
-                                                            ? _violet
-                                                                .withValues(alpha: 0.65)
-                                                            : _blue.withValues(alpha: 0.60))
-                                                        : _sand
-                                                            .withValues(alpha: 0.40),
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.w400,
-                                                    letterSpacing: 0.1,
-                                                  ),
-                                                ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: unread
+                        ? [
+                            BoxShadow(
+                              color: arrival
+                                  ? _violet.withValues(alpha: 0.04)
+                                  : _blue.withValues(alpha: 0.04),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // ── Left accent bar ──────────────────────────────
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 300),
+                              width: 3.0,
+                              decoration: BoxDecoration(
+                                gradient: unread
+                                    ? LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: arrival
+                                            ? [
+                                                _violet.withValues(alpha: 0.85),
+                                                _violet.withValues(alpha: 0.20),
+                                              ]
+                                            : [
+                                                _blue.withValues(alpha: 0.85),
+                                                _blue.withValues(alpha: 0.20),
                                               ],
-                                            ),
+                                      )
+                                    : null,
+                                color: unread ? null : Colors.transparent,
+                              ),
+                            ),
 
-                                            // Dynamic Presence/Activity Subtitle
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              widget.entry.isPrimary
-                                                  ? "online now"
+                            // ── Content ──────────────────────────────────────
+                            Expanded(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 16, 18, 16),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    _buildAvatar(unread, arrival),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          // Name + timestamp
+                                          Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.baseline,
+                                            textBaseline:
+                                                TextBaseline.alphabetic,
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  widget.entry.companionName,
+                                                  style: GoogleFonts
+                                                      .plusJakartaSans(
+                                                    color: _cream.withValues(
+                                                      alpha:
+                                                          unread ? 0.96 : 0.78,
+                                                    ),
+                                                    fontSize: 15,
+                                                    fontWeight: unread
+                                                        ? FontWeight.w600
+                                                        : FontWeight.w500,
+                                                    letterSpacing: -0.1,
+                                                    height: 1.15,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                _timeLabel(),
+                                                style: GoogleFonts.jost(
+                                                  color: unread
+                                                      ? (arrival
+                                                          ? _violet.withValues(
+                                                              alpha: 0.65)
+                                                          : _blue.withValues(
+                                                              alpha: 0.60))
+                                                      : _sand.withValues(
+                                                          alpha: 0.40),
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w400,
+                                                  letterSpacing: 0.1,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+
+                                          // Dynamic Presence/Activity Subtitle
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            widget.entry.isPrimary
+                                                ? "online now"
+                                                : (widget.entry.arrivalHint
+                                                        .isNotEmpty
+                                                    ? widget.entry.arrivalHint
+                                                    : (widget
+                                                            .entry
+                                                            .socialPresence
+                                                            .isNotEmpty
+                                                        ? widget.entry
+                                                            .socialPresence
+                                                        : (widget
+                                                                .entry
+                                                                .statusText
+                                                                .isNotEmpty
+                                                            ? widget.entry
+                                                                .statusText
+                                                            : "quiet for now"))),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: GoogleFonts.jost(
+                                              color: widget.entry.isPrimary
+                                                  ? _blueSoft
                                                   : (widget.entry.arrivalHint
                                                           .isNotEmpty
-                                                      ? widget.entry.arrivalHint
-                                                      : (widget.entry
-                                                              .socialPresence
-                                                              .isNotEmpty
-                                                          ? widget.entry
-                                                              .socialPresence
-                                                          : (widget.entry
-                                                                  .statusText
-                                                                  .isNotEmpty
-                                                              ? widget.entry
-                                                                  .statusText
-                                                              : "quiet for now"))),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: GoogleFonts.jost(
-                                                color: widget.entry.isPrimary
-                                                    ? _blueSoft
-                                                    : (widget.entry.arrivalHint
-                                                            .isNotEmpty
-                                                        ? _violetSoft
-                                                            .withValues(alpha: 0.85)
-                                                        : _sand
-                                                            .withValues(alpha: 0.65)),
-                                                fontSize: 12.0,
-                                                fontWeight: FontWeight.w400,
-                                                letterSpacing: 0.15,
-                                              ),
+                                                      ? _violetSoft.withValues(
+                                                          alpha: 0.85)
+                                                      : _sand.withValues(
+                                                          alpha: 0.65)),
+                                              fontSize: 12.0,
+                                              fontWeight: FontWeight.w400,
+                                              letterSpacing: 0.15,
                                             ),
+                                          ),
 
-                                            const SizedBox(height: 6),
+                                          const SizedBox(height: 6),
 
-                                            Text(
-                                              _getFormattedPreviewText(),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: GoogleFonts.jost(
-                                                color: _cream.withValues(alpha: unread ? 0.78 : 0.52,),
-                                                fontSize: 13.5,
-                                                fontWeight: FontWeight.w400,
-                                                height: 1.45,
-                                                letterSpacing: 0.1,
+                                          Text(
+                                            _getFormattedPreviewText(),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: GoogleFonts.jost(
+                                              color: _cream.withValues(
+                                                alpha: unread ? 0.78 : 0.52,
                                               ),
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w400,
+                                              height: 1.45,
+                                              letterSpacing: 0.1,
                                             ),
-                                          ],
-                                        ),
+                                          ),
+                                        ],
                                       ),
+                                    ),
 
-                                      // Unread badge
-                                      if (widget.entry.unreadCount > 0) ...[
-                                        const SizedBox(width: 10),
-                                        _buildBadge(
-                                            widget.entry.unreadCount, arrival),
-                                      ],
+                                    // Unread badge
+                                    if (widget.entry.unreadCount > 0) ...[
+                                      const SizedBox(width: 10),
+                                      _buildBadge(
+                                          widget.entry.unreadCount, arrival),
                                     ],
-                                  ),
+                                  ],
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

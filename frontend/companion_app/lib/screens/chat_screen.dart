@@ -60,10 +60,7 @@ import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/session_bootstrap_service.dart';
 import '../services/burst_playback_service.dart';
-import 'about_screen.dart';
-import 'privacy_screen.dart';
 import 'relationship_studio_screen.dart';
-import 'settings_screen.dart';
 import '../widgets/atmosphere_background.dart';
 
 import '../widgets/message_bubble.dart';
@@ -132,7 +129,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    NotificationHooksService.onNotificationReceived.addListener(_onNotificationReceived);
+    NotificationHooksService.onNotificationReceived
+        .addListener(_onNotificationReceived);
     NotificationHooksService.setForegroundNotificationOptions(active: true);
     _initialize();
   }
@@ -142,7 +140,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (ChatScreen.activeChatCompanionId == _companionId) {
       ChatScreen.activeChatCompanionId = null;
     }
-    NotificationHooksService.onNotificationReceived.removeListener(_onNotificationReceived);
+    NotificationHooksService.onNotificationReceived
+        .removeListener(_onNotificationReceived);
     NotificationHooksService.setForegroundNotificationOptions(active: false);
     _cancelAssistantPlayback(clearTyping: false);
     WidgetsBinding.instance.removeObserver(this);
@@ -363,72 +362,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   int _effectiveFirstBurstDelay(ChatBurst burst, int networkElapsedMs) {
     final compensated = burst.preBurstDelayMs - networkElapsedMs;
     return compensated <= 80 ? 80 : compensated;
-  }
-
-  Future<void> _signOut() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF141B2D),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'Sign out?',
-          style: GoogleFonts.plusJakartaSans(
-            color: Colors.white,
-            fontSize: 17,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        content: Text(
-          'Your memories with $_companionName stay saved.',
-          style: GoogleFonts.plusJakartaSans(
-            color: Colors.white.withValues(alpha: 0.50),
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.plusJakartaSans(
-                color: _blue,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(
-              'Sign out',
-              style: GoogleFonts.plusJakartaSans(
-                color: Colors.white.withValues(alpha: 0.55),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && mounted) {
-      await AuthService.signOut();
-      Navigator.of(context).popUntil((route) => route.isFirst);
-    }
-  }
-
-  PopupMenuItem<String> _popupItem(String label, String value) {
-    return PopupMenuItem<String>(
-      value: value,
-      child: Text(
-        label,
-        style: GoogleFonts.jost(
-          color: _cream.withValues(alpha: 0.82),
-          fontSize: 13.5,
-          fontWeight: FontWeight.w400,
-          letterSpacing: 0.1,
-        ),
-      ),
-    );
   }
 
   String _relationshipButtonLabel() {
@@ -816,59 +749,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
           _relationshipPill(),
           const SizedBox(width: 8),
-
-          PopupMenuButton<String>(
-            icon: Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _surface.withValues(alpha: 0.70),
-                border: Border.all(
-                  color: _cream.withValues(alpha: 0.08),
-                  width: 0.6,
-                ),
-              ),
-              child: Icon(
-                Icons.tune_rounded,
-                size: 15,
-                color: _sand.withValues(alpha: 0.72),
-              ),
-            ),
-            padding: EdgeInsets.zero,
-            color: const Color(0xFF10131A),
-            surfaceTintColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: _cream.withValues(alpha: 0.07),
-                width: 0.6,
-              ),
-            ),
-            onSelected: (val) {
-              if (val == 'privacy') {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PrivacyScreen()),
-                );
-              } else if (val == 'settings') {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                );
-              } else if (val == 'about') {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const AboutScreen()),
-                );
-              } else if (val == 'logout') {
-                _signOut();
-              }
-            },
-            itemBuilder: (context) => [
-              _popupItem('privacy.', 'privacy'),
-              _popupItem('settings.', 'settings'),
-              _popupItem('about.', 'about'),
-              _popupItem('logout.', 'logout'),
-            ],
-          ),
         ],
       ),
     );
