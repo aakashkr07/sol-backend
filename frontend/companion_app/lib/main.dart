@@ -85,12 +85,14 @@ class _SolAppState extends State<SolApp> {
   @override
   void initState() {
     super.initState();
-    NotificationService.onNotificationReceived.addListener(_onNotificationReceived);
+    NotificationService.onNotificationReceived
+        .addListener(_onNotificationReceived);
   }
 
   @override
   void dispose() {
-    NotificationService.onNotificationReceived.removeListener(_onNotificationReceived);
+    NotificationService.onNotificationReceived
+        .removeListener(_onNotificationReceived);
     if (_activeBanner?.mounted ?? false) {
       _activeBanner?.remove();
     }
@@ -117,7 +119,8 @@ class _SolAppState extends State<SolApp> {
     BuildContext context,
     SolNotification notification,
   ) async {
-    final enabled = await NotificationService.showBannersWhileActiveInOtherRooms();
+    final enabled =
+        await NotificationService.showBannersWhileActiveInOtherRooms();
     if (!enabled || !mounted) {
       return;
     }
@@ -254,7 +257,15 @@ class _AuthGateState extends State<_AuthGate> {
               }
 
               if (decision.needsOnboarding) {
-                return OnboardingScreen(onComplete: _finishOnboarding);
+                return OnboardingScreen(
+                  onComplete: _finishOnboarding,
+                  onBack: () {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    );
+                  },
+                );
               }
 
               if (decision.isVaultEnabled && !_vaultUnlocked) {
@@ -295,7 +306,6 @@ class _GateDecision {
     required this.needsOnboarding,
     required this.isVaultEnabled,
   });
-
 }
 
 // =============================================================================

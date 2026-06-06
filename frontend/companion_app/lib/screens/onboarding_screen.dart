@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -22,19 +23,25 @@ const Color _sand = Color(0xFF9A8C78);
 const Color _dusty = Color(0xFF5A5568);
 const Color _ink = Color(0xFF060810);
 
+/// Direction the card transition travels.
+enum _CardDirection { forward, backward }
+
 class OnboardingScreen extends StatefulWidget {
   final Future<void> Function() onComplete;
+  final VoidCallback? onBack; // Called when user taps back on the first card
 
   const OnboardingScreen({
     super.key,
     required this.onComplete,
+    this.onBack,
   });
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen> {
+class _OnboardingScreenState extends State<OnboardingScreen>
+    with SingleTickerProviderStateMixin {
   int _currentStep = 0;
   String _preferredName = '';
   String _connectionStyle = '';
@@ -42,19 +49,98 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   String _depthPreference = '';
   String _behavioralGuardrail = '';
 
-
   String? _error;
   bool _apiSuccess = false;
   bool _cycleFinished = false;
 
+  // --- Card transition state ---
+  late final AnimationController _slideCtrl;
+  late Animation<Offset> _slideIn;
+  late Animation<Offset> _slideOut;
+  late Animation<double> _fadeIn;
+  late Animation<double> _fadeOut;
+
+  Widget? _outgoingWidget;
+  Widget? _incomingWidget;
+  bool _isAnimating = false;
+
   @override
   void initState() {
     super.initState();
+    _slideCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+
+    _slideCtrl.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        setState(() {
+          _isAnimating = false;
+          _outgoingWidget = null;
+        });
+        _slideCtrl.reset();
+      }
+    });
+
+    _setAnimations(_CardDirection.forward);
   }
 
-  Future<void> _submitOnboarding() async {
+  void _setAnimations(_CardDirection dir) {
+    final inBegin = dir == _CardDirection.forward
+        ? const Offset(0.06, 0)
+        : const Offset(-0.06, 0);
+    const inEnd = Offset.zero;
+    final outEnd = dir == _CardDirection.forward
+        ? const Offset(-0.06, 0)
+        : const Offset(0.06, 0);
+    const outBegin = Offset.zero;
+
+    _slideIn = Tween<Offset>(begin: inBegin, end: inEnd).animate(
+      CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic),
+    );
+    _slideOut = Tween<Offset>(begin: outBegin, end: outEnd).animate(
+      CurvedAnimation(parent: _slideCtrl, curve: Curves.easeInCubic),
+    );
+    _fadeIn = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+          parent: _slideCtrl,
+          curve: const Interval(0.0, 0.6, curve: Curves.easeOut)),
+    );
+    _fadeOut = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+          parent: _slideCtrl,
+          curve: const Interval(0.0, 0.5, curve: Curves.easeIn)),
+    );
+  }
+
+  void _transitionToStep(int newStep,
+      {_CardDirection dir = _CardDirection.forward}) {
+    if (_isAnimating) return;
+
+    _setAnimations(dir);
+
     setState(() {
-      _currentStep = 5; // Finding your people loading state
+      _outgoingWidget = _buildStepWidget(_currentStep);
+      _currentStep = newStep;
+      _incomingWidget = _buildStepWidget(newStep);
+      _isAnimating = true;
+    });
+
+    _slideCtrl.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _slideCtrl.dispose();
+    super.dispose();
+  }
+
+  // ─── API ────────────────────────────────────────────────────────────────────
+
+  Future<void> _submitOnboarding() async {
+    _transitionToStep(5);
+
+    setState(() {
       _error = null;
       _apiSuccess = false;
       _cycleFinished = false;
@@ -74,55 +160,47 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       }
 
       if (!mounted) return;
-      setState(() {
-        _apiSuccess = true;
-      });
+      setState(() => _apiSuccess = true);
 
-      if (_apiSuccess && _cycleFinished) {
-        _completeAndNavigate();
-      }
+      if (_apiSuccess && _cycleFinished) _completeAndNavigate();
     } on ChatException catch (e) {
       setState(() {
         _error = e.message;
-        _currentStep = 4; // Go back to Q5 to retry
       });
+      _transitionToStep(4, dir: _CardDirection.backward);
     } catch (_) {
       setState(() {
         _error = 'The matching system encountered an error. Try again.';
-        _currentStep = 4; // Go back to Q5 to retry
       });
+      _transitionToStep(4, dir: _CardDirection.backward);
     }
   }
 
   Future<void> _completeAndNavigate() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      await OnboardingService.markComplete(uid);
-    }
+    if (uid != null) await OnboardingService.markComplete(uid);
     widget.onComplete();
   }
 
   void _onOptionSelected(int step, String backendValue) {
     HapticFeedback.lightImpact();
 
-    // Assign values depending on step
     if (step == 1) _connectionStyle = backendValue;
     if (step == 2) _presenceFrequency = backendValue;
     if (step == 3) _depthPreference = backendValue;
     if (step == 4) _behavioralGuardrail = backendValue;
 
-    // Small delay (350ms) to allow the user to see the selected state before moving
     Future.delayed(const Duration(milliseconds: 350), () {
       if (!mounted) return;
       if (step < 4) {
-        setState(() {
-          _currentStep = step + 1;
-        });
+        _transitionToStep(step + 1);
       } else {
         _submitOnboarding();
       }
     });
   }
+
+  // ─── Build ───────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -152,25 +230,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 600),
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder: (child, animation) {
-                          final offset = Tween<Offset>(
-                            begin: const Offset(0.0, 0.06),
-                            end: Offset.zero,
-                          ).animate(animation);
-                          return FadeTransition(
-                            opacity: animation,
-                            child: SlideTransition(
-                              position: offset,
-                              child: child,
-                            ),
-                          );
-                        },
-                        child: _buildCurrentStepWidget(),
-                      ),
+                      _buildAnimatedCard(),
                       if (_error != null && _currentStep < 5) ...[
                         const SizedBox(height: 20),
                         _buildErrorPanel(),
@@ -186,49 +246,83 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _buildBackButton() {
-    if (_currentStep == 0 || _currentStep >= 5) {
-      return const SizedBox(height: 40);
+  Widget _buildAnimatedCard() {
+    if (!_isAnimating) {
+      return _GlassCard(child: _buildStepWidget(_currentStep));
     }
+
+    return Stack(
+      children: [
+        // Outgoing card
+        if (_outgoingWidget != null)
+          AnimatedBuilder(
+            animation: _slideCtrl,
+            builder: (_, __) => FadeTransition(
+              opacity: _fadeOut,
+              child: SlideTransition(
+                position: _slideOut,
+                child: _GlassCard(child: _outgoingWidget!),
+              ),
+            ),
+          ),
+        // Incoming card
+        if (_incomingWidget != null)
+          AnimatedBuilder(
+            animation: _slideCtrl,
+            builder: (_, __) => FadeTransition(
+              opacity: _fadeIn,
+              child: SlideTransition(
+                position: _slideIn,
+                child: _GlassCard(child: _incomingWidget!),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildBackButton() {
+    if (_currentStep >= 5) return const SizedBox(height: 40);
+
     return Align(
       alignment: Alignment.centerLeft,
       child: GestureDetector(
         onTap: () {
           HapticFeedback.lightImpact();
-          setState(() {
-            _currentStep--;
-          });
+          if (_currentStep == 0) {
+            widget.onBack?.call();
+          } else {
+            _transitionToStep(_currentStep - 1, dir: _CardDirection.backward);
+          }
         },
         child: Container(
           width: 40,
           height: 40,
           decoration: BoxDecoration(
             color: _surface.withValues(alpha: 0.70),
-            border: Border.all(color: _cream.withValues(alpha: 0.08), width: 0.6),
+            border:
+                Border.all(color: _cream.withValues(alpha: 0.08), width: 0.6),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Icon(
-            Icons.chevron_left,
-            color: _cream,
-            size: 20,
-          ),
+          child: const Icon(Icons.chevron_left, color: _cream, size: 20),
         ),
       ),
     );
   }
 
-  Widget _buildCurrentStepWidget() {
-    switch (_currentStep) {
+  // ─── Step widgets ────────────────────────────────────────────────────────────
+
+  Widget _buildStepWidget(int step) {
+    switch (step) {
       case 0:
         return _NameInputCard(
           key: const ValueKey('step-name'),
           onSubmitted: (name) {
             HapticFeedback.lightImpact();
-            setState(() {
-              _preferredName = name;
-              _currentStep = 1;
-            });
+            _preferredName = name;
+            _transitionToStep(1);
           },
+          onBack: widget.onBack,
         );
       case 1:
         return _QuestionCard(
@@ -295,50 +389,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           onSelected: (val) => _onOptionSelected(4, val),
         );
       case 5:
-        return _buildLoadingState();
-
+        return _LoadingCard(
+          key: const ValueKey('step-loading'),
+          onFinished: () {
+            if (mounted) {
+              setState(() => _cycleFinished = true);
+              if (_apiSuccess && _cycleFinished) _completeAndNavigate();
+            }
+          },
+        );
       default:
         return const SizedBox.shrink();
     }
-  }
-
-  Widget _buildLoadingState() {
-    return Center(
-      key: const ValueKey('step-loading'),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const SizedBox(height: 80),
-          // Subtle animated profile silhouettes
-          const _BreathingSilhouettes(),
-          const SizedBox(height: 48),
-          _CyclingLoadingText(
-            onFinished: () {
-              if (mounted) {
-                setState(() {
-                  _cycleFinished = true;
-                });
-                if (_apiSuccess && _cycleFinished) {
-                  _completeAndNavigate();
-                }
-              }
-            },
-          ),
-          const SizedBox(height: 8),
-          Text(
-            "This shouldn't take long.",
-            textAlign: TextAlign.center,
-            style: GoogleFonts.jost(
-              color: _sand.withValues(alpha: 0.72),
-              fontSize: 14,
-              fontWeight: FontWeight.w300,
-              letterSpacing: 0.2,
-            ),
-          ),
-          const SizedBox(height: 120),
-        ],
-      ),
-    );
   }
 
   Widget _buildErrorPanel() {
@@ -348,25 +410,72 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF331515).withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFE08B8B).withValues(alpha: 0.22),
-        ),
+        border:
+            Border.all(color: const Color(0xFFE08B8B).withValues(alpha: 0.22)),
       ),
       child: Text(
         _error!,
         style: GoogleFonts.jost(
-          color: const Color(0xFFE08B8B),
-          fontSize: 13,
-          height: 1.45,
+            color: const Color(0xFFE08B8B), fontSize: 13, height: 1.45),
+      ),
+    );
+  }
+}
+
+// ─── Glassmorphic Card Shell ──────────────────────────────────────────────────
+
+class _GlassCard extends StatelessWidget {
+  final Widget child;
+  const _GlassCard({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            // Layered glass look: a very subtle white tint over near-transparent dark
+            color: const Color(0xFF10131A).withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: _cream.withValues(alpha: 0.07),
+              width: 0.8,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 32,
+                offset: const Offset(0, 8),
+              ),
+              BoxShadow(
+                color: _blue.withValues(alpha: 0.04),
+                blurRadius: 48,
+                spreadRadius: -4,
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
+          child: child,
         ),
       ),
     );
   }
 }
 
+// ─── Step 0 – Name Input ──────────────────────────────────────────────────────
+
 class _NameInputCard extends StatefulWidget {
   final Function(String) onSubmitted;
-  const _NameInputCard({super.key, required this.onSubmitted});
+  final VoidCallback? onBack;
+
+  const _NameInputCard({
+    super.key,
+    required this.onSubmitted,
+    this.onBack,
+  });
 
   @override
   State<_NameInputCard> createState() => _NameInputCardState();
@@ -380,9 +489,7 @@ class _NameInputCardState extends State<_NameInputCard> {
   void initState() {
     super.initState();
     _controller.addListener(() {
-      setState(() {
-        _canSubmit = _controller.text.trim().isNotEmpty;
-      });
+      setState(() => _canSubmit = _controller.text.trim().isNotEmpty);
     });
   }
 
@@ -398,6 +505,7 @@ class _NameInputCardState extends State<_NameInputCard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        // Header row with back-to-login button
         Text(
           'Before we start...',
           style: GoogleFonts.plusJakartaSans(
@@ -416,27 +524,22 @@ class _NameInputCardState extends State<_NameInputCard> {
             fontWeight: FontWeight.w300,
           ),
         ),
-        const SizedBox(height: 36),
+        const SizedBox(height: 32),
         Container(
           decoration: BoxDecoration(
-            color: _surface.withValues(alpha: 0.70),
-            border: Border.all(color: _cream.withValues(alpha: 0.08), width: 0.6),
+            color: _surface.withValues(alpha: 0.60),
+            border:
+                Border.all(color: _cream.withValues(alpha: 0.08), width: 0.6),
             borderRadius: BorderRadius.circular(16),
           ),
           child: TextField(
             controller: _controller,
             cursorColor: _blueSoft,
             textCapitalization: TextCapitalization.words,
-            style: GoogleFonts.jost(
-              color: _cream,
-              fontSize: 16,
-            ),
+            style: GoogleFonts.jost(color: _cream, fontSize: 16),
             decoration: InputDecoration(
               hintText: 'Enter your preferred name',
-              hintStyle: GoogleFonts.jost(
-                color: _dusty,
-                fontSize: 16,
-              ),
+              hintStyle: GoogleFonts.jost(color: _dusty, fontSize: 16),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
               border: InputBorder.none,
@@ -446,7 +549,7 @@ class _NameInputCardState extends State<_NameInputCard> {
             },
           ),
         ),
-        const SizedBox(height: 48),
+        const SizedBox(height: 24),
         SizedBox(
           width: double.infinity,
           height: 54,
@@ -464,16 +567,14 @@ class _NameInputCardState extends State<_NameInputCard> {
                   foregroundColor: _ink,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
+                      borderRadius: BorderRadius.circular(16)),
                 ),
                 child: Text(
                   'Continue',
                   style: GoogleFonts.jost(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 0.5,
-                  ),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.5),
                 ),
               ),
             ),
@@ -483,6 +584,8 @@ class _NameInputCardState extends State<_NameInputCard> {
     );
   }
 }
+
+// ─── Question Card ────────────────────────────────────────────────────────────
 
 class _QuestionOption {
   final String label;
@@ -530,7 +633,7 @@ class _QuestionCard extends StatelessWidget {
             fontWeight: FontWeight.w300,
           ),
         ),
-        const SizedBox(height: 36),
+        const SizedBox(height: 28),
         ...options.map((opt) {
           final isSelected = selectedValue == opt.backendValue;
           return _OptionTile(
@@ -544,16 +647,15 @@ class _QuestionCard extends StatelessWidget {
   }
 }
 
+// ─── Option Tile ──────────────────────────────────────────────────────────────
+
 class _OptionTile extends StatefulWidget {
   final String text;
   final bool selected;
   final VoidCallback onTap;
 
-  const _OptionTile({
-    required this.text,
-    required this.selected,
-    required this.onTap,
-  });
+  const _OptionTile(
+      {required this.text, required this.selected, required this.onTap});
 
   @override
   State<_OptionTile> createState() => _OptionTileState();
@@ -565,7 +667,7 @@ class _OptionTileState extends State<_OptionTile> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 11),
       width: double.infinity,
       child: GestureDetector(
         onTapDown: (_) => setState(() => _scale = 0.970),
@@ -578,24 +680,27 @@ class _OptionTileState extends State<_OptionTile> {
           scale: _scale,
           duration: const Duration(milliseconds: 90),
           curve: Curves.easeOut,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 17),
             decoration: BoxDecoration(
               color: widget.selected
-                  ? _blue.withValues(alpha: 0.15)
-                  : _surface.withValues(alpha: 0.70),
+                  ? _blue.withValues(alpha: 0.14)
+                  : _surface.withValues(alpha: 0.50),
               border: Border.all(
                 color: widget.selected
-                    ? _blueSoft.withValues(alpha: 0.4)
-                    : _cream.withValues(alpha: 0.08),
-                width: 0.6,
+                    ? _blueSoft.withValues(alpha: 0.38)
+                    : _cream.withValues(alpha: 0.07),
+                width: 0.7,
               ),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
             ),
             child: Text(
               widget.text,
               style: GoogleFonts.jost(
-                color: widget.selected ? _cream : _cream.withValues(alpha: 0.78),
+                color:
+                    widget.selected ? _cream : _cream.withValues(alpha: 0.76),
                 fontSize: 14.5,
                 fontWeight: widget.selected ? FontWeight.w500 : FontWeight.w400,
               ),
@@ -607,6 +712,39 @@ class _OptionTileState extends State<_OptionTile> {
   }
 }
 
+// ─── Loading Card ─────────────────────────────────────────────────────────────
+
+class _LoadingCard extends StatelessWidget {
+  final VoidCallback onFinished;
+  const _LoadingCard({super.key, required this.onFinished});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const SizedBox(height: 32),
+        const _BreathingSilhouettes(),
+        const SizedBox(height: 44),
+        _CyclingLoadingText(onFinished: onFinished),
+        const SizedBox(height: 8),
+        Text(
+          "This shouldn't take long.",
+          textAlign: TextAlign.center,
+          style: GoogleFonts.jost(
+            color: _sand.withValues(alpha: 0.72),
+            fontSize: 14,
+            fontWeight: FontWeight.w300,
+            letterSpacing: 0.2,
+          ),
+        ),
+        const SizedBox(height: 36),
+      ],
+    );
+  }
+}
+
+// ─── Breathing Silhouettes (unchanged) ───────────────────────────────────────
 
 class _BreathingSilhouettes extends StatefulWidget {
   const _BreathingSilhouettes();
@@ -647,7 +785,6 @@ class _BreathingSilhouettesState extends State<_BreathingSilhouettes>
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // Silhouette 1 (Back left)
                 Transform.translate(
                   offset: Offset(-35 + 4 * math.sin(_pulse.value * math.pi), 5),
                   child: Opacity(
@@ -660,20 +797,14 @@ class _BreathingSilhouettesState extends State<_BreathingSilhouettes>
                         color: _violet,
                         boxShadow: [
                           BoxShadow(
-                            color: _violet.withValues(alpha: 0.1),
-                            blurRadius: 12,
-                          ),
+                              color: _violet.withValues(alpha: 0.1),
+                              blurRadius: 12)
                         ],
                       ),
-                      child: const Icon(
-                        Icons.person,
-                        color: _ink,
-                        size: 38,
-                      ),
+                      child: const Icon(Icons.person, color: _ink, size: 38),
                     ),
                   ),
                 ),
-                // Silhouette 2 (Back right)
                 Transform.translate(
                   offset: Offset(35 - 4 * math.sin(_pulse.value * math.pi), 5),
                   child: Opacity(
@@ -686,20 +817,14 @@ class _BreathingSilhouettesState extends State<_BreathingSilhouettes>
                         color: _amber,
                         boxShadow: [
                           BoxShadow(
-                            color: _amber.withValues(alpha: 0.1),
-                            blurRadius: 12,
-                          ),
+                              color: _amber.withValues(alpha: 0.1),
+                              blurRadius: 12)
                         ],
                       ),
-                      child: const Icon(
-                        Icons.person,
-                        color: _ink,
-                        size: 38,
-                      ),
+                      child: const Icon(Icons.person, color: _ink, size: 38),
                     ),
                   ),
                 ),
-                // Silhouette 3 (Foreground center glowing)
                 Transform.scale(
                   scale: 1.0 + 0.04 * math.sin(_pulse.value * math.pi),
                   child: Container(
@@ -723,7 +848,8 @@ class _BreathingSilhouettesState extends State<_BreathingSilhouettes>
                     child: Center(
                       child: Icon(
                         Icons.person_outline,
-                        color: _cream.withValues(alpha: 0.3 + 0.3 * _pulse.value),
+                        color:
+                            _cream.withValues(alpha: 0.3 + 0.3 * _pulse.value),
                         size: 40,
                       ),
                     ),
@@ -737,6 +863,8 @@ class _BreathingSilhouettesState extends State<_BreathingSilhouettes>
     );
   }
 }
+
+// ─── Cycling Loading Text (unchanged) ────────────────────────────────────────
 
 class _CyclingLoadingText extends StatefulWidget {
   final VoidCallback onFinished;
@@ -767,9 +895,7 @@ class _CyclingLoadingTextState extends State<_CyclingLoadingText>
 
     _phaseTimer = Timer.periodic(const Duration(milliseconds: 1800), (timer) {
       if (_phaseIndex < _phases.length - 1) {
-        setState(() {
-          _phaseIndex++;
-        });
+        setState(() => _phaseIndex++);
       } else {
         timer.cancel();
         widget.onFinished();
